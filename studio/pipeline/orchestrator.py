@@ -153,8 +153,10 @@ class Orchestrator:
                 self._job_update(job_id, 100, "chờ duyệt cutlist", status="done")
                 self._set_stage(episode_id, "reviewing")
                 return
-            self._job_update(job_id, 100, "skip" if isinstance(result, dict) and result.get("skipped") else "xong",
-                             status="skipped" if isinstance(result, dict) and result.get("skipped") else "done")
+            skipped = isinstance(result, dict) and result.get("skipped")
+            summary = result.get("summary") if isinstance(result, dict) else None
+            self._job_update(job_id, 100, "skip" if skipped else (summary or "xong"),
+                             status="skipped" if skipped else "done")
         self._set_stage(episode_id, "ready")
         log.info("=== %s ready ===", episode_id)
 

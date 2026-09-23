@@ -334,6 +334,16 @@ def api_ask():
     return jsonify(claude_runner.ask(q))
 
 
+@app.route("/api/claude/probe", methods=["POST"])
+def api_claude_probe():
+    """Run one tiny Claude turn with the chosen model/effort and report login state + model actually used."""
+    from studio.pipeline import claude_runner
+    data = request.json or {}
+    res = claude_runner.probe(model=(data.get("model") or "").strip() or None, effort=(data.get("effort") or "").strip() or None)
+    return jsonify({k: res.get(k) for k in ("ok", "error", "result", "logged_in", "models", "model_usage", "usage",
+                                             "cost_usd", "duration_sec", "summary")})
+
+
 @app.route("/api/tag/pending")
 def api_tag_pending():
     return jsonify(tagging.pending(limit=int(request.args.get("limit") or 40), episode_id=request.args.get("episode")))

@@ -27,14 +27,51 @@
   </div></section>
 <section class="card"><div class="card-header"><h2>Claude Code headless</h2>
     <span class="small {{ 'ok' if claude.installed and (claude.token or claude.logged_in) else 'error' }}">{{ 'CLI: ' + claude.version if claude.installed else 'Chưa cài Claude CLI' }} · {{ 'có token' if claude.token else ('đã đăng nhập' if claude.logged_in else 'CHƯA đăng nhập: nhấn đúp E:\\DataBase\\dang-nhap-claude.bat rồi gõ /login') }}</span></div>
-  <div class="card-body grid2">
-    <label>Lệnh CLI<input class="input" name="claude_cli" value="{{ s.claude_cli }}"></label>
-    <label>Model (trống = mặc định)<input class="input" name="claude_model" value="{{ s.claude_model }}"></label>
-    <label>max-turns<input class="input" name="claude_max_turns" value="{{ s.claude_max_turns }}"></label>
-    <label>allowedTools<input class="input" name="claude_allowed_tools" value="{{ s.claude_allowed_tools }}"></label>
-    <label>permission-mode<input class="input" name="claude_permission_mode" value="{{ s.claude_permission_mode }}"></label>
-    <label>Số lần chạy lại khi cutlist lỗi<input class="input" name="select_retry" value="{{ s.select_retry }}"></label>
+  <div class="card-body">
+    <p class="small muted">Model để trống = model mặc định của Claude Code cho tài khoản bạn, giống lúc mở Claude Code mà không chọn gì. Gõ bí danh <code>fable</code>, <code>opus</code>, <code>sonnet</code>, <code>haiku</code> hoặc tên đầy đủ như <code>claude-opus-5</code>. Effort giống lệnh /effort trong Claude Code. Bấm "Kiểm tra" để chạy một lượt nhỏ và xem model thực tế trả lời.</p>
+    <datalist id="model-options">
+      <option value="fable">fable · mạnh nhất, đắt nhất</option>
+      <option value="opus">opus · chất lượng cao, mặc định khuyên dùng cho chọn nội dung</option>
+      <option value="sonnet">sonnet · cân bằng, rẻ hơn</option>
+      <option value="haiku">haiku · nhanh, rẻ, chỉ hợp việc đơn giản</option>
+      <option value="claude-opus-5">claude-opus-5</option>
+      <option value="claude-sonnet-5">claude-sonnet-5</option>
+      <option value="claude-fable-5-1">claude-fable-5-1</option>
+    </datalist>
+    <div class="grid2">
+      <label>Model cho bước CHỌN NỘI DUNG<input class="input" list="model-options" name="claude_model_select" value="{{ s.claude_model_select }}" placeholder="trống = mặc định"></label>
+      <label>Effort cho bước chọn nội dung
+        <select class="input" name="claude_effort_select">{% for e in ['', 'low', 'medium', 'high', 'xhigh', 'max'] %}<option value="{{ e }}" {{ 'selected' if s.claude_effort_select == e }}>{{ e or 'mặc định' }}</option>{% endfor %}</select></label>
+      <label>Model cho HỎI AI<input class="input" list="model-options" name="claude_model_ask" value="{{ s.claude_model_ask }}" placeholder="trống = mặc định"></label>
+      <label>Effort cho Hỏi AI
+        <select class="input" name="claude_effort_ask">{% for e in ['', 'low', 'medium', 'high', 'xhigh', 'max'] %}<option value="{{ e }}" {{ 'selected' if s.claude_effort_ask == e }}>{{ e or 'mặc định' }}</option>{% endfor %}</select></label>
+      <label>Model dự phòng khi quá tải (cách nhau bằng dấu phẩy)<input class="input" name="claude_fallback_model" value="{{ s.claude_fallback_model }}" placeholder="ví dụ: sonnet"></label>
+      <label>Số lần chạy lại khi cutlist lỗi<input class="input" name="select_retry" value="{{ s.select_retry }}"></label>
+      <label>max-turns<input class="input" name="claude_max_turns" value="{{ s.claude_max_turns }}"></label>
+      <label>allowedTools<input class="input" name="claude_allowed_tools" value="{{ s.claude_allowed_tools }}"></label>
+      <label>permission-mode<input class="input" name="claude_permission_mode" value="{{ s.claude_permission_mode }}"></label>
+      <label>Đường dẫn CLI (trống = tự tìm)<input class="input" name="claude_cli" value="{{ s.claude_cli }}"></label>
+    </div>
+    <div class="row gap">
+      <button type="button" class="btn" id="probe-btn" onclick="probeClaude()">Kiểm tra: model nào đang trả lời?</button>
+      <span id="probe-result" class="small muted"></span>
+    </div>
   </div></section>
 <div class="row gap"><button class="btn btn-primary">Lưu cài đặt</button></div>
 </form>
+{% endblock %}
+{% block scripts %}
+<script>
+async function probeClaude(){
+  const btn=document.getElementById('probe-btn'), out=document.getElementById('probe-result');
+  const model=document.querySelector('[name=claude_model_select]').value, effort=document.querySelector('[name=claude_effort_select]').value;
+  btn.disabled=true; out.textContent='Đang chạy một lượt nhỏ với model "'+(model||'mặc định')+'"…';
+  try{ const r=await api('/api/claude/probe',{model, effort});
+    if(!r.logged_in) out.textContent='Chưa đăng nhập: '+(r.error||r.result||'');
+    else if(r.ok) out.textContent='OK · model trả lời: '+((r.models||[]).join(', ')||'?')+' · '+(r.summary||'')+' · trả lời: '+(r.result||'').slice(0,60);
+    else out.textContent='Lỗi: '+(r.error||'');
+  }catch(e){ out.textContent='Lỗi: '+e; }
+  finally{ btn.disabled=false; }
+}
+</script>
 {% endblock %}

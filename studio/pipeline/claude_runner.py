@@ -70,13 +70,22 @@ def _logged_in() -> bool:
     return (Path.home() / ".claude" / ".credentials.json").exists()
 
 
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+MODEL_ALIASES = ("fable", "opus", "sonnet", "haiku")
+
+
 def run(prompt: str, *, cwd: Path | None = None, allowed_tools: str | None = None, permission_mode: str | None = None,
-        max_turns: int | None = None, model: str | None = None, timeout: int = 3 * 3600, log_path: Path | None = None,
-        on_text=None) -> dict:
-    """Execute one headless run. Returns {ok, text, result, usage, cost_usd, duration_sec, returncode, log_path}."""
+        max_turns: int | None = None, model: str | None = None, effort: str | None = None,
+        fallback_model: str | None = None, timeout: int = 3 * 3600, log_path: Path | None = None, on_text=None) -> dict:
+    """Execute one headless run.
+
+    Returns {ok, error, text, result, usage, models, model_usage, cost_usd, duration_sec, returncode, log_path}.
+    `models` lists the model ids the CLI actually used (from the result event), so the caller can show which
+    model answered even when the setting is empty (= Claude Code's default for the account).
+    """
     cmd = _command()
     if not cmd:
-        return {"ok": False, "error": "Claude Code CLI chưa cài (npm i -g @anthropic-ai/claude-code)", "text": ""}
+        return {"ok": False, "error": "Claude Code CLI chưa cài (xem README: E:\\Tool\\claude-cli)", "text": ""}
     cwd = Path(cwd or config.BASE_DIR)
     args = cmd + ["-p", "--output-format", "stream-json", "--verbose",
                   "--permission-mode", permission_mode or db.get_setting("claude_permission_mode"),
@@ -84,15 +93,22 @@ def run(prompt: str, *, cwd: Path | None = None, allowed_tools: str | None = Non
     tools = allowed_tools or db.get_setting("claude_allowed_tools")
     if tools:
         args += ["--allowedTools", tools]
-    model = model or db.get_setting("claude_model")
+    model = (model or db.get_setting("claude_model") or "").strip()
     if model:
         args += ["--model", model]
+    effort = (effort or "").strip().lower()
+    if effort in EFFORT_LEVELS:
+        args += ["--effort", effort]
+    fallback_model = (fallback_model if fallback_model is not None else db.get_setting("claude_fallback_model") or "").strip()
+    if fallback_model:
+        args += ["--fallback-model", fallback_model]
     env = dict(os.environ, PYTHONUTF8="1", CLAUDECODE="")
     env.pop("CLAUDECODE", None)      # never look like a nested Claude Code session
     started = time.time()
     log.info("claude run in %s: %s", cwd, " ".join(args[len(cmd):]))
     logf = open(log_path, "w", encoding="utf-8") if log_path else None
     texts, result, usage, cost, is_error, err_msg = [], "", {}, None, False, ""
+    model_usage: dict = {}
     try:
         proc = subprocess.Popen(args, cwd=str(cwd), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 text=True, encoding="utf-8", errors="replace", env=env,
@@ -126,6 +142,7 @@ def run(prompt: str, *, cwd: Path | None = None, allowed_tools: str | None = Non
             result = ev.get("result") or ""
             usage = ev.get("usage") or {}
             cost = ev.get("total_cost_usd")
+            model_usage = ev.get("modelUsage") or {}
             is_error = bool(ev.get("is_error"))
             if is_error:
                 err_msg = result or ev.get("error") or "run ended with is_error"
@@ -147,8 +164,27 @@ def run(prompt: str, *, cwd: Path | None = None, allowed_tools: str | None = Non
         text = (text + "\n\n" + result).strip()
     ok = proc.returncode == 0 and not is_error
     return {"ok": ok, "error": None if ok else err_msg, "text": text, "result": result, "usage": usage,
+            "models": list(model_usage.keys()), "model_usage": model_usage,
             "cost_usd": cost, "duration_sec": round(time.time() - started, 1), "returncode": proc.returncode,
             "log_path": str(log_path) if log_path else None}
+
+
+def describe_run(res: dict) -> str:
+    """One-line summary for job messages: model · tokens · cost."""
+    if not res:
+        return ""
+    models = ",".join(res.get("models") or []) or "model mặc định"
+    u = res.get("usage") or {}
+    tokens = (u.get("input_tokens") or 0) + (u.get("cache_read_input_tokens") or 0) + \
+             (u.get("cache_creation_input_tokens") or 0) + (u.get("output_tokens") or 0)
+    parts = [models]
+    if tokens:
+        parts.append(f"{tokens/1000:.0f}k token")
+    if res.get("cost_usd"):
+        parts.append(f"${res['cost_usd']:.2f}")
+    if res.get("duration_sec"):
+        parts.append(f"{res['duration_sec']:.0f}s")
+    return " · ".join(parts)
 
 
 def ask(question: str) -> dict:
@@ -157,6 +193,18 @@ def ask(question: str) -> dict:
     log_path = config.WORK_DIR / f"ask_{int(time.time())}.jsonl"
     prompt = f"/kho-highlight {question}"
     res = run(prompt, cwd=config.BASE_DIR, allowed_tools="Bash,Read,Glob,Grep,Write", permission_mode="acceptEdits",
-              max_turns=40, timeout=1800, log_path=log_path)
+              max_turns=40, timeout=1800, log_path=log_path,
+              model=db.get_setting("claude_model_ask") or None, effort=db.get_setting("claude_effort_ask") or None)
     res["html"] = md_to_html(res.get("text") or "")
+    res["summary"] = describe_run(res)
+    return res
+
+
+def probe(model: str | None = None, effort: str | None = None) -> dict:
+    """One tiny turn to show login state and which model actually answers with the given settings."""
+    res = run("Reply with exactly: OK", cwd=config.BASE_DIR, permission_mode="dontAsk", max_turns=1, timeout=180,
+              model=model, effort=effort, fallback_model="")
+    text = (res.get("result") or res.get("error") or "").strip()
+    res["logged_in"] = res.get("ok") or ("Not logged in" not in text and "login" not in text.lower())
+    res["summary"] = describe_run(res)
     return res

@@ -106,6 +106,8 @@ def select_episode(episode_id: str, progress_cb=None, force: bool = False) -> di
         if progress_cb:
             progress_cb(5 + attempt * 40, f"Claude đang chọn nội dung (lần {attempt + 1})…")
         res = claude_runner.run(prompt, cwd=config.BASE_DIR, log_path=work / f"claude_run_{attempt}.jsonl",
+                                model=db.get_setting("claude_model_select") or None,
+                                effort=db.get_setting("claude_effort_select") or None,
                                 on_text=lambda t: progress_cb and progress_cb(None, t[-160:].replace("\n", " ")))
         last_run = res
         (work / f"selection_log_{attempt}.md").write_text(res.get("text") or "", encoding="utf-8")
@@ -152,7 +154,9 @@ def select_episode(episode_id: str, progress_cb=None, force: bool = False) -> di
         analysis_stats = import_markdown(episode_id, last_run.get("text") or "", source="headless-log")
     _capture_guest_card(episode_id, last_run.get("text") or "")
     return {"cutlist": str(cutlist_path), "ingest": stats, "analysis": analysis_stats,
-            "usage": last_run.get("usage"), "cost_usd": last_run.get("cost_usd"), "duration_sec": last_run.get("duration_sec")}
+            "usage": last_run.get("usage"), "models": last_run.get("models"), "cost_usd": last_run.get("cost_usd"),
+            "duration_sec": last_run.get("duration_sec"),
+            "summary": "xong · " + claude_runner.describe_run(last_run)}
 
 
 _RE_GUEST_CARD = re.compile(r"(GUEST CARD.*?)(?=\n\s*\[?1\]?\.\s*\*\*|\n#{1,3}\s|\Z)", re.S | re.I)

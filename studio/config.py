@@ -72,7 +72,12 @@ DEFAULT_SETTINGS = {
     "claude_max_turns": "80",
     "claude_allowed_tools": "Read,Write,Glob,Grep,WebSearch,WebFetch",
     "claude_permission_mode": "acceptEdits",
-    "claude_model": "",             # empty = CLI default
+    "claude_model": "",             # legacy single setting, empty = CLI default
+    "claude_model_select": "",      # model for the content-selection stage: alias (fable/opus/sonnet/haiku) or full id
+    "claude_effort_select": "",     # low | medium | high | xhigh | max, empty = CLI default
+    "claude_model_ask": "",         # model for the Ask-AI page
+    "claude_effort_ask": "",
+    "claude_fallback_model": "",    # comma-separated fallbacks when the primary model is overloaded
     "select_retry": "1",
     "watch_enabled": "1",
     "file_stable_seconds": "30",
