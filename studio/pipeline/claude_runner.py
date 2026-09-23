@@ -71,13 +71,22 @@ def _logged_in() -> bool:
 
 
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+
+
+def _safe_call(fn, *args) -> None:
+    """Progress callbacks must never break a run."""
+    if fn:
+        try:
+            fn(*args)
+        except Exception:  # noqa: BLE001
+            log.debug("progress callback failed", exc_info=True)
 MODEL_ALIASES = ("fable", "opus", "sonnet", "haiku")
 
 
 def run(prompt: str, *, cwd: Path | None = None, allowed_tools: str | None = None, permission_mode: str | None = None,
         max_turns: int | None = None, model: str | None = None, effort: str | None = None,
         fallback_model: str | None = None, timeout: int = 3 * 3600, log_path: Path | None = None, on_text=None,
-        stop_flag=None) -> dict:
+        stop_flag=None, on_event=None, add_dirs: list[str] | None = None) -> dict:
     """Execute one headless run.
 
     Returns {ok, error, text, result, usage, models, model_usage, cost_usd, duration_sec, returncode, log_path}.
@@ -89,8 +98,11 @@ def run(prompt: str, *, cwd: Path | None = None, allowed_tools: str | None = Non
         return {"ok": False, "error": "Claude Code CLI chưa cài (xem README: E:\\Tool\\claude-cli)", "text": ""}
     cwd = Path(cwd or config.BASE_DIR)
     args = cmd + ["-p", "--output-format", "stream-json", "--verbose",
-                  "--permission-mode", permission_mode or db.get_setting("claude_permission_mode"),
-                  "--max-turns", str(max_turns or db.setting_int("claude_max_turns"))]
+                  "--permission-mode", permission_mode or db.get_setting("claude_permission_mode")]
+    for d in add_dirs or []:
+        if d and Path(d).exists():
+            args += ["--add-dir", str(d)]              # variadic flag: always followed by another flag below
+    args += ["--max-turns", str(max_turns or db.setting_int("claude_max_turns"))]
     tools = allowed_tools or db.get_setting("claude_allowed_tools")
     if tools:
         args += ["--allowedTools", tools]
@@ -144,6 +156,11 @@ def run(prompt: str, *, cwd: Path | None = None, allowed_tools: str | None = Non
                     texts.append(block["text"])
                     if on_text:
                         on_text(block["text"])
+                    _safe_call(on_event, "text", block["text"])
+                elif block.get("type") == "tool_use":
+                    _safe_call(on_event, "tool", (block.get("name") or "", block.get("input") or {}))
+        elif et == "system" and ev.get("subtype") == "thinking_tokens":
+            _safe_call(on_event, "thinking", int(ev.get("estimated_tokens_delta") or 0))
         elif et == "result":
             result = ev.get("result") or ""
             usage = ev.get("usage") or {}

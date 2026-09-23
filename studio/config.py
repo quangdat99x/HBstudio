@@ -73,8 +73,8 @@ DEFAULT_SETTINGS = {
     "claude_allowed_tools": "Read,Write,Glob,Grep,WebSearch,WebFetch,Bash(python *),Bash(py *)",
     "claude_permission_mode": "acceptEdits",
     "claude_model": "",             # legacy single setting, empty = CLI default
-    "claude_model_select": "",      # model for the content-selection stage: alias (fable/opus/sonnet/haiku) or full id
-    "claude_effort_select": "",     # low | medium | high | xhigh | max, empty = CLI default
+    "claude_model_select": "fable",  # content selection: best model by default (alias fable = Claude Fable 5.1)
+    "claude_effort_select": "xhigh", # low | medium | high | xhigh | max, empty = CLI default
     "claude_model_ask": "",         # model for the Ask-AI page
     "claude_effort_ask": "",
     "claude_fallback_model": "",    # comma-separated fallbacks when the primary model is overloaded

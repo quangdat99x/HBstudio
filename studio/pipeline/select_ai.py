@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import re
 import shutil
+import time
 from glob import glob
 from pathlib import Path
 
@@ -32,6 +33,81 @@ def sync_skill(name: str = SKILL_NAME) -> Path | None:
         shutil.copy2(src, dst)
         log.info("synced skill %s from %s", name, src)
     return dst
+
+
+class SelectProgress:
+    """Turns the stream events of a selection run into job progress and a message that keeps moving.
+
+    Claude writes very little text while it works: it reads the transcript in chunks and thinks. So the
+    percentage follows the transcript lines read (5-45%), then scoring (50%), writing the cutlist (80%) and the
+    analysis file (88%); the message always shows elapsed minutes, tool calls and thinking tokens.
+    """
+
+    def __init__(self, cb, total_lines: int, attempt: int = 0):
+        self.cb = cb
+        self.total = max(1, total_lines)
+        self.attempt = attempt
+        self.started = time.time()
+        self.max_line = 0
+        self.tools = 0
+        self.thinking = 0
+        self.pct = 5.0 + attempt * 2
+        self.phase = "khởi động, tra cứu khách mời"      # main stage of the run
+        self.last_tool = ""                               # side activity shown after the stage
+        self._last = 0.0
+
+    def _emit(self, msg: str, force: bool = False) -> None:
+        now = time.time()
+        if not self.cb or (not force and now - self._last < 8):
+            return
+        self._last = now
+        mins = int((now - self.started) // 60)
+        think = f" · {self.thinking / 1000:.0f}k token suy nghĩ" if self.thinking >= 1000 else ""
+        retry = f"lần {self.attempt + 1} · " if self.attempt else ""
+        self.cb(round(self.pct, 1), f"[{retry}{mins} phút · {self.tools} lượt công cụ{think}] {msg}")
+
+    def message(self) -> str:
+        return self.phase + (f" · vừa: {self.last_tool}" if self.last_tool else "")
+
+    def __call__(self, kind: str, data) -> None:
+        if kind == "thinking":
+            self.thinking += int(data or 0)
+            self._emit(self.message())
+            return
+        if kind == "text":
+            self._emit(str(data).strip().replace("\n", " ")[-150:], force=True)
+            return
+        name, inp = data
+        self.tools += 1
+        fp = str(inp.get("file_path") or inp.get("path") or "")
+        if name == "Read" and fp.endswith("transcript.txt"):
+            off = int(inp.get("offset") or 0)
+            end = min(self.total, off + int(inp.get("limit") or 2000))
+            if self.max_line >= self.total - 5:            # already read it all: this is a timestamp check
+                self.last_tool = f"tra lại timestamp dòng {off}–{end}"
+            else:
+                self.max_line = max(self.max_line, end)
+                self.pct = max(self.pct, 5 + 40 * self.max_line / self.total)
+                self.phase = f"đọc transcript dòng {off}–{end} / {self.total}"
+                self.last_tool = ""
+        elif name == "Write" and "cutlist_" in fp:
+            self.pct = max(self.pct, 80)
+            self.phase, self.last_tool = "ghi cutlist", ""
+        elif name == "Write" and "analysis_" in fp:
+            self.pct = max(self.pct, 88)
+            self.phase, self.last_tool = "ghi file phân tích (tóm tắt từng đoạn)", ""
+        elif name in ("WebSearch", "WebFetch"):
+            self.last_tool = "tra web " + str(inp.get("query") or inp.get("url") or "")[:70]
+        elif name in ("Bash", "PowerShell"):
+            self.last_tool = "chạy lệnh kiểm tra JSON" if self.pct >= 80 else "chạy lệnh kiểm tra"
+        elif name == "Read":
+            self.last_tool = f"đọc {Path(fp).name}" if fp else "đọc tài liệu"
+        else:
+            self.last_tool = name
+        if self.max_line >= self.total - 5 and self.pct < 50:
+            self.pct = 50
+            self.phase = "đã đọc hết transcript, đang chấm điểm và chọn đoạn"
+        self._emit(self.message(), force=True)
 
 
 def _theme_lines() -> list[str]:
@@ -70,8 +146,11 @@ def build_prompt(ep: dict, transcript_txt: Path, cutlist_path: Path, analysis_pa
         "`entities`: người, địa danh, tổ chức, tác phẩm, sự kiện có tên riêng được nhắc trong đoạn (tối đa 15).",
         *_theme_lines(),
         "7. Timestamp phải tra trực tiếp từ transcript, tuyệt đối không ước lượng. Hook phải nằm trong biên đoạn cha, dài 5–25 giây.",
-        "8. Có thể chạy `python` để tự kiểm tra JSON trước khi kết thúc.",
-        "9. Kết thúc bằng đúng một dòng: DONE cutlist=<đường dẫn> analysis=<đường dẫn>",
+        f"8. Cutlist được Studio chấp nhận khi: episode.id đúng {ep['id']}; mọi entry có `kind` (hook|highlight) và `title`; "
+        "`rank` là số nguyên liên tục 1..N; start < end và không vượt thời lượng video; mỗi hook có `parent_rank` trỏ tới "
+        "highlight đứng ngay sau và nằm trong biên của nó. KHÔNG cần đọc mã nguồn trong E:\\DataBase, mọi quy tắc đã ở đây và trong skill.",
+        "9. Có thể chạy `python` (mỗi lần một lệnh) để tự kiểm tra JSON trước khi kết thúc.",
+        "10. Kết thúc bằng đúng một dòng: DONE cutlist=<đường dẫn> analysis=<đường dẫn>",
     ]
     if retry_errors:
         lines += ["", "LẦN CHẠY TRƯỚC BỊ LOẠI VÌ CÁC LỖI SAU, PHẢI SỬA HẾT:", *[f"- {e}" for e in retry_errors]]
@@ -123,13 +202,15 @@ def select_episode(episode_id: str, progress_cb=None, force: bool = False, stop_
     for attempt in range(retries + 1):
         prompt = build_prompt(ep, transcript_txt, cutlist_path, analysis_path, max_segments, errors if attempt else None)
         (work / f"prompt_{attempt}.txt").write_text(prompt, encoding="utf-8")
+        model = db.get_setting("claude_model_select") or None
+        effort = db.get_setting("claude_effort_select") or None
         if progress_cb:
-            progress_cb(5 + attempt * 40, f"Claude đang chọn nội dung (lần {attempt + 1})…")
+            progress_cb(5 + attempt * 2, f"Claude ({model or 'mặc định'}, effort {effort or 'mặc định'}) bắt đầu chọn nội dung"
+                                         f"{f' lần {attempt + 1}' if attempt else ''}…")
+        tracker = SelectProgress(progress_cb, len(lines) + 3, attempt)
         res = claude_runner.run(prompt, cwd=config.BASE_DIR, log_path=work / f"claude_run_{attempt}.jsonl",
-                                model=db.get_setting("claude_model_select") or None,
-                                effort=db.get_setting("claude_effort_select") or None,
-                                on_text=lambda t: progress_cb and progress_cb(None, t[-160:].replace("\n", " ")),
-                                stop_flag=stop_flag)
+                                model=model, effort=effort, on_event=tracker, stop_flag=stop_flag,
+                                add_dirs=[str(media_root)])
         last_run = res
         (work / f"selection_log_{attempt}.md").write_text(res.get("text") or "", encoding="utf-8")
         with db.tx(conn) as c:
