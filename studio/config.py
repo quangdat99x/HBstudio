@@ -70,7 +70,7 @@ DEFAULT_SETTINGS = {
     "disk_warn_gb": "50",
     "claude_cli": "claude",
     "claude_max_turns": "80",
-    "claude_allowed_tools": "Read,Write,Glob,Grep,WebSearch,WebFetch",
+    "claude_allowed_tools": "Read,Write,Glob,Grep,WebSearch,WebFetch,Bash(python *),Bash(py *)",
     "claude_permission_mode": "acceptEdits",
     "claude_model": "",             # legacy single setting, empty = CLI default
     "claude_model_select": "",      # model for the content-selection stage: alias (fable/opus/sonnet/haiku) or full id
