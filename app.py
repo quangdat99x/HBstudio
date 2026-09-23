@@ -13,8 +13,8 @@ from flask import Flask, abort, jsonify, redirect, render_template, request, sen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from studio import config, db, export as export_mod, ingest, search, tagging  # noqa: E402
-from studio.analysis import import_markdown  # noqa: E402
+from studio import config, db, export as export_mod, ingest, maintenance, search, tagging  # noqa: E402
+from studio.analysis import import_markdown, sections_for_display  # noqa: E402
 from studio.textfmt import md_to_html  # noqa: E402
 from studio.util import now_iso, parse_episode_name  # noqa: E402
 
@@ -41,6 +41,8 @@ _orch_lock = threading.Lock()
 def orchestrator():
     """Lazily start the pipeline worker (module is optional until phase 2 lands)."""
     global _orchestrator
+    if os.environ.get("STUDIO_NO_WORKER") == "1":      # read-only instance (tests, second viewer): never run jobs
+        return None
     with _orch_lock:
         if _orchestrator is None:
             try:
@@ -73,7 +75,9 @@ def queue_page():
                   (SELECT COUNT(*) FROM segments s WHERE s.episode_id=e.id AND s.clip_zoomed_path IS NOT NULL) AS zoomed
            FROM episodes e ORDER BY e.updated_at DESC""")
     jobs = db.rows("SELECT * FROM jobs ORDER BY id DESC LIMIT 60")
-    return render_template("queue.html", page="queue", episodes=episodes, jobs=jobs,
+    orch = orchestrator()
+    pipe = orch.status() if orch else {"current": None, "queue": []}
+    return render_template("queue.html", page="queue", episodes=episodes, jobs=jobs, pipe=pipe,
                            media_root=db.get_setting("media_root"))
 
 
@@ -100,8 +104,11 @@ def episode_page(episode_id):
         s["topics"] = [r["name"] for r in db.rows(
             "SELECT t.name FROM segment_topics st JOIN topics t ON t.id=st.topic_id WHERE st.segment_id=?", (s["id"],))]
         s["themes"] = [r["slug"] for r in db.rows(
-            "SELECT th.slug FROM segment_themes st JOIN themes th ON th.id=st.theme_id WHERE st.segment_id=?", (s["id"],))]
+            "SELECT th.slug FROM segment_themes st JOIN themes th ON th.id=st.theme_id WHERE st.segment_id=? "
+            "ORDER BY st.is_primary DESC", (s["id"],))]
         s["hooks"] = []
+        s["analysis"] = sections_for_display(s)
+        s["preview"] = s.get("summary_vi") or (s["analysis"].get("tom_tat") or "")[:260] or s.get("summary_en") or ""
     highlights = []
     for s in segs:
         if s["kind"] == "hook" and s["parent_id"] in by_id:
@@ -289,6 +296,34 @@ def api_approve(episode_id):
     if not orch:
         return jsonify({"error": "pipeline chưa sẵn sàng"}), 503
     return jsonify(orch.approve(episode_id.upper()))
+
+
+@app.route("/api/episodes/<episode_id>/stop", methods=["POST"])
+def api_stop_episode(episode_id):
+    orch = orchestrator()
+    if not orch:
+        return jsonify({"error": "pipeline chưa sẵn sàng"}), 503
+    return jsonify(orch.request_stop(episode_id.upper()))
+
+
+@app.route("/api/pipeline")
+def api_pipeline():
+    orch = orchestrator()
+    return jsonify(orch.status() if orch else {"current": None, "queue": []})
+
+
+@app.route("/api/admin/reset", methods=["POST"])
+def api_reset():
+    """Wipe episodes/segments/jobs (keeps settings + themes). Requires {"confirm": "XOA"}; backs up first."""
+    data = request.json or {}
+    if (data.get("confirm") or "").strip().upper() != "XOA":
+        return jsonify({"error": "cần gõ XOA để xác nhận"}), 400
+    orch = orchestrator()
+    if orch and orch.is_busy():
+        st = orch.status()
+        return jsonify({"error": f"pipeline đang chạy {st['current'] or ''} (hàng đợi: {', '.join(st['queue']) or 'trống'}), "
+                                 "bấm Dừng ở trang Hàng đợi trước"}), 409
+    return jsonify(maintenance.reset_data())
 
 
 @app.route("/api/intake", methods=["POST"])

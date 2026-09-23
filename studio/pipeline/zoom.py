@@ -47,6 +47,18 @@ def pending_segments(episode_id: str) -> list[dict]:
     return out
 
 
+def _existing_job(base: str, clip_name: str) -> str | None:
+    """A job for this clip that the Zoom tool is still running from before a Studio restart."""
+    try:
+        jobs = tools.get_json(f"{base}/api/queue-status", timeout=15).get("jobs") or []
+    except Exception:  # noqa: BLE001
+        return None
+    for j in reversed(jobs):
+        if j.get("original_filename") == clip_name and j.get("status") in ("queued", "processing"):
+            return j.get("job_id")
+    return None
+
+
 def zoom_episode(episode_id: str, progress_cb=None, stop_flag=None) -> dict:
     todo = pending_segments(episode_id)
     if not todo:
@@ -57,15 +69,20 @@ def zoom_episode(episode_id: str, progress_cb=None, stop_flag=None) -> dict:
     done, failed = 0, []
     for n, s in enumerate(todo, 1):
         if stop_flag and stop_flag():
-            break
+            raise RuntimeError("dừng theo yêu cầu")
         clip = Path(s["clip_path"])
         out = clip.with_name(clip.stem + "_zoomed.mp4")
-        res = tools.post_json(f"{base}/api/enqueue-path", {"path": str(clip), "output_path": str(out), "config": cfg}, timeout=60)
-        if res.get("error"):
-            failed.append(f"{clip.name}: {res['error']}")
-            continue
-        job_id = res["job_id"]
+        job_id = _existing_job(base, clip.name)
+        if not job_id:
+            res = tools.post_json(f"{base}/api/enqueue-path", {"path": str(clip), "output_path": str(out), "config": cfg},
+                                  timeout=60)
+            if res.get("error"):
+                failed.append(f"{clip.name}: {res['error']}")
+                continue
+            job_id = res["job_id"]
         while True:
+            if stop_flag and stop_flag():
+                raise RuntimeError("dừng theo yêu cầu (Zoom làm nốt clip đang chạy)")
             st = tools.get_json(f"{base}/api/status/{job_id}", timeout=30)
             if progress_cb:
                 progress_cb((n - 1 + (st.get("progress") or 0) / 100.0) / len(todo) * 100.0,

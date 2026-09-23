@@ -1,7 +1,6 @@
 """Stage: pick highlights with the chon-noi-dung-jre-v2 skill running headless, validate, ingest, keep the analysis."""
 from __future__ import annotations
 
-import json
 import logging
 import re
 import shutil
@@ -10,12 +9,13 @@ from pathlib import Path
 
 from .. import config, db, ingest
 from ..analysis import import_analysis_json, import_markdown
-from ..util import read_json, transcript_to_txt, now_iso
+from ..util import now_iso, read_json, transcript_to_txt
 from . import claude_runner
 from .validator import validate_cutlist
 
 log = logging.getLogger("studio.select")
 SKILL_NAME = "chon-noi-dung-jre-v2"
+STOPPED = "dừng theo yêu cầu"
 
 
 def sync_skill(name: str = SKILL_NAME) -> Path | None:
@@ -34,6 +34,12 @@ def sync_skill(name: str = SKILL_NAME) -> Path | None:
     return dst
 
 
+def _theme_lines() -> list[str]:
+    from .. import tagging
+    tagging.ensure_default_themes()
+    return [f"  - {r['slug']}: {r['name_vi'] or ''}" for r in db.rows("SELECT slug, name_vi FROM themes ORDER BY slug")]
+
+
 def build_prompt(ep: dict, transcript_txt: Path, cutlist_path: Path, analysis_path: Path, max_segments: int,
                  retry_errors: list[str] | None = None) -> str:
     guest = ep.get("guest") or "(chưa rõ, tự xác định từ transcript)"
@@ -45,7 +51,7 @@ def build_prompt(ep: dict, transcript_txt: Path, cutlist_path: Path, analysis_pa
         f"- Khách mời: {guest}",
         f"- source_video: {ep.get('source_video') or ''}",
         f"- Transcript có timestamp [hh:mm:ss] ở file: {transcript_txt}",
-        f"  (đọc bằng công cụ Read; file dài, đọc từng phần cho tới hết, KHÔNG bỏ sót phần cuối)",
+        "  (đọc bằng công cụ Read; file dài, đọc từng phần cho tới hết, KHÔNG bỏ sót phần cuối)",
         f"- Thời lượng video: {int((ep.get('duration_sec') or 0) // 60)} phút",
         "",
         "LUẬT CHẾ ĐỘ TỰ ĐỘNG:",
@@ -55,29 +61,43 @@ def build_prompt(ep: dict, transcript_txt: Path, cutlist_path: Path, analysis_pa
         f"4. Sau đó XUẤT CUTLIST theo Mục Vb (layout flat_hooks, hook đứng ngay trước đoạn cha, rank liên tục) và ghi đúng MỘT file: {cutlist_path}",
         f"5. Ghi thêm MỘT file phân tích {analysis_path} dạng JSON: "
         "{\"episode_id\": ..., \"guest_card_md\": \"<toàn văn Guest Card>\", \"segments\": [ {\"content_rank\", \"title\", \"start\", \"end\", "
-        "\"tom_tat\": \"<toàn văn phần Tóm tắt tiếng Việt>\", \"ly_do_dat\": \"<Tại sao đoạn này đắt>\", \"hook_cold_open\": \"<phần hook, nguyên văn>\", "
-        "\"keyword\": \"<phần Keyword hạt nhân + vì sao + vệ tinh>\", \"fit\": \"<Fit với khách mời>\", \"raw_md\": \"<nguyên văn toàn bộ khối Mục VI của đoạn>\"} ] }. "
+        "\"tom_tat\": \"<toàn văn phần Tóm tắt tiếng Việt, giữ nguyên các đoạn văn>\", \"ly_do_dat\": \"<Tại sao đoạn này đắt>\", "
+        "\"hook_cold_open\": \"<phần hook, nguyên văn>\", \"keyword\": \"<phần Keyword hạt nhân + vì sao + vệ tinh>\", "
+        "\"fit\": \"<Fit với khách mời>\", \"raw_md\": \"<nguyên văn toàn bộ khối Mục VI của đoạn>\", "
+        "\"themes\": [\"<slug>\", ...], \"entities\": [{\"name\": \"<tên riêng>\", \"type\": \"person|place|org|work|event|other\"}]} ] }. "
         "Mỗi đoạn highlight trong cutlist phải có đúng một phần tử tương ứng (khớp start/end).",
-        "6. Timestamp phải tra trực tiếp từ transcript, tuyệt đối không ước lượng. Hook phải nằm trong biên đoạn cha, dài 5–25 giây.",
-        "7. Kết thúc bằng đúng một dòng: DONE cutlist=<đường dẫn> analysis=<đường dẫn>",
+        "6. `themes`: 1–3 slug chọn trong danh sách dưới đây, slug đầu tiên là chủ đề chính của đoạn; không bịa slug mới. "
+        "`entities`: người, địa danh, tổ chức, tác phẩm, sự kiện có tên riêng được nhắc trong đoạn (tối đa 15).",
+        *_theme_lines(),
+        "7. Timestamp phải tra trực tiếp từ transcript, tuyệt đối không ước lượng. Hook phải nằm trong biên đoạn cha, dài 5–25 giây.",
+        "8. Có thể chạy `python` để tự kiểm tra JSON trước khi kết thúc.",
+        "9. Kết thúc bằng đúng một dòng: DONE cutlist=<đường dẫn> analysis=<đường dẫn>",
     ]
     if retry_errors:
         lines += ["", "LẦN CHẠY TRƯỚC BỊ LOẠI VÌ CÁC LỖI SAU, PHẢI SỬA HẾT:", *[f"- {e}" for e in retry_errors]]
     return "\n".join(lines)
 
 
-def select_episode(episode_id: str, progress_cb=None, force: bool = False) -> dict:
+def select_episode(episode_id: str, progress_cb=None, force: bool = False, stop_flag=None) -> dict:
     conn = db.get_conn()
     ep = dict(conn.execute("SELECT * FROM episodes WHERE id=?", (episode_id,)).fetchone())
     media_root = Path(db.get_setting("media_root"))
     cutlist_path = media_root / f"cutlist_{episode_id}.json"
     if cutlist_path.exists() and not force:
-        stats = ingest.ingest_cutlist(cutlist_path, media_root, force=True)
-        return {"skipped": True, "cutlist": str(cutlist_path), "ingest": stats}
+        try:
+            layout = read_json(cutlist_path).get("cutlist_layout")
+        except Exception:  # noqa: BLE001
+            layout = None
+        if layout == "flat_hooks":                         # made by the current skill (V2.7+): reuse it
+            stats = ingest.ingest_cutlist(cutlist_path, media_root, force=True)
+            return {"skipped": True, "cutlist": str(cutlist_path), "ingest": stats}
+        old = cutlist_path.with_name(cutlist_path.name + f".old_{int(cutlist_path.stat().st_mtime)}")
+        cutlist_path.rename(old)                           # old skill format: select again with the current skill
+        log.info("old-format cutlist for %s moved to %s, selecting again", episode_id, old.name)
 
     status = claude_runner.cli_status()
     if not status.get("installed"):
-        raise RuntimeError("Claude Code CLI chưa cài hoặc không chạy được. Cài: npm i -g @anthropic-ai/claude-code, rồi đăng nhập.")
+        raise RuntimeError("Claude Code CLI chưa cài hoặc không chạy được (xem README, mục Claude headless).")
     if not sync_skill():
         raise RuntimeError(f"không tìm thấy SKILL.md của {SKILL_NAME} trong thư mục plugin của app desktop")
 
@@ -108,12 +128,15 @@ def select_episode(episode_id: str, progress_cb=None, force: bool = False) -> di
         res = claude_runner.run(prompt, cwd=config.BASE_DIR, log_path=work / f"claude_run_{attempt}.jsonl",
                                 model=db.get_setting("claude_model_select") or None,
                                 effort=db.get_setting("claude_effort_select") or None,
-                                on_text=lambda t: progress_cb and progress_cb(None, t[-160:].replace("\n", " ")))
+                                on_text=lambda t: progress_cb and progress_cb(None, t[-160:].replace("\n", " ")),
+                                stop_flag=stop_flag)
         last_run = res
         (work / f"selection_log_{attempt}.md").write_text(res.get("text") or "", encoding="utf-8")
         with db.tx(conn) as c:
             c.execute("UPDATE episodes SET selection_log_md=?, updated_at=? WHERE id=?",
                       (res.get("text") or "", now_iso(), episode_id))
+        if stop_flag and stop_flag():
+            raise RuntimeError(STOPPED)
         if not res.get("ok"):
             errors = [f"Claude run lỗi: {res.get('error')}"]
             log.warning("claude run failed for %s: %s", episode_id, res.get("error"))
@@ -156,7 +179,8 @@ def select_episode(episode_id: str, progress_cb=None, force: bool = False) -> di
     return {"cutlist": str(cutlist_path), "ingest": stats, "analysis": analysis_stats,
             "usage": last_run.get("usage"), "models": last_run.get("models"), "cost_usd": last_run.get("cost_usd"),
             "duration_sec": last_run.get("duration_sec"),
-            "summary": "xong · " + claude_runner.describe_run(last_run)}
+            "summary": f"xong · {stats.get('highlights', 0)} đoạn, {stats.get('hooks', 0)} hook, "
+                       f"{(analysis_stats or {}).get('attached', 0)} khối phân tích · " + claude_runner.describe_run(last_run)}
 
 
 _RE_GUEST_CARD = re.compile(r"(GUEST CARD.*?)(?=\n\s*\[?1\]?\.\s*\*\*|\n#{1,3}\s|\Z)", re.S | re.I)

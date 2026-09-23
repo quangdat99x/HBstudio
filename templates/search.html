@@ -42,7 +42,8 @@
         <td>{{ r.rank or '' }}{% if r.kind=='hook' %} <span class="pill">hook</span>{% endif %}</td>
         <td class="nowrap">{{ r.start_hms }}<br><span class="muted">{{ r.end_hms }}</span></td>
         <td><a href="/episodes/{{ r.episode_id }}#seg-{{ r.id }}">{{ r.title }}</a>
-            {% if r.summary_vi %}<div class="muted small">{{ r.summary_vi[:220] }}</div>{% endif %}</td>
+            {% set pv = r.summary_vi or r.tom_tat_preview or r.summary_en %}
+            {% if pv %}<div class="muted small">{{ pv[:260] }}{% if pv|length > 260 %}…{% endif %}</div>{% endif %}</td>
         <td>{{ r.intensity or '' }}</td><td>{{ r.final_score or '' }}</td>
         <td class="small">{{ r.core_keyword or '' }}{% if r.keyword_reach %} · {{ r.keyword_reach }}{% endif %}</td>
         <td><span class="badge st-{{ r.status }}">{{ r.status }}</span></td>

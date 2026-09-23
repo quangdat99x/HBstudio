@@ -96,9 +96,13 @@ class Orchestrator:
         def _run():
             try:
                 path = intake.download_url(key, progress_cb=lambda p, m: self._job_update(job_id, p, m))
-                self._job_update(job_id, 100, f"đã tải {path.name}", status="done")
                 self.watcher._seen.add(str(path))
-                self.intake_file(path)
+                res = self.intake_file(path)
+                if res.get("error"):
+                    self._job_update(job_id, 100, None, status="failed",
+                                     error=f"đã tải {path.name} nhưng không đưa vào pipeline: {res['error']}")
+                else:
+                    self._job_update(job_id, 100, f"đã tải {path.name} → {res.get('episode_id')}", status="done")
             except Exception as e:  # noqa: BLE001
                 log.exception("download failed")
                 self._job_update(job_id, None, None, status="failed", error=str(e))
@@ -108,8 +112,27 @@ class Orchestrator:
         t.start()
         return {"message": "đang tải, tập sẽ tự vào pipeline khi tải xong"}
 
-    def request_stop(self, episode_id: str) -> None:
-        self.stop_requested.add(episode_id)
+    def request_stop(self, episode_id: str) -> dict:
+        """Drop a queued episode, or ask the running one to stop at the next safe point."""
+        removed = False
+        with self.cv:
+            for item in list(self.queue):
+                if item[0] == episode_id:
+                    self.queue.remove(item)
+                    removed = True
+        if self.current == episode_id:
+            self.stop_requested.add(episode_id)
+            return {"message": f"đang dừng {episode_id}, bước hiện tại dừng ở điểm an toàn gần nhất"}
+        if removed:
+            self._set_stage(episode_id, "failed:stopped", "dừng theo yêu cầu")
+            return {"message": f"đã bỏ {episode_id} khỏi hàng đợi"}
+        return {"message": f"{episode_id} không chạy"}
+
+    def is_busy(self) -> bool:
+        return self.current is not None or bool(self.queue)
+
+    def status(self) -> dict:
+        return {"current": self.current, "queue": [e for e, _ in self.queue]}
 
     # ------------------------------------------------------------ worker
     def _loop(self) -> None:
@@ -180,14 +203,16 @@ class Orchestrator:
         return {"skipped": skipped, "transcript": str(ready)}
 
     def _stage_select(self, ep: dict, job_id: int, force: bool):
-        res = select_ai.select_episode(ep["id"], progress_cb=lambda p, m: self._job_update(job_id, p, m), force=force)
+        res = select_ai.select_episode(ep["id"], progress_cb=lambda p, m: self._job_update(job_id, p, m), force=force,
+                                       stop_flag=lambda: ep["id"] in self.stop_requested)
         search.rebuild_index()
         if db.setting_bool("review_gate") and not res.get("skipped"):
             return "review"
         return res
 
     def _stage_cut(self, ep: dict, job_id: int, force: bool):
-        return cut_stage.cut_episode(ep["id"], progress_cb=lambda p, m: self._job_update(job_id, p, m))
+        return cut_stage.cut_episode(ep["id"], progress_cb=lambda p, m: self._job_update(job_id, p, m),
+                                     stop_flag=lambda: ep["id"] in self.stop_requested)
 
     def _stage_zoom(self, ep: dict, job_id: int, force: bool):
         with self.gpu_lock:

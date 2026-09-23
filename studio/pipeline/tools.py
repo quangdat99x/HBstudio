@@ -78,6 +78,7 @@ def post_json(url: str, payload: dict | None = None, timeout: int = 60):
         data = {"error": r.text[:500]}
     if r.status_code >= 400 and "error" not in data:
         data["error"] = f"HTTP {r.status_code}"
+    data["_status"] = r.status_code
     return data
 
 

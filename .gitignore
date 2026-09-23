@@ -1,7 +1,8 @@
+*.pyc
 .venv/
 __pycache__/
-*.pyc
+backups/
+logs/
 studio.db
 studio.db-*
 work/
-logs/

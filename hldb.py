@@ -87,6 +87,12 @@ def main(argv=None):
     p = sub.add_parser("tag", help="themes/entities: --pending prints segments lacking themes; --apply <json> writes them")
     p.add_argument("--pending", action="store_true"); p.add_argument("--apply"); p.add_argument("--limit", type=int, default=40)
 
+    p = sub.add_parser("reset", help="backup the DB, then delete all episodes/segments/jobs (keeps settings + themes)")
+    p.add_argument("--yes", action="store_true", help="required, confirms the reset")
+    p = sub.add_parser("restore", help="restore the DB from a backup file in backups/")
+    p.add_argument("path")
+    sub.add_parser("backup", help="write a backup copy of the DB to backups/")
+
     args = ap.parse_args(argv)
     db.init_db()
     as_json = getattr(args, "json", False)
@@ -207,6 +213,17 @@ def main(argv=None):
             _print(tagging.apply_tags(json.loads(Path(args.apply).read_text(encoding="utf-8"))), True)
         else:
             _print(tagging.pending(limit=args.limit), True)
+    elif args.cmd in ("reset", "restore", "backup"):
+        from studio import maintenance
+        if args.cmd == "backup":
+            print(f"ok: {maintenance.backup_db('thu_cong')}")
+        elif args.cmd == "restore":
+            _print(maintenance.restore(Path(args.path)), True)
+        elif not args.yes:
+            print("reset xóa toàn bộ tập/đoạn/job khỏi database (có sao lưu trước). Chạy lại với --yes để xác nhận.")
+            return 1
+        else:
+            _print(maintenance.reset_data(), True)
     return 0
 
 

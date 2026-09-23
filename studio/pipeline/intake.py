@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 from pathlib import Path
@@ -11,6 +12,7 @@ from ..util import parse_episode_name
 from . import tools
 
 log = logging.getLogger("studio.intake")
+_RE_YTDLP_PART = re.compile(r"\.f\d{2,4}$")
 
 
 class FolderWatcher(threading.Thread):
@@ -53,6 +55,8 @@ class FolderWatcher(threading.Thread):
         now = time.time()
         for p in root.iterdir():
             if not p.is_file() or p.suffix.lower() not in config.VIDEO_EXTS or p.name.endswith(".part"):
+                continue
+            if _RE_YTDLP_PART.search(p.stem):          # yt-dlp stream file before merge (video-only / audio-only)
                 continue
             key = str(p)
             if key in self._seen:

@@ -76,7 +76,8 @@ MODEL_ALIASES = ("fable", "opus", "sonnet", "haiku")
 
 def run(prompt: str, *, cwd: Path | None = None, allowed_tools: str | None = None, permission_mode: str | None = None,
         max_turns: int | None = None, model: str | None = None, effort: str | None = None,
-        fallback_model: str | None = None, timeout: int = 3 * 3600, log_path: Path | None = None, on_text=None) -> dict:
+        fallback_model: str | None = None, timeout: int = 3 * 3600, log_path: Path | None = None, on_text=None,
+        stop_flag=None) -> dict:
     """Execute one headless run.
 
     Returns {ok, error, text, result, usage, models, model_usage, cost_usd, duration_sec, returncode, log_path}.
@@ -122,6 +123,11 @@ def run(prompt: str, *, cwd: Path | None = None, allowed_tools: str | None = Non
         pass
     deadline = started + timeout
     for line in proc.stdout:
+        if stop_flag and stop_flag():
+            proc.kill()
+            err_msg = "dừng theo yêu cầu"
+            is_error = True
+            break
         if logf:
             logf.write(line)
         line = line.strip()

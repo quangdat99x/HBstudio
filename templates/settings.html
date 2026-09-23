@@ -59,6 +59,15 @@
   </div></section>
 <div class="row gap"><button class="btn btn-primary">Lưu cài đặt</button></div>
 </form>
+
+<section class="card danger">
+  <div class="card-header"><h2>Làm sạch dữ liệu</h2></div>
+  <div class="card-body">
+    <p class="small">Xóa toàn bộ tập, đoạn, transcript, theme đã gán và lịch sử job khỏi database để chạy lại từ đầu. Giữ nguyên cài đặt trên trang này và danh sách theme. Database được sao lưu vào <code>E:\DataBase\backups</code> trước khi xóa, khôi phục được bằng <code>hldb restore</code>.</p>
+    <p class="small"><b>Không xóa file trên đĩa.</b> Video, transcript, cutlist và thư mục clip trong thư mục media bạn tự xóa nếu muốn. Nếu giữ lại rồi bấm "Quét lại" ở trang Hàng đợi, chúng sẽ được nạp lại.</p>
+    <div class="row gap"><button type="button" class="btn" onclick="resetData()">Làm sạch dữ liệu…</button><span id="reset-result" class="small muted"></span></div>
+  </div>
+</section>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -72,6 +81,13 @@ async function probeClaude(){
     else out.textContent='Lỗi: '+(r.error||'');
   }catch(e){ out.textContent='Lỗi: '+e; }
   finally{ btn.disabled=false; }
+}
+async function resetData(){
+  const c=prompt('Gõ XOA để xóa toàn bộ dữ liệu tập/đoạn khỏi database (có sao lưu trước):');
+  if(!c) return;
+  const out=document.getElementById('reset-result'); out.textContent='Đang sao lưu và làm sạch…';
+  const r=await api('/api/admin/reset',{confirm:c});
+  out.textContent = r.error ? ('Lỗi: '+r.error) : ('Xong. Đã xóa '+r.before.episodes+' tập, '+r.before.segments+' đoạn. Sao lưu: '+r.backup);
 }
 </script>
 {% endblock %}

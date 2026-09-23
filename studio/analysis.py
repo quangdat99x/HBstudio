@@ -220,10 +220,82 @@ def import_analysis_json(episode_id: str, data, source: str = "headless") -> dic
             c.execute("UPDATE segments SET analysis_md=?, analysis_json=?, updated_at=? WHERE id=?",
                       (raw_md, json.dumps(structured, ensure_ascii=False), now_iso(), seg_id))
         stats["attached"] += 1
+        try:
+            _apply_item_tags(seg_id, it)
+            if it.get("themes"):
+                stats["tagged"] = stats.get("tagged", 0) + 1
+        except Exception:  # noqa: BLE001  (tags are a bonus, never fail the import)
+            pass
     if stats["attached"]:
         from .search import rebuild_index
         rebuild_index()
     return stats
+
+
+_SECTION_LABEL_RE = {
+    "tom_tat": r"Tóm tắt\s*:?",
+    "ly_do_dat": r"Tại sao đoạn này đắt\s*:?",
+    "hook_cold_open": r"HOOK COLD OPEN\s*:?",
+    "keyword": r"Keyword hạt nhân\s*:?",
+    "fit": r"Fit với khách mời\s*:?",
+}
+_EMOJI = "\U0001FA9D\U0001F511\U0001F3AF\U0001F4CB\U0001F4DD"      # 🪝 🔑 🎯 📋 📝
+
+
+def clean_section(key: str, text: str) -> str:
+    """Strip the section's own label and leftovers of the next label, keep the body as written by the skill."""
+    t = (text or "").strip()
+    t = re.sub(r"^[\s*_#" + _EMOJI + r"]*" + _SECTION_LABEL_RE[key] + r"[\s*_:]*", "", t, flags=re.I)
+    if key == "hook_cold_open":
+        t = re.sub(r"^\(lát cắt[^)]*\)\s*:?\s*", "", t)
+    t = re.sub(r"(\s*(\*\*)?\s*[" + _EMOJI + r"]\s*)+$", "", t)
+    t = re.sub(r"\s*-{3,}\s*$", "", t)
+    return t.strip()
+
+
+def sections_for_display(seg: dict) -> dict:
+    """The analysis block of one segment split into its named sections, ready for the episode page."""
+    parsed = parse_block(seg["analysis_md"]) if seg.get("analysis_md") else {}
+    structured = {}
+    if seg.get("analysis_json"):
+        try:
+            structured = json.loads(seg["analysis_json"]) or {}
+        except ValueError:
+            structured = {}
+    merged = {**parsed, **{k: v for k, v in structured.items() if v}}
+    out: dict = {}
+    for key in _SECTION_LABEL_RE:
+        value = merged.get(key)
+        if isinstance(value, str) and value.strip():
+            cleaned = clean_section(key, value)
+            if cleaned:
+                out[key] = cleaned
+    out["start_quote"] = merged.get("start_quote")
+    out["end_quote"] = merged.get("end_quote")
+    out["has_any"] = any(out.get(k) for k in _SECTION_LABEL_RE)
+    return out
+
+
+def _apply_item_tags(seg_id: int, item: dict) -> None:
+    """Themes/entities written by the selection run next to each analysis entry (known theme slugs only)."""
+    raw_themes = item.get("themes") or []
+    raw_entities = item.get("entities") or []
+    if not raw_themes and not raw_entities:
+        return
+    from . import tagging
+    from .util import slugify
+    tagging.ensure_default_themes()
+    known = {r["slug"] for r in db.rows("SELECT slug FROM themes")}
+    slugs = []
+    for t in raw_themes:
+        slug = slugify(t.get("slug") if isinstance(t, dict) else str(t))
+        if slug in known and slug not in slugs:
+            slugs.append(slug)
+    entities = [{"name": str(e.get("name")).strip(), "type": str(e.get("type") or "other").strip().lower()}
+                for e in raw_entities if isinstance(e, dict) and str(e.get("name") or "").strip()]
+    payload = {"segments": [{"id": seg_id, "themes": [{"slug": s, "primary": i == 0} for i, s in enumerate(slugs[:3])],
+                             "entities": entities[:25]}]}
+    tagging.apply_tags(payload)
 
 
 def render_markdown(it: dict) -> str:

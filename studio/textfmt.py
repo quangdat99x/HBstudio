@@ -1,12 +1,19 @@
-"""Tiny markdown-ish to HTML renderer for analysis blocks (no external dependency)."""
+"""Tiny markdown-ish to HTML renderer for analysis blocks (no external dependency).
+
+Handles what the chon-noi-dung skill writes: **bold**, *italic*, `code`, bullet lists, numbered items whose
+number must stay visible ("1.", "2." separated by other lines), indented continuation lines ("   → reason"),
+headings, --- rules and fenced code.
+"""
 from __future__ import annotations
 
 import html
 import re
 
 _RE_BOLD = re.compile(r"\*\*(.+?)\*\*")
-_RE_ITAL = re.compile(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)")
+_RE_ITAL = re.compile(r"(?<![*\w])\*(?![*\s])(.+?)(?<![*\s])\*(?![*\w])")
 _RE_CODE = re.compile(r"`([^`]+)`")
+_RE_BULLET = re.compile(r"^\s*[-•]\s+(.*)$")
+_RE_NUM = re.compile(r"^\s*(\d{1,2})\.\s+(.*)$")
 
 
 def _inline(s: str) -> str:
@@ -17,43 +24,67 @@ def _inline(s: str) -> str:
     return s
 
 
+def _append_to(out: list[str], idx: int, text: str) -> None:
+    head, tail = out[idx].rsplit("</", 1)
+    out[idx] = f"{head}<br>{_inline(text)}</{tail}"
+
+
 def md_to_html(text: str) -> str:
     if not text:
         return ""
-    out, in_list, in_code = [], False, False
-    for raw in text.splitlines():
+    out: list[str] = []
+    in_list = in_code = False
+    last_item: int | None = None          # index in `out` of the last list/numbered item (for continuation lines)
+    for raw in text.replace("\r\n", "\n").split("\n"):
         line = raw.rstrip()
-        if line.strip().startswith("```"):
+        stripped = line.strip()
+        if stripped.startswith("```"):
             if in_code:
-                out.append("</pre>"); in_code = False
+                out.append("</pre>")
+                in_code = False
             else:
                 if in_list:
-                    out.append("</ul>"); in_list = False
-                out.append("<pre>"); in_code = True
+                    out.append("</ul>")
+                    in_list = False
+                out.append("<pre>")
+                in_code = True
+            last_item = None
             continue
         if in_code:
             out.append(html.escape(line))
             continue
-        m = re.match(r"^\s*(?:[-•]|\d+\.)\s+(.*)$", line)
-        if m:
+        if last_item is not None and stripped and raw[:1] in (" ", "\t") and not _RE_NUM.match(line) \
+                and not _RE_BULLET.match(line):
+            _append_to(out, last_item, stripped)
+            continue
+        mb = _RE_BULLET.match(line)
+        if mb:
             if not in_list:
-                out.append("<ul>"); in_list = True
-            out.append(f"<li>{_inline(m.group(1))}</li>")
+                out.append("<ul>")
+                in_list = True
+            out.append(f"<li>{_inline(mb.group(1))}</li>")
+            last_item = len(out) - 1
             continue
         if in_list:
-            out.append("</ul>"); in_list = False
-        if not line.strip():
-            out.append("")
+            out.append("</ul>")
+            in_list = False
+        mn = _RE_NUM.match(line)
+        if mn:
+            out.append(f'<p class="num-item"><span class="num">{mn.group(1)}.</span> {_inline(mn.group(2))}</p>')
+            last_item = len(out) - 1
             continue
-        if line.strip() == "---":
+        last_item = None
+        if not stripped:
+            continue
+        if re.fullmatch(r"-{3,}|\*{3,}", stripped):
             out.append("<hr>")
             continue
-        hm = re.match(r"^(#{1,4})\s+(.*)$", line)
+        hm = re.match(r"^(#{1,4})\s+(.*)$", stripped)
         if hm:
             lvl = min(4, len(hm.group(1)) + 2)
             out.append(f"<h{lvl}>{_inline(hm.group(2))}</h{lvl}>")
             continue
-        out.append(f"<p>{_inline(line)}</p>")
+        out.append(f"<p>{_inline(stripped)}</p>")
     if in_list:
         out.append("</ul>")
     if in_code:

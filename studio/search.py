@@ -106,7 +106,9 @@ def search(q: str = "", *, episode_id: str = None, podcast_id: str = None, guest
     fts = _fts_query(q or "")
     base_select = ("SELECT s.id, s.episode_id, e.guest, s.kind, s.rank, s.content_rank, s.start_hms, s.end_hms, s.duration_sec, "
                    "s.title, s.summary_vi, s.summary_en, s.hook_en, s.intensity, s.cq, s.gtf, s.final_score, s.value_axis, "
-                   "s.core_keyword, s.keyword_reach, s.status, s.clip_path, s.clip_zoomed_path, s.parent_id")
+                   "s.core_keyword, s.keyword_reach, s.status, s.clip_path, s.clip_zoomed_path, s.parent_id, "
+                   "CASE WHEN json_valid(s.analysis_json) THEN substr(json_extract(s.analysis_json, '$.tom_tat'), 1, 400) END "
+                   "AS tom_tat_preview")
     if fts:
         sql = (f"{base_select}, bm25(segments_fts, 10.0, 5.0, 5.0, 3.0, 3.0, 4.0, 6.0, 2.0, 3.0, 4.0, 2.0, 1.0, 1.0) AS score "
                f"FROM segments_fts f JOIN segments s ON s.id=f.rowid JOIN episodes e ON e.id=s.episode_id "
