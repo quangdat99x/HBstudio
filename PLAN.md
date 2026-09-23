@@ -1,7 +1,11 @@
 # KẾ HOẠCH V2: JRE Studio. Pipeline tự động từ video đến clip zoom + database + UI
 
 - Ngày lập: 2026-09-23 (v2, thay thế bản v1 cùng ngày; phần database của v1 giữ nguyên ở Mục 7)
-- Trạng thái: đề xuất, chờ duyệt
+- Trạng thái: ĐÃ DUYỆT 2026-09-23, quyết định A đến F như đề xuất, kèm 3 điều chỉnh của người dùng:
+  1. Tool zoom bỏ hẳn chức năng tạo thumbnail (mặc định tắt, bản zoom chỉ ra file mp4).
+  2. Cutter không ghi 3 file phụ mỗi clip (`.txt`, `.json`, `.manifest.json`) nữa; chỉ ghi khi bật ô "Xuất kèm transcript + manifest" cho luồng viet-prompt-v2.
+  3. Khối phân tích của skill chọn nội dung (Tóm tắt, Tại sao đắt, Hook cold open, Keyword, Fit) được lưu nguyên văn vào database cho từng đoạn (`segments.analysis_md` + `analysis_json`), lấy từ file `analysis_<id>.json` của lần chạy headless hoặc dán tay trên UI.
+- Tiến độ triển khai: xem Mục 12.
 - Phạm vi: CHỈ JRE (Joe Rogan Experience và JRE MMA Show). Không làm SRS, GoodHang hay podcast khác.
 - Thư mục dự án: `E:\DataBase` (code + `studio.db`), đăng ký vào Tool Manager `E:\Tool\run.pyw` làm tool thứ 4, port 5004.
 
@@ -178,6 +182,15 @@ Thứ tự này để sau giai đoạn 2 đã bỏ được mọi thao tác tay 
 | E | Sửa nhỏ 2 tool cũ (Cutter endpoint headless, Zoom endpoint đường dẫn) | Có, mỗi cái vài chục dòng, không đổi hành vi UI cũ |
 | F | Nơi lưu kết quả cuối | Giữ thư mục tập như hiện nay; `E:/Upload` để dành cho bước đăng |
 
-## 12. Bước tiếp theo
+## 12. Tiến độ triển khai (cập nhật 2026-09-23)
 
-Duyệt v2 và chốt 6 quyết định ở Mục 11. Việc người dùng phải tự làm: cài Claude Code CLI, đăng nhập, chạy `claude setup-token`. Còn lại bắt đầu từ giai đoạn 0 và 1.
+| GĐ | Trạng thái | Ghi chú |
+|---|---|---|
+| 0 | Xong | `E:\DataBase` với venv 3.12, schema, git, đăng ký thẻ "JRE Studio" trong Tool Manager (port 5004) |
+| 1 | Xong | 29 tập, 152 highlight, 30 hook, 127 clip, 71 bản zoom, 73k dòng transcript đã vào `studio.db`; UI Hàng đợi / Tập / Tìm kiếm / Compilation / Cài đặt chạy |
+| 2 | Xong | Orchestrator + state machine; đã test thật: cắt headless (5 phút clip: 34 giây), Whisper GPU (66 dòng: 88 giây), zoom path mode (17 giây clip: 8 giây); pipeline chạy thật trên JRE-2531 |
+| 3 | Chờ đăng nhập | Claude Code CLI 2.1.280 đã cài; bộ chạy headless, prompt, validator, bắt khối phân tích đã viết; probe trả "Not logged in · Please run /login". Người dùng cần chạy `claude` rồi `/login` (hoặc `claude setup-token` + biến môi trường `CLAUDE_CODE_OAUTH_TOKEN`) rồi khởi động lại Studio |
+| 4 | Một phần | Skill `/kho-highlight` + CLI `hldb` xong; trang Hỏi AI chờ đăng nhập; 152 highlight đã gán theme (20 theme) + 300 thực thể; gợi ý compilation theo theme; export pool/cut_multi; ghi nhận compilation |
+| 5 | Chưa | Embedding, tự theo dõi kênh tải tập mới, thông báo, MCP |
+
+Còn lại sau khi đăng nhập Claude: chạy thử bước chọn nội dung headless trên một tập chưa có cutlist (ví dụ JRE-2533 Diana Pasulka đã có transcript), chỉnh prompt nếu validator báo lỗi, rồi bật "Tự theo dõi thư mục media".
