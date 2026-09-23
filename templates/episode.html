@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% set title = ep.id %}
+{% block content %}
+<section class="card">
+  <div class="card-header">
+    <h2>{{ ep.id }} · {{ ep.guest or '' }}</h2>
+    <div class="row gap">
+      <span class="badge stage-{{ (ep.stage or 'new').split(':')[0] }}">{{ ep.stage }}</span>
+      {% if ep.clip_folder %}<button class="btn btn-small" onclick="openFolder('{{ ep.clip_folder|e }}')">Mở thư mục clip</button>{% endif %}
+      {% if ep.stage == 'reviewing' %}<button class="btn btn-small btn-primary" onclick="approve('{{ ep.id }}')">Duyệt cutlist, bắt đầu cắt</button>{% endif %}
+      <button class="btn btn-small" onclick="runEpisode('{{ ep.id }}')">Chạy tiếp pipeline</button>
+    </div>
+  </div>
+  <div class="card-body grid2">
+    <div>
+      <div><b>Video:</b> {{ ep.source_video or '—' }}</div>
+      <div><b>Transcript:</b> {{ ep.transcript_path|basename or '—' }}</div>
+      <div><b>Cutlist:</b> {{ ep.cutlist_path|basename or '—' }}</div>
+      <div><b>Thời lượng:</b> {{ '%d phút'|format((ep.duration_sec or 0)//60) }}</div>
+      {% if ep.stage_error %}<div class="error">{{ ep.stage_error }}</div>{% endif %}
+    </div>
+    <div>
+      {% if profile %}
+      <details><summary><b>Guest Card</b> · {{ profile.identity }}</summary>
+        <div class="small">
+          {% for k, v in profile.items() if k != 'identity' %}<div><b>{{ k }}:</b> {{ v if v is string else v|join(' · ') }}</div>{% endfor %}
+        </div></details>
+      {% elif ep.guest_card_md %}
+      <details><summary><b>Guest Card</b></summary><div class="md">{{ ep.guest_card_md|md|safe }}</div></details>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-header"><h2>Đoạn highlight ({{ segments|length }})</h2>
+    <span class="muted small">bấm tiêu đề để xem phân tích, transcript và preview</span></div>
+  {% for s in segments %}
+  <details class="segment {{ 'is-hook' if s.kind == 'hook' else '' }}" id="seg-{{ s.id }}">
+    <summary>
+      <span class="rank">#{{ s.rank or '–' }}</span>
+      <span class="time">{{ s.start_hms }} → {{ s.end_hms }} <span class="muted">({{ '%d:%02d'|format((s.duration_sec or 0)//60, (s.duration_sec or 0)%60) }})</span></span>
+      <span class="title">{{ s.title }}</span>
+      <span class="meta">
+        {% if s.intensity %}<span class="pill">i{{ s.intensity }}</span>{% endif %}
+        {% if s.final_score %}<span class="pill">score {{ s.final_score }}</span>{% endif %}
+        {% if s.core_keyword %}<span class="pill kw">{{ s.core_keyword }}{% if s.keyword_reach %} · {{ s.keyword_reach }}{% endif %}</span>{% endif %}
+        <span class="badge st-{{ s.status }}">{{ s.status }}</span>
+        {% if s.analysis_md %}<span class="pill ok" title="có khối phân tích">📝</span>{% endif %}
+      </span>
+    </summary>
+    <div class="segment-body">
+      {% if s.summary_vi %}<p><b>Tóm tắt:</b> {{ s.summary_vi }}</p>{% endif %}
+      {% if s.summary_en %}<p class="muted">{{ s.summary_en }}</p>{% endif %}
+      {% if s.hook_en %}<p><b>Hook:</b> “{{ s.hook_en }}”</p>{% endif %}
+      {% if s.topics %}<p class="small">Topics: {{ s.topics|join(' · ') }}</p>{% endif %}
+      {% if s.themes %}<p class="small">Themes: {{ s.themes|join(' · ') }}</p>{% endif %}
+      {% if s.fit_reason %}<p class="small"><b>Fit:</b> {{ s.fit_reason }}</p>{% endif %}
+      {% if s.keyword_reason %}<p class="small"><b>Keyword:</b> {{ s.keyword_reason }}</p>{% endif %}
+      {% if s.hooks %}
+        <div class="hooks">
+          {% for h in s.hooks %}
+          <div class="hook-row"><b>{{ h.title[:8] }}</b> {{ h.start_hms }} → {{ h.end_hms }} ({{ h.duration_sec|round|int }}s)
+            {% if h.quote_en %}“{{ h.quote_en }}”{% endif %} <span class="badge st-{{ h.status }}">{{ h.status }}</span>
+            {% if h.clip_zoomed_path or h.clip_path %}<button class="btn btn-tiny" onclick="preview('{{ (h.clip_zoomed_path or h.clip_path)|e }}', this)">▶</button>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+      <div class="row gap">
+        {% if s.clip_zoomed_path %}<button class="btn btn-small" onclick="preview('{{ s.clip_zoomed_path|e }}', this)">▶ Bản zoom</button>{% endif %}
+        {% if s.clip_path %}<button class="btn btn-small btn-ghost" onclick="preview('{{ s.clip_path|e }}', this)">▶ Bản gốc</button>
+          <button class="btn btn-small btn-ghost" onclick="openFolder('{{ s.clip_path|e }}')">Mở vị trí</button>{% endif %}
+      </div>
+      <div class="preview"></div>
+      {% if s.analysis_md %}
+        <details class="analysis"><summary>📝 Khối phân tích của skill</summary><div class="md">{{ s.analysis_md|md|safe }}</div></details>
+      {% endif %}
+      {% if s.transcript %}
+        <details><summary>Transcript đoạn</summary><pre class="transcript">{{ s.transcript }}</pre></details>
+      {% endif %}
+    </div>
+  </details>
+  {% endfor %}
+</section>
+
+<section class="card">
+  <div class="card-header"><h2>Dán khối phân tích</h2>
+    <span class="muted small">copy toàn bộ output của skill chọn nội dung (chạy tay trong app Claude) rồi dán vào đây</span></div>
+  <div class="card-body">
+    <textarea id="analysis-text" class="input" rows="8" placeholder="[1]. **Tiêu đề** … Tóm tắt: … Tại sao đoạn này đắt: …"></textarea>
+    <div class="row gap"><button class="btn btn-primary" onclick="importAnalysis('{{ ep.id }}')">Lưu vào các đoạn tương ứng</button><span id="analysis-result" class="muted"></span></div>
+  </div>
+</section>
+
+{% if jobs %}
+<section class="card">
+  <div class="card-header"><h2>Job của tập</h2></div>
+  <table class="table"><thead><tr><th>#</th><th>Bước</th><th>Trạng thái</th><th>Tiến độ</th><th>Thông báo</th><th>Bắt đầu</th><th>Kết thúc</th></tr></thead>
+  <tbody>{% for j in jobs %}<tr><td>{{ j.id }}</td><td>{{ j.stage }}</td><td><span class="badge job-{{ j.status }}">{{ j.status }}</span></td>
+    <td>{{ (j.progress or 0)|round|int }}%</td><td class="small">{{ (j.error or j.message or '')[:300] }}</td><td class="small muted">{{ j.started_at or '' }}</td><td class="small muted">{{ j.finished_at or '' }}</td></tr>{% endfor %}</tbody></table>
+</section>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+function preview(path, btn){ const box=btn.closest('.segment-body').querySelector('.preview');
+  box.innerHTML='<video controls preload="metadata" src="/media?path='+encodeURIComponent(path)+'"></video>'; }
+async function importAnalysis(ep){ const text=document.getElementById('analysis-text').value; if(!text.trim()) return toast('Chưa dán gì');
+  const r=await api('/api/episodes/'+ep+'/analysis',{text});
+  document.getElementById('analysis-result').textContent=`${r.attached}/${r.blocks} khối đã gắn` + (r.unmatched&&r.unmatched.length? ' · chưa khớp: '+r.unmatched.join(' | '):'');
+  if(r.attached) setTimeout(()=>location.reload(),1500); }
+async function runEpisode(id){ const r=await api('/api/episodes/'+id+'/run',{}); toast(r.error||r.message||'Đã đưa vào hàng đợi'); }
+async function approve(id){ const r=await api('/api/episodes/'+id+'/approve',{}); toast(r.error||r.message||'Đã duyệt'); setTimeout(()=>location.reload(),1200); }
+</script>
+{% endblock %}

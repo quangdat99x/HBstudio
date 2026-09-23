@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% set title = "Cài đặt" %}
+{% block content %}
+{% if saved %}<div class="notice">Đã lưu.</div>{% endif %}
+<form method="post" action="/settings">
+<section class="card"><div class="card-header"><h2>Đường dẫn và pipeline</h2></div>
+  <div class="card-body grid2">
+    <label>Thư mục media (video, transcript, cutlist, clip)<input class="input" name="media_root" value="{{ s.media_root }}"></label>
+    <label>Model Whisper<input class="input" name="whisper_model" value="{{ s.whisper_model }}"></label>
+    <label>Ngôn ngữ Whisper<input class="input" name="whisper_language" value="{{ s.whisper_language }}"></label>
+    <label>Số đoạn tối đa mỗi tập<input class="input" name="max_segments" value="{{ s.max_segments }}"></label>
+    <label>Giây chờ file ổn định<input class="input" name="file_stable_seconds" value="{{ s.file_stable_seconds }}"></label>
+    <label>Cảnh báo ổ đĩa còn dưới (GB)<input class="input" name="disk_warn_gb" value="{{ s.disk_warn_gb }}"></label>
+    <label class="check"><input type="checkbox" name="watch_enabled" value="1" {{ 'checked' if s.watch_enabled=='1' }}> Tự theo dõi thư mục media, video mới là chạy</label>
+    <label class="check"><input type="checkbox" name="review_gate" value="1" {{ 'checked' if s.review_gate=='1' }}> Cổng duyệt: chờ duyệt cutlist trước khi cắt</label>
+    <label class="check"><input type="checkbox" name="zoom_hooks" value="1" {{ 'checked' if s.zoom_hooks=='1' }}> Zoom cả clip hook</label>
+    <label class="check"><input type="checkbox" name="delete_original_clip_after_zoom" value="1" {{ 'checked' if s.delete_original_clip_after_zoom=='1' }}> Xoá clip gốc sau khi zoom xong</label>
+  </div></section>
+<section class="card"><div class="card-header"><h2>Tham số zoom</h2></div>
+  <div class="card-body grid3">
+    <label>zoom_factor<input class="input" name="zoom_factor" value="{{ s.zoom_factor }}"></label>
+    <label>smoothing_speed<input class="input" name="zoom_smoothing_speed" value="{{ s.zoom_smoothing_speed }}"></label>
+    <label>analysis_fps<input class="input" name="zoom_analysis_fps" value="{{ s.zoom_analysis_fps }}"></label>
+    <label>max_faces<input class="input" name="zoom_max_faces" value="{{ s.zoom_max_faces }}"></label>
+    <label>min_switch_duration<input class="input" name="zoom_min_switch_duration" value="{{ s.zoom_min_switch_duration }}"></label>
+    <label>mar_threshold<input class="input" name="zoom_mar_threshold" value="{{ s.zoom_mar_threshold }}"></label>
+  </div></section>
+<section class="card"><div class="card-header"><h2>Claude Code headless</h2>
+    <span class="small {{ 'ok' if claude.installed else 'error' }}">{{ 'CLI: ' + claude.version if claude.installed else 'Chưa cài Claude CLI' }} · {{ 'có token' if claude.token else 'chưa có token trong biến môi trường' }}</span></div>
+  <div class="card-body grid2">
+    <label>Lệnh CLI<input class="input" name="claude_cli" value="{{ s.claude_cli }}"></label>
+    <label>Model (trống = mặc định)<input class="input" name="claude_model" value="{{ s.claude_model }}"></label>
+    <label>max-turns<input class="input" name="claude_max_turns" value="{{ s.claude_max_turns }}"></label>
+    <label>allowedTools<input class="input" name="claude_allowed_tools" value="{{ s.claude_allowed_tools }}"></label>
+    <label>permission-mode<input class="input" name="claude_permission_mode" value="{{ s.claude_permission_mode }}"></label>
+    <label>Số lần chạy lại khi cutlist lỗi<input class="input" name="select_retry" value="{{ s.select_retry }}"></label>
+  </div></section>
+<div class="row gap"><button class="btn btn-primary">Lưu cài đặt</button></div>
+</form>
+{% endblock %}

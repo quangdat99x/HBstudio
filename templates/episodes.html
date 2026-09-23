@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% set title = "Tập" %}
+{% block content %}
+<section class="card">
+  <div class="card-header"><h2>Tất cả tập ({{ episodes|length }})</h2></div>
+  <table class="table">
+    <thead><tr><th>Tập</th><th>Khách mời</th><th>Stage</th><th>Highlight</th><th>Hook</th><th>Đã cắt</th><th>Đã zoom</th><th>Có phân tích</th><th>Video</th></tr></thead>
+    <tbody>
+    {% for e in episodes %}
+      <tr>
+        <td><a href="/episodes/{{ e.id }}">{{ e.id }}</a></td>
+        <td>{{ e.guest or '' }}</td>
+        <td><span class="badge stage-{{ (e.stage or 'new').split(':')[0] }}">{{ e.stage }}</span></td>
+        <td>{{ e.highlights }}</td><td>{{ e.hooks }}</td><td>{{ e.cut }}</td><td>{{ e.zoomed }}</td><td>{{ e.analysed }}</td>
+        <td class="small muted">{{ e.source_video or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

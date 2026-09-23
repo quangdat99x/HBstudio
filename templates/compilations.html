@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% set title = "Compilation" %}
+{% block content %}
+<section class="card">
+  <div class="card-header"><h2>Compilation đã ghi nhận ({{ comps|length }})</h2>
+    <div class="row gap"><input id="manifest-path" class="input" placeholder="Đường dẫn compilation_<slug>.json của tong-hop-rabbit-hole">
+      <button class="btn btn-small" onclick="recordManifest()">Ghi nhận manifest</button></div></div>
+  {% for c in comps %}
+  <details class="segment"><summary><span class="title">{{ c.theme }}</span><span class="meta"><span class="pill">{{ c.n }} clip</span><span class="muted small">{{ c.created_at }}</span></span></summary>
+    <div class="segment-body">
+      {% if c.manifest_path %}<div class="small muted">manifest: {{ c.manifest_path }}</div>{% endif %}
+      <table class="table"><tbody>{% for it in c.items %}<tr><td>{{ it.ord }}</td><td>{{ it.role or '' }}</td><td><a href="/episodes/{{ it.episode_id }}#seg-{{ it.id }}">{{ it.episode_id }}</a></td><td>{{ it.start_hms }} → {{ it.end_hms }}</td><td>{{ it.title }}</td></tr>{% endfor %}</tbody></table>
+    </div></details>
+  {% else %}
+  <div class="card-body muted">Chưa có compilation nào. Chọn đoạn ở trang Tìm kiếm rồi bấm "Đánh dấu đã dùng", hoặc ghi nhận manifest của skill tong-hop-rabbit-hole.</div>
+  {% endfor %}
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+async function recordManifest(){ const p=document.getElementById('manifest-path').value.trim(); if(!p) return toast('Chưa có đường dẫn');
+  const r=await api('/api/compilations/record',{manifest_path:p}); toast(r.error||('Đã ghi compilation #'+r.id)); setTimeout(()=>location.reload(),1200); }
+</script>
+{% endblock %}
