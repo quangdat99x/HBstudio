@@ -34,7 +34,10 @@ def transcribe(video_path: Path, progress_cb=None, stop_flag=None) -> Path:
     status_file = work / f"{video_path.stem[:40]}_{int(time.time())}.json"
     stop_file = Path(str(status_file) + ".stop")
     python = config.PY_CUTTER if config.PY_CUTTER.exists() else Path("python")
-    ffmpeg = str(config.FFMPEG) if config.FFMPEG.exists() else "ffmpeg"
+    # The worker derives ffprobe by replacing "ffmpeg" in this string; the bundled path contains "ffmpeg"
+    # twice and breaks that, so prefer the PATH binaries (only used for the duration/progress estimate).
+    import shutil
+    ffmpeg = "ffmpeg" if shutil.which("ffprobe") else (str(config.FFMPEG) if config.FFMPEG.exists() else "ffmpeg")
     cmd = [str(python), str(config.WHISPER_WORKER), str(video_path), model, language, str(status_file), ffmpeg]
     log.info("whisper: %s", " ".join(cmd[1:4]))
     env = dict(os.environ, PYTHONUTF8="1")
