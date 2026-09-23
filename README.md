@@ -47,6 +47,18 @@ work/  logs/            file tạm, log
 
 Skill `chon-noi-dung-jre-v2` được copy tự động từ thư mục plugin của app desktop vào `.claude/skills/` trước mỗi lần chạy, nên luôn cùng phiên bản với bản chạy tay.
 
+## Sao lưu, làm sạch, khôi phục
+
+- Trang **Cài đặt → Làm sạch dữ liệu**, hoặc `hldb reset --yes`: sao lưu `studio.db` vào `backups\` rồi xóa mọi tập, đoạn, transcript, theme đã gán, job. Giữ cài đặt và danh sách theme. Không đụng tới file trên đĩa.
+- `hldb backup`: sao lưu thủ công. `hldb restore backups\studio_<thời gian>.db`: khôi phục (tự sao lưu trạng thái hiện tại trước).
+- Cutlist cũ (không có `cutlist_layout: flat_hooks`) nằm trong thư mục media sẽ không được dùng lại: pipeline đổi tên thành `.old_…` và cho Claude chọn lại bằng skill hiện hành.
+
+## Dừng và khởi động lại
+
+- Nút **Dừng** ở trang Hàng đợi và trang tập: bỏ tập khỏi hàng đợi, hoặc dừng bước đang chạy ở điểm an toàn gần nhất (Claude bị dừng ngay, Cutter/Zoom làm nốt đoạn đang xử lý).
+- Khởi động lại Studio giữa chừng là an toàn: tập đang dở tự vào lại hàng đợi, bước cắt chờ Cutter xong việc cũ và dùng lại clip đã có, bước zoom dùng lại job Zoom đang chạy.
+- Template tự nạp lại khi sửa; sửa file `.py` thì cần Stop rồi Start Studio.
+
 ## Sửa đổi ở tool cũ
 
 - Video Cutter: endpoint `POST /api/cut-headless` (không mở hộp thoại, không đụng trạng thái UI), tham số `write_sidecars` (mặc định tắt) và ô chọn "Xuất kèm transcript + manifest" trên giao diện tay, `index` cố định số thứ tự file clip.
