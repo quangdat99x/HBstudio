@@ -37,8 +37,20 @@ WHISPER_WORKER = CUTTER_DIR / "whisper_worker.py"
 FFMPEG = CUTTER_DIR / "ffmpeg" / "ffmpeg.exe"
 FFPROBE = CUTTER_DIR / "ffmpeg" / "ffprobe.exe"
 
-# Skill plugin folder of the desktop app (source of truth for SKILL.md files; ids may change)
-DESKTOP_SKILLS_GLOB = r"C:\Users\nguye\AppData\Roaming\Claude\local-agent-mode-sessions\skills-plugin\*\*\skills"
+# Claude Code CLI installed with `npm i -g --prefix E:\Tool\claude-cli @anthropic-ai/claude-code`
+# (kept outside AppData because the desktop app's MSIX sandbox virtualizes AppData writes).
+CLAUDE_CLI_DIR = TOOLS_ROOT / "claude-cli"
+
+# Skill plugin folder of the desktop app (source of truth for SKILL.md files; ids may change).
+# The desktop app is an MSIX package: seen from inside it the folder is under %APPDATA%\Claude, but its
+# physical location (what Studio sees when launched from Tool Manager) is the package's LocalCache.
+DESKTOP_SKILLS_GLOBS = [
+    os.path.join(os.environ.get("APPDATA", r"C:\Users\nguye\AppData\Roaming"),
+                 r"Claude\local-agent-mode-sessions\skills-plugin\*\*\skills"),
+    os.path.join(os.environ.get("LOCALAPPDATA", r"C:\Users\nguye\AppData\Local"),
+                 r"Packages\Claude_*\LocalCache\Roaming\Claude\local-agent-mode-sessions\skills-plugin\*\*\skills"),
+]
+DESKTOP_SKILLS_GLOB = DESKTOP_SKILLS_GLOBS[0]
 
 # Pipeline defaults (overridable in settings table)
 DEFAULT_SETTINGS = {

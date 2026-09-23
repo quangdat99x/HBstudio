@@ -26,7 +26,7 @@
     <label>mar_threshold<input class="input" name="zoom_mar_threshold" value="{{ s.zoom_mar_threshold }}"></label>
   </div></section>
 <section class="card"><div class="card-header"><h2>Claude Code headless</h2>
-    <span class="small {{ 'ok' if claude.installed else 'error' }}">{{ 'CLI: ' + claude.version if claude.installed else 'Chưa cài Claude CLI' }} · {{ 'có token' if claude.token else 'chưa có token trong biến môi trường' }}</span></div>
+    <span class="small {{ 'ok' if claude.installed and (claude.token or claude.logged_in) else 'error' }}">{{ 'CLI: ' + claude.version if claude.installed else 'Chưa cài Claude CLI' }} · {{ 'có token' if claude.token else ('đã đăng nhập' if claude.logged_in else 'CHƯA đăng nhập: nhấn đúp E:\\DataBase\\dang-nhap-claude.bat rồi gõ /login') }}</span></div>
   <div class="card-body grid2">
     <label>Lệnh CLI<input class="input" name="claude_cli" value="{{ s.claude_cli }}"></label>
     <label>Model (trống = mặc định)<input class="input" name="claude_model" value="{{ s.claude_model }}"></label>

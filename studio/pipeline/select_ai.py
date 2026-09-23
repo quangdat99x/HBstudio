@@ -20,11 +20,13 @@ SKILL_NAME = "chon-noi-dung-jre-v2"
 
 def sync_skill(name: str = SKILL_NAME) -> Path | None:
     """Copy the desktop app's SKILL.md into .claude/skills so the headless run uses the same version."""
-    candidates = sorted(glob(config.DESKTOP_SKILLS_GLOB + f"\\{name}\\SKILL.md"), key=lambda p: Path(p).stat().st_mtime)
-    if not candidates:
-        return None
-    src = Path(candidates[-1])
+    candidates = []
+    for pattern in config.DESKTOP_SKILLS_GLOBS:
+        candidates += glob(pattern + f"\\{name}\\SKILL.md")
     dst = config.SKILLS_DIR / name / "SKILL.md"
+    if not candidates:
+        return dst if dst.exists() else None      # keep using the copy we already have
+    src = Path(sorted(candidates, key=lambda p: Path(p).stat().st_mtime)[-1])
     dst.parent.mkdir(parents=True, exist_ok=True)
     if not dst.exists() or dst.read_bytes() != src.read_bytes():
         shutil.copy2(src, dst)

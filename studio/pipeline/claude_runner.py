@@ -25,6 +25,11 @@ def _command() -> list[str] | None:
     cli = db.get_setting("claude_cli") or "claude"
     if cli != "claude" and Path(cli).exists():
         return [cli]
+    # Preferred: the copy installed under E:\Tool\claude-cli. The Claude desktop app is an MSIX package,
+    # so anything installed into %APPDATA% from inside it is virtualized and invisible to other processes.
+    local_exe = config.CLAUDE_CLI_DIR / "node_modules" / "@anthropic-ai" / "claude-code" / "bin" / "claude.exe"
+    if local_exe.exists():
+        return [str(local_exe)]
     appdata = os.environ.get("APPDATA", "")
     pkg = Path(appdata) / "npm" / "node_modules" / "@anthropic-ai" / "claude-code"
     exe = pkg / "bin" / "claude.exe"          # npm package ships a native binary (what claude.cmd runs)
@@ -44,19 +49,25 @@ def _command() -> list[str] | None:
 
 def cli_status() -> dict:
     cmd = _command()
+    base = {"token": _has_token(), "logged_in": _logged_in()}
     if not cmd:
-        return {"installed": False, "version": "", "token": _has_token()}
+        return {"installed": False, "version": "", **base}
     try:
         out = subprocess.run(cmd + ["--version"], capture_output=True, text=True, timeout=30,
                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         return {"installed": out.returncode == 0, "version": (out.stdout or out.stderr).strip()[:120],
-                "token": _has_token(), "command": " ".join(cmd)}
+                "command": " ".join(cmd), **base}
     except Exception as e:  # noqa: BLE001
-        return {"installed": False, "version": str(e), "token": _has_token()}
+        return {"installed": False, "version": str(e), **base}
 
 
 def _has_token() -> bool:
     return bool(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY"))
+
+
+def _logged_in() -> bool:
+    """`/login` stores OAuth credentials in ~/.claude/.credentials.json on Windows."""
+    return (Path.home() / ".claude" / ".credentials.json").exists()
 
 
 def run(prompt: str, *, cwd: Path | None = None, allowed_tools: str | None = None, permission_mode: str | None = None,
