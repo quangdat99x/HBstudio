@@ -23,12 +23,18 @@ log = logging.getLogger("studio.claude")
 def _command() -> list[str] | None:
     """Prefer `node cli.js` (npm global install) so no .cmd shim is involved; fall back to the configured command."""
     cli = db.get_setting("claude_cli") or "claude"
+    if cli != "claude" and Path(cli).exists():
+        return [cli]
     appdata = os.environ.get("APPDATA", "")
-    cli_js = Path(appdata) / "npm" / "node_modules" / "@anthropic-ai" / "claude-code" / "cli.js"
+    pkg = Path(appdata) / "npm" / "node_modules" / "@anthropic-ai" / "claude-code"
+    exe = pkg / "bin" / "claude.exe"          # npm package ships a native binary (what claude.cmd runs)
+    if exe.exists():
+        return [str(exe)]
+    cli_js = pkg / "cli.js"
     node = shutil.which("node")
     if cli_js.exists() and node:
         return [node, str(cli_js)]
-    found = shutil.which(cli)
+    found = shutil.which("claude.exe") or shutil.which(cli)
     if found:
         if found.lower().endswith((".cmd", ".bat")):
             return ["cmd", "/c", found]

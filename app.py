@@ -166,12 +166,9 @@ def settings_page():
 
 
 def _claude_status() -> dict:
-    cli = db.get_setting("claude_cli") or "claude"
     try:
-        out = subprocess.run([cli, "--version"], capture_output=True, text=True, timeout=20, shell=True)
-        ver = (out.stdout or out.stderr).strip()
-        return {"installed": out.returncode == 0, "version": ver,
-                "token": bool(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY"))}
+        from studio.pipeline import claude_runner
+        return claude_runner.cli_status()
     except Exception as e:  # noqa: BLE001
         return {"installed": False, "version": str(e), "token": False}
 

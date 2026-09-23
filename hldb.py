@@ -161,12 +161,19 @@ def main(argv=None):
             "by_stage": {r["stage"]: r["n"] for r in db.rows("SELECT stage, COUNT(*) n FROM episodes GROUP BY stage")},
         }, True)
     elif args.cmd == "suggest-compilations":
-        _print(db.rows(
+        by_theme = db.rows(
+            "SELECT th.slug AS theme, th.name_vi, COUNT(*) AS segments, COUNT(DISTINCT s.episode_id) AS episodes, "
+            "ROUND(SUM(s.duration_sec)/60.0,1) AS minutes, group_concat(DISTINCT s.episode_id) AS episode_ids "
+            "FROM themes th JOIN segment_themes st ON st.theme_id=th.id JOIN segments s ON s.id=st.segment_id "
+            "WHERE s.kind='highlight' AND s.id NOT IN (SELECT segment_id FROM compilation_items) "
+            "GROUP BY th.id HAVING segments>=4 AND episodes>=2 ORDER BY episodes DESC, segments DESC")
+        by_topic = db.rows(
             "SELECT t.name AS topic, COUNT(*) AS segments, COUNT(DISTINCT s.episode_id) AS episodes, "
             "ROUND(SUM(s.duration_sec)/60.0,1) AS minutes FROM topics t JOIN segment_topics st ON st.topic_id=t.id "
             "JOIN segments s ON s.id=st.segment_id WHERE s.kind='highlight' "
             "AND s.id NOT IN (SELECT segment_id FROM compilation_items) "
-            "GROUP BY t.id HAVING segments>=4 AND episodes>=2 ORDER BY episodes DESC, segments DESC"), as_json)
+            "GROUP BY t.id HAVING segments>=4 AND episodes>=2 ORDER BY episodes DESC, segments DESC")
+        _print({"by_theme": by_theme, "by_topic": by_topic}, True)
     elif args.cmd == "export":
         ids = [search.resolve_segment_ref(r) for r in args.ids]
         ids = [i for i in ids if i]
