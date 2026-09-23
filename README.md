@@ -43,6 +43,7 @@ work/  logs/            file tạm, log
 1. CLI đã cài tại `E:\Tool\claude-cli` (bản 2.1.280) bằng `npm i -g --prefix E:\Tool\claude-cli @anthropic-ai/claude-code`. Không cài vào `%APPDATA%\npm` từ bên trong app Claude desktop: app là gói MSIX nên thư mục đó bị ảo hoá, bên ngoài không thấy.
 2. Đăng nhập: nhấn đúp `E:\DataBase\dang-nhap-claude.bat`, gõ `/login`, làm theo hướng dẫn trên trình duyệt, rồi `/exit`. Muốn token dài hạn cho script thì chạy `E:\Tool\claude-cli\claude.cmd setup-token` trong PowerShell và đặt biến môi trường `CLAUDE_CODE_OAUTH_TOKEN`.
 3. Kiểm tra ở trang **Cài đặt** của Studio: dòng "Claude Code headless" phải báo CLI và token hoặc đã đăng nhập.
+4. Chọn model ở cùng trang: model và effort riêng cho bước chọn nội dung và cho Hỏi AI (bí danh `fable`, `opus`, `sonnet`, `haiku` hoặc tên đầy đủ), model dự phòng khi quá tải. Để trống = model mặc định của Claude Code cho tài khoản. Nút "Kiểm tra" chạy một lượt nhỏ và in ra model thực tế trả lời; mỗi job chọn nội dung cũng ghi model, số token và thời gian vào cột thông báo.
 
 Skill `chon-noi-dung-jre-v2` được copy tự động từ thư mục plugin của app desktop vào `.claude/skills/` trước mỗi lần chạy, nên luôn cùng phiên bản với bản chạy tay.
 

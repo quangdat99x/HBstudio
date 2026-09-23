@@ -15,7 +15,7 @@
 <script>
 async function ask(){ const q=document.getElementById('ask-q').value.trim(); if(!q) return toast('Chưa nhập câu hỏi');
   const btn=document.getElementById('ask-btn'); btn.disabled=true; document.getElementById('ask-status').textContent='Đang hỏi Claude… (có thể mất 1 đến 3 phút)';
-  try{ const r=await api('/api/ask',{q}); document.getElementById('ask-status').textContent=r.error?('Lỗi: '+r.error):('Xong · '+(r.duration_sec||'?')+'s');
+  try{ const r=await api('/api/ask',{q}); document.getElementById('ask-status').textContent=r.error?('Lỗi: '+r.error):('Xong · '+(r.summary||((r.duration_sec||'?')+'s')));
     document.getElementById('ask-answer').innerHTML=r.html||esc(r.text||r.error||''); }
   catch(e){ document.getElementById('ask-status').textContent='Lỗi: '+e; }
   finally{ btn.disabled=false; } }

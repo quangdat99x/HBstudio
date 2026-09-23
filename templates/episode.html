@@ -6,7 +6,7 @@
     <h2>{{ ep.id }} · {{ ep.guest or '' }}</h2>
     <div class="row gap">
       <span class="badge stage-{{ (ep.stage or 'new').split(':')[0] }}">{{ ep.stage }}</span>
-      {% if ep.clip_folder %}<button class="btn btn-small" onclick="openFolder('{{ ep.clip_folder|e }}')">Mở thư mục clip</button>{% endif %}
+      {% if ep.clip_folder %}<button class="btn btn-small" data-path="{{ ep.clip_folder }}" onclick="openFolder(this.dataset.path)">Mở thư mục clip</button>{% endif %}
       {% if ep.stage == 'reviewing' %}<button class="btn btn-small btn-primary" onclick="approve('{{ ep.id }}')">Duyệt cutlist, bắt đầu cắt</button>{% endif %}
       <button class="btn btn-small" onclick="runEpisode('{{ ep.id }}')">Chạy tiếp pipeline</button>
     </div>
@@ -62,15 +62,15 @@
           {% for h in s.hooks %}
           <div class="hook-row"><b>{{ h.title[:8] }}</b> {{ h.start_hms }} → {{ h.end_hms }} ({{ h.duration_sec|round|int }}s)
             {% if h.quote_en %}“{{ h.quote_en }}”{% endif %} <span class="badge st-{{ h.status }}">{{ h.status }}</span>
-            {% if h.clip_zoomed_path or h.clip_path %}<button class="btn btn-tiny" onclick="preview('{{ (h.clip_zoomed_path or h.clip_path)|e }}', this)">▶</button>{% endif %}
+            {% if h.clip_zoomed_path or h.clip_path %}<button class="btn btn-tiny" data-path="{{ h.clip_zoomed_path or h.clip_path }}" onclick="preview(this.dataset.path, this)">▶</button>{% endif %}
           </div>
           {% endfor %}
         </div>
       {% endif %}
       <div class="row gap">
-        {% if s.clip_zoomed_path %}<button class="btn btn-small" onclick="preview('{{ s.clip_zoomed_path|e }}', this)">▶ Bản zoom</button>{% endif %}
-        {% if s.clip_path %}<button class="btn btn-small btn-ghost" onclick="preview('{{ s.clip_path|e }}', this)">▶ Bản gốc</button>
-          <button class="btn btn-small btn-ghost" onclick="openFolder('{{ s.clip_path|e }}')">Mở vị trí</button>{% endif %}
+        {% if s.clip_zoomed_path %}<button class="btn btn-small" data-path="{{ s.clip_zoomed_path }}" onclick="preview(this.dataset.path, this)">▶ Bản zoom</button>{% endif %}
+        {% if s.clip_path %}<button class="btn btn-small btn-ghost" data-path="{{ s.clip_path }}" onclick="preview(this.dataset.path, this)">▶ Bản gốc</button>
+          <button class="btn btn-small btn-ghost" data-path="{{ s.clip_zoomed_path or s.clip_path }}" onclick="openFolder(this.dataset.path)">Mở vị trí</button>{% endif %}
       </div>
       <div class="preview"></div>
       {% if s.analysis_md %}
@@ -86,10 +86,11 @@
 
 <section class="card">
   <div class="card-header"><h2>Dán khối phân tích</h2>
-    <span class="muted small">copy toàn bộ output của skill chọn nội dung (chạy tay trong app Claude) rồi dán vào đây</span></div>
+    <span class="muted small">chạy skill chọn nội dung bằng tay trong app Claude → bôi đen toàn bộ phần trả lời (từ "Tóm tắt" tới "Fit với khách mời", một hay nhiều đoạn) → dán vào đây. Studio tự nhận đoạn nào nhờ timestamp Start/End hoặc timestamp hook.</span></div>
   <div class="card-body">
-    <textarea id="analysis-text" class="input" rows="8" placeholder="[1]. **Tiêu đề** … Tóm tắt: … Tại sao đoạn này đắt: …"></textarea>
+    <textarea id="analysis-text" class="input" rows="8" placeholder="Tóm tắt: … Tại sao đoạn này đắt: … 🪝 HOOK COLD OPEN: 1. (02:14:01 – 02:14:15 · ~14s) … 🔑 Keyword hạt nhân: …"></textarea>
     <div class="row gap"><button class="btn btn-primary" onclick="importAnalysis('{{ ep.id }}')">Lưu vào các đoạn tương ứng</button><span id="analysis-result" class="muted"></span></div>
+    <ul id="analysis-matched" class="small"></ul>
   </div>
 </section>
 
@@ -108,8 +109,10 @@ function preview(path, btn){ const box=btn.closest('.segment-body').querySelecto
   box.innerHTML='<video controls preload="metadata" src="/media?path='+encodeURIComponent(path)+'"></video>'; }
 async function importAnalysis(ep){ const text=document.getElementById('analysis-text').value; if(!text.trim()) return toast('Chưa dán gì');
   const r=await api('/api/episodes/'+ep+'/analysis',{text});
+  if(r.error){ document.getElementById('analysis-result').textContent='Lỗi: '+r.error; return; }
   document.getElementById('analysis-result').textContent=`${r.attached}/${r.blocks} khối đã gắn` + (r.unmatched&&r.unmatched.length? ' · chưa khớp: '+r.unmatched.join(' | '):'');
-  if(r.attached) setTimeout(()=>location.reload(),1500); }
+  document.getElementById('analysis-matched').innerHTML=(r.matched||[]).map(m=>`<li>“${esc((m.block||'').slice(0,50))}” → <a href="#seg-${m.segment_id}">${esc(m.segment_title)}</a></li>`).join('');
+  if(r.attached) setTimeout(()=>location.reload(),2500); }
 async function runEpisode(id){ const r=await api('/api/episodes/'+id+'/run',{}); toast(r.error||r.message||'Đã đưa vào hàng đợi'); }
 async function approve(id){ const r=await api('/api/episodes/'+id+'/approve',{}); toast(r.error||r.message||'Đã duyệt'); setTimeout(()=>location.reload(),1200); }
 </script>

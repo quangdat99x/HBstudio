@@ -28,6 +28,8 @@ logging.basicConfig(
 log = logging.getLogger("studio.app")
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
+app.config["TEMPLATES_AUTO_RELOAD"] = True      # template fixes apply without restarting the tool
+app.jinja_env.auto_reload = True
 app.jinja_env.filters["md"] = md_to_html
 app.jinja_env.filters["basename"] = lambda p: os.path.basename(p) if p else ""
 db.init_db()
