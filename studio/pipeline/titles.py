@@ -182,6 +182,17 @@ class TitleProgress:
 
 # ---------------------------------------------------------------- run
 _RE_TITLE_LINE = re.compile(r"^\s*\|?\s*\d\s*\|\s*(.+?Joe Rogan.*?)\s*\|", re.M)
+_RE_DONE_LINE = re.compile(r"^\s*DONE\s+title_json=.*$", re.M)
+
+
+def final_answer(texts: list[str]) -> str:
+    """The skill's answer without the short status notes Claude writes between tool calls, and without the DONE line."""
+    blocks = [t for t in texts if t and t.strip()]
+    if not blocks:
+        return ""
+    longest = max(range(len(blocks)), key=lambda i: len(blocks[i]))
+    answer = "\n\n".join(blocks[longest:])
+    return _RE_DONE_LINE.sub("", answer).strip()
 
 
 def _fallback_title(text: str) -> str | None:
@@ -224,7 +235,7 @@ def run_title(run_id: int, stop_flag=None) -> dict:
             data = read_json(out_json)
         except Exception as e:  # noqa: BLE001
             log.warning("title json unreadable for run %s: %s", run_id, e)
-    text = (res.get("text") or "").strip()
+    text = final_answer(res.get("texts") or [res.get("text") or ""])
     if not res.get("ok") and not data:
         raise RuntimeError(res.get("error") or "Claude không trả kết quả")
     if not text and not data:

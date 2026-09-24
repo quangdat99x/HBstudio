@@ -197,7 +197,7 @@ def run(prompt: str, *, cwd: Path | None = None, allowed_tools: str | None = Non
     if result and result not in text:
         text = (text + "\n\n" + result).strip()
     ok = proc.returncode == 0 and not is_error
-    return {"ok": ok, "error": None if ok else err_msg, "text": text, "result": result, "usage": usage,
+    return {"ok": ok, "error": None if ok else err_msg, "text": text, "texts": texts, "result": result, "usage": usage,
             "models": list(model_usage.keys()), "model_usage": model_usage,
             "cost_usd": cost, "duration_sec": round(time.time() - started, 1), "returncode": proc.returncode,
             "log_path": str(log_path) if log_path else None}
