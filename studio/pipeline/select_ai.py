@@ -153,7 +153,9 @@ def build_prompt(ep: dict, transcript_txt: Path, cutlist_path: Path, analysis_pa
         f"8. Cutlist được Studio chấp nhận khi: episode.id đúng {ep['id']}; mọi entry có `kind` (hook|highlight) và `title`; "
         "`rank` là số nguyên liên tục 1..N; start < end và không vượt thời lượng video; mỗi hook có `parent_rank` trỏ tới "
         "highlight đứng ngay sau và nằm trong biên của nó. KHÔNG cần đọc mã nguồn trong E:\\DataBase, mọi quy tắc đã ở đây và trong skill.",
-        "9. Có thể chạy `python` (mỗi lần một lệnh) để tự kiểm tra JSON trước khi kết thúc.",
+        "9. Có thể chạy python để tự kiểm tra JSON trước khi kết thúc, chỉ bằng MỘT lệnh đứng riêng dạng "
+        "`python -X utf8 <đường dẫn file .py>` hoặc `python -X utf8 -c \"...\"`: không `cd`, không nối lệnh bằng && hay ;, "
+        "không dùng PowerShell.",
         "10. Kết thúc bằng đúng một dòng: DONE cutlist=<đường dẫn> analysis=<đường dẫn>",
     ]
     if retry_errors:

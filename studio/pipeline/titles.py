@@ -121,7 +121,9 @@ def build_prompt(skill: str, seg: dict, ep: dict, tpath: Path, cpath: Path, out_
         "\"recommended_title\" (title bạn khuyên dùng nhất), \"description\" (toàn văn, gồm cả dòng cuối), "
         "\"timestamps\" (toàn văn khối timestamps), \"tags\" (chuỗi tags), \"tags_chars\" (số ký tự thực tế), "
         "\"thumbnail\" (tóm tắt chiến lược thumbnail), \"image_prompt\" (toàn văn), \"warnings\" (mảng cảnh báo, có thể rỗng).",
-        "4. Đếm ký tự của title và tags bằng python khi cần, không ước lượng.",
+        "4. Đếm ký tự của title và tags bằng python khi cần, không ước lượng. Chỉ được phép chạy python bằng MỘT lệnh "
+        "đứng riêng dạng `python -X utf8 <đường dẫn file .py>` hoặc `python -X utf8 -c \"...\"`: không `cd`, không nối lệnh "
+        "bằng && hay ;, không dùng PowerShell.",
         "5. Không đọc mã nguồn trong E:\\DataBase. Kết thúc bằng đúng một dòng: DONE title_json=<đường dẫn>",
     ])
 
