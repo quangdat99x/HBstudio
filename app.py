@@ -217,8 +217,9 @@ def settings_page():
             elif key in request.form:
                 db.set_setting(key, request.form[key].strip())
         return redirect(url_for("settings_page", saved=1))
+    from studio import translate
     return render_template("settings.html", page="settings", s=db.all_settings(), saved=request.args.get("saved"),
-                           claude=_claude_status())
+                           claude=_claude_status(), gt_configured=translate.configured())
 
 
 def _claude_status() -> dict:
@@ -343,6 +344,44 @@ def api_approve(episode_id):
     if not orch:
         return jsonify({"error": "pipeline chưa sẵn sàng"}), 503
     return jsonify(orch.approve(episode_id.upper()))
+
+
+@app.route("/api/translate", methods=["POST"])
+def api_translate():
+    """Selected text -> Vietnamese with the official Google Cloud Translation API (user's key)."""
+    from studio import translate
+    data = request.json or {}
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "chưa chọn đoạn nào"}), 400
+    try:
+        return jsonify(translate.translate(text, target=data.get("target") or "vi"))
+    except translate.NoKey:
+        return jsonify({"error": "chưa có Google API key", "code": "no_key", "web_url": translate.web_url(text)}), 400
+    except ValueError as e:
+        return jsonify({"error": str(e), "web_url": translate.web_url(text)}), 400
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"error": f"Google Dịch báo lỗi: {e}", "web_url": translate.web_url(text)}), 502
+
+
+@app.route("/api/translate/open", methods=["POST"])
+def api_translate_open():
+    """Open translate.google.com in the default browser with the selected text (no key needed)."""
+    import webbrowser
+    from studio import translate
+    text = ((request.json or {}).get("text") or "").strip()
+    url = translate.web_url(text)
+    try:
+        webbrowser.open(url)
+        return jsonify({"ok": True, "url": url})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"error": str(e), "url": url}), 500
+
+
+@app.route("/api/translate/status")
+def api_translate_status():
+    from studio import translate
+    return jsonify({"configured": translate.configured()})
 
 
 @app.route("/api/segments/<int:seg_id>/title", methods=["POST"])

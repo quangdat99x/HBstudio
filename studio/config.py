@@ -78,6 +78,7 @@ DEFAULT_SETTINGS = {
     "claude_model_ask": "",         # model for the Ask-AI page
     "claude_effort_ask": "",
     "claude_fallback_model": "",    # comma-separated fallbacks when the primary model is overloaded
+    "google_translate_api_key": "", # official Cloud Translation API key for the select-to-translate popup
     "title_skill": "viet-tittle",   # skill run by the "Viết Title" button on each highlight
     "claude_model_title": "opus",   # model for "Viết Title" (user default: opus)
     "claude_effort_title": "high",

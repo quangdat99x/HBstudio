@@ -65,6 +65,18 @@
     <label>Effort
       <select class="input" name="claude_effort_title">{% for e in ['', 'low', 'medium', 'high', 'xhigh', 'max'] %}<option value="{{ e }}" {{ 'selected' if s.claude_effort_title == e }}>{{ e or 'mặc định' }}</option>{% endfor %}</select></label>
   </div></section>
+<section class="card" id="google-translate"><div class="card-header"><h2>Google Dịch khi bôi đen</h2>
+    <span class="small {{ 'ok' if gt_configured else 'muted' }}">{{ 'đã có API key, dịch ngay trong Studio' if gt_configured else 'chưa có API key: nút Dịch sẽ mở trang Google Dịch trên trình duyệt' }}</span></div>
+  <div class="card-body">
+    <p class="small">Bôi đen chữ tiếng Anh ở bất kỳ trang nào của Studio rồi bấm nút <b>🌐 Dịch</b> hiện cạnh đoạn chọn. Có API key thì bản dịch hiện ngay trong một khung nhỏ; chưa có key thì Studio mở translate.google.com với đoạn đã chọn.</p>
+    <p class="small muted">Tạo key: vào Google Cloud Console, tạo hoặc chọn một project đã gắn tài khoản thanh toán, bật "Cloud Translation API", vào Credentials, tạo API key và giới hạn key chỉ dùng cho Cloud Translation API, rồi dán vào ô dưới. Google tính phí theo số ký tự và có hạn mức miễn phí hằng tháng, xem trang giá của Google để biết con số hiện tại.</p>
+    <div class="grid2">
+      <label>Google Cloud Translation API key
+        <input class="input" type="password" name="google_translate_api_key" value="" autocomplete="off"
+               placeholder="{{ 'đã lưu key, để trống nếu không đổi' if gt_configured else 'dán key vào đây' }}"></label>
+      <div class="row gap" style="align-items:flex-end"><button type="button" class="btn" onclick="testTranslate()">Thử dịch</button><span id="gt-result" class="small muted"></span></div>
+    </div>
+  </div></section>
 <div class="row gap"><button class="btn btn-primary">Lưu cài đặt</button></div>
 </form>
 
@@ -105,6 +117,11 @@ document.querySelector('form[action="/settings"]').addEventListener('submit', fu
   if(!h){ h=document.createElement('input'); h.type='hidden'; h.name='_changed'; this.appendChild(h); }
   h.value=changed.join(',');
 });
+async function testTranslate(){
+  const out=document.getElementById('gt-result'); out.textContent='Đang dịch "The oldest structure in the world"…';
+  const r=await api('/api/translate',{text:'The oldest structure in the world'});
+  out.textContent = r.error ? ('Lỗi: '+r.error+(r.code==='no_key'?' (lưu key trước rồi thử lại)':'')) : ('OK: '+r.translation);
+}
 async function resetData(){
   const c=prompt('Gõ XOA để xóa toàn bộ dữ liệu tập/đoạn khỏi database (có sao lưu trước):');
   if(!c) return;

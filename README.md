@@ -54,6 +54,13 @@ Skill `chon-noi-dung-jre-v2` được copy tự động từ thư mục plugin c
 - Kết quả hiện ngay trên đoạn: title khuyên dùng, 3 title Format 1, 3 title Format 2, description, timestamps, tags kèm số ký tự, thumbnail, image prompt, mỗi phần có nút Copy, cùng toàn văn câu trả lời của skill. Mọi lượt đều được lưu trong bảng `segment_titles`, bấm "Viết lại title" để chạy lượt mới.
 - Hàng đợi viết title chạy riêng, lần lượt từng đoạn, không chặn pipeline cắt và zoom. Nút "Viết Title cho mọi đoạn" ở đầu danh sách xếp tất cả đoạn chưa có title vào hàng đợi.
 
+## Dịch khi bôi đen (Google Dịch)
+
+- Bôi đen chữ tiếng Anh ở bất kỳ trang nào, bấm nút **🌐 Dịch** hiện cạnh đoạn chọn. Khung bản dịch có nút Copy, nút mở Google Dịch và ô "Tự dịch ngay khi bôi đen" để bỏ bước bấm nút. Esc hoặc bấm ra ngoài để đóng.
+- Dịch ngay trong Studio cần **API key chính thức** của Google Cloud Translation, dán ở Cài đặt → Google Dịch khi bôi đen. Key chỉ gửi tới `translation.googleapis.com`, trang Cài đặt không hiện lại key.
+- Chưa có key thì nút Dịch mở translate.google.com trên trình duyệt với đoạn đã chọn.
+- Dịch vụ Google Dịch không cần key đã bị Google chặn cho mạng này bằng trang "unusual traffic", nên Studio không dùng nó.
+
 ## Sao lưu, làm sạch, khôi phục
 
 - Trang **Cài đặt → Làm sạch dữ liệu**, hoặc `hldb reset --yes`: sao lưu `studio.db` vào `backups\` rồi xóa mọi tập, đoạn, transcript, theme đã gán, job. Giữ cài đặt và danh sách theme. Không đụng tới file trên đĩa.
