@@ -76,8 +76,7 @@ def translate(text: str, target: str = "vi", source: str | None = None) -> dict:
     r = requests.post(API_URL, params={"key": key}, json=body, timeout=30)
     data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
     if r.status_code != 200:
-        msg = ((data.get("error") or {}).get("message") if isinstance(data, dict) else None) or f"HTTP {r.status_code}"
-        raise RuntimeError(msg)
+        raise RuntimeError(explain_error(r.status_code, data))
     items = (data.get("data") or {}).get("translations") or []
     out = {
         "translation": " ".join(html.unescape(t.get("translatedText") or "") for t in items).strip(),
@@ -89,6 +88,34 @@ def translate(text: str, target: str = "vi", source: str | None = None) -> dict:
         while len(_cache) > 2000:
             _cache.popitem(last=False)
     return out
+
+
+_HINTS = [
+    (("userratelimitexceeded", "ratelimitexceeded", "resource_exhausted", "quota"),
+     "Project Google Cloud của key đang có hạn mức dịch bằng 0. Hay gặp nhất là project chưa gắn tài khoản thanh toán: "
+     "vào Google Cloud Console → Billing, gắn tài khoản thanh toán cho đúng project chứa key. Nếu đã gắn, vào IAM & Admin → "
+     "Quotas, lọc Cloud Translation API và xem các hạn mức ký tự có đang bằng 0 không. Sửa xong đợi vài phút rồi thử lại."),
+    (("billing",), "Project của key chưa bật thanh toán: gắn tài khoản thanh toán cho project trong Google Cloud Console → Billing."),
+    (("accessnotconfigured", "service_disabled", "has not been used", "is disabled"),
+     "Project của key chưa bật Cloud Translation API: vào APIs & Services → Library, tìm Cloud Translation API và bấm Enable."),
+    (("api_key_service_blocked", "blocked", "iprefererblocked", "api_key_http_referrer_blocked"),
+     "Key đang bị giới hạn không cho gọi Cloud Translation API: vào Credentials, sửa phần API restrictions của key."),
+    (("keyinvalid", "api key not valid", "api_key_invalid"), "Key không hợp lệ: kiểm tra lại, dán đủ cả chuỗi bắt đầu bằng AIza."),
+]
+
+
+def explain_error(status: int, data) -> str:
+    """Google's error plus a Vietnamese hint on how to fix it in the Cloud Console."""
+    err = data.get("error") if isinstance(data, dict) else None
+    err = err if isinstance(err, dict) else {}
+    message = err.get("message") or f"HTTP {status}"
+    blob = " ".join([message, str(err.get("status") or "")] +
+                    [f"{e.get('reason', '')} {e.get('domain', '')}" for e in err.get("errors") or [] if isinstance(e, dict)] +
+                    [str(d.get("reason", "")) for d in err.get("details") or [] if isinstance(d, dict)]).lower()
+    for needles, hint in _HINTS:
+        if any(n in blob for n in needles):
+            return f"{message} (HTTP {status}). {hint}"
+    return f"{message} (HTTP {status})"
 
 
 def web_url(text: str, target: str = "vi") -> str:

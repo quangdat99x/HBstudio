@@ -73,6 +73,10 @@ async function openFolder(path) { const r = await api('/api/open-folder', { path
       pop.append(body, row);
     } else {
       pop.append(mk('div', 'tr-body error', esc((r && r.error) || 'Không dịch được')));
+      const row = mk('div', 'row gap tr-row');
+      row.append(button('Mở trên Google Dịch', () => openWeb(text), 'btn btn-small btn-primary'),
+                 button('Cài đặt', () => { location.href = '/settings#google-translate'; }, 'btn btn-small'));
+      pop.append(row);
     }
     const foot = mk('label', 'tr-foot');
     const cb = mk('input'); cb.type = 'checkbox'; cb.checked = getAuto();
