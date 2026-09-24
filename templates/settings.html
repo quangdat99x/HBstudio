@@ -57,6 +57,14 @@
       <span id="probe-result" class="small muted"></span>
     </div>
   </div></section>
+<section class="card"><div class="card-header"><h2>Viết Title cho từng đoạn highlight</h2>
+    <span class="small muted">nút "Viết Title" trên mỗi đoạn chạy skill này bằng Claude headless, hàng đợi riêng, không chặn pipeline</span></div>
+  <div class="card-body grid3">
+    <label>Skill<input class="input" name="title_skill" value="{{ s.title_skill }}" placeholder="viet-tittle"></label>
+    <label>Model<input class="input" list="model-options" name="claude_model_title" value="{{ s.claude_model_title }}" placeholder="opus"></label>
+    <label>Effort
+      <select class="input" name="claude_effort_title">{% for e in ['', 'low', 'medium', 'high', 'xhigh', 'max'] %}<option value="{{ e }}" {{ 'selected' if s.claude_effort_title == e }}>{{ e or 'mặc định' }}</option>{% endfor %}</select></label>
+  </div></section>
 <div class="row gap"><button class="btn btn-primary">Lưu cài đặt</button></div>
 </form>
 
@@ -82,6 +90,21 @@ async function probeClaude(){
   }catch(e){ out.textContent='Lỗi: '+e; }
   finally{ btn.disabled=false; }
 }
+// Send only the fields that were edited, so a page left open with old values cannot overwrite newer settings.
+document.querySelector('form[action="/settings"]').addEventListener('submit', function(){
+  const changed=[];
+  for(const el of this.elements){
+    if(!el.name || el.name==='_changed') continue;
+    let diff;
+    if(el.type==='checkbox') diff = el.checked!==el.defaultChecked;
+    else if(el.tagName==='SELECT'){ const def=[...el.options].find(o=>o.defaultSelected)||el.options[0]; diff = el.value!==(def?def.value:''); }
+    else diff = el.value!==el.defaultValue;
+    if(diff) changed.push(el.name);
+  }
+  let h=this.querySelector('input[name=_changed]');
+  if(!h){ h=document.createElement('input'); h.type='hidden'; h.name='_changed'; this.appendChild(h); }
+  h.value=changed.join(',');
+});
 async function resetData(){
   const c=prompt('Gõ XOA để xóa toàn bộ dữ liệu tập/đoạn khỏi database (có sao lưu trước):');
   if(!c) return;

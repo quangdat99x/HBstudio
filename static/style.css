@@ -85,6 +85,23 @@ details.analysis { background: rgba(139,92,246,.06); border: 1px solid var(--bor
 details > summary { cursor: pointer; }
 .answer { min-height: 40px; padding: 10px; border: 1px dashed var(--border); border-radius: var(--radius-sm); }
 .actions { white-space: nowrap; } .actions .btn { margin-right: 4px; }
+.title-block { border: 1px solid rgba(251,191,36,0.25); background: rgba(251,191,36,0.04); border-radius: var(--radius-sm);
+  padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+.title-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.title-block .sec-label { color: #fde68a; margin: 0; }
+.sec-label .normal { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.yt-title { font-size: 16px; font-weight: 600; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.title-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px; }
+.title-options ol { margin: 4px 0 0 20px; } .title-options li { margin: 4px 0; }
+.meta-block { display: flex; flex-direction: column; gap: 4px; }
+.meta-head { display: flex; align-items: center; justify-content: space-between; }
+pre.meta-pre { white-space: pre-wrap; font-family: inherit; font-size: 13px; line-height: 1.55; background: var(--bg-input);
+  padding: 8px 10px; border-radius: var(--radius-sm); max-height: 280px; overflow: auto; margin: 0; }
+.warn { color: var(--warning); }
+table.md-table { border-collapse: collapse; margin: 6px 0; font-size: 13px; }
+table.md-table th, table.md-table td { border: 1px solid var(--border); padding: 4px 8px; vertical-align: top; text-align: left; }
+table.md-table th { color: var(--text-secondary); font-weight: 600; }
+@media (max-width: 1000px) { .title-options { grid-template-columns: 1fr; } }
 .card.danger { border-color: rgba(239,68,68,0.35); }
 .card.danger .card-header h2 { color: #fca5a5; }
 #toast { position: fixed; bottom: 20px; right: 20px; background: var(--bg-card); border: 1px solid var(--accent); color: var(--text); padding: 10px 14px; border-radius: var(--radius-sm); opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 520px; font-size: 13px; z-index: 200; }

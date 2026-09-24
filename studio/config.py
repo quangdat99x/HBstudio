@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent          # E:\DataBase
-DB_PATH = BASE_DIR / "studio.db"
+DB_PATH = Path(os.environ.get("STUDIO_DB_PATH") or (BASE_DIR / "studio.db"))   # override for tests
 WORK_DIR = BASE_DIR / "work"                                 # transient files (transcript txt for Claude, run logs)
 LOG_DIR = BASE_DIR / "logs"
 SKILLS_DIR = BASE_DIR / ".claude" / "skills"
@@ -78,6 +78,9 @@ DEFAULT_SETTINGS = {
     "claude_model_ask": "",         # model for the Ask-AI page
     "claude_effort_ask": "",
     "claude_fallback_model": "",    # comma-separated fallbacks when the primary model is overloaded
+    "title_skill": "viet-tittle",   # skill run by the "Viết Title" button on each highlight
+    "claude_model_title": "opus",   # model for "Viết Title" (user default: opus)
+    "claude_effort_title": "high",
     "select_retry": "1",
     "watch_enabled": "1",
     "file_stable_seconds": "30",

@@ -1,0 +1,51 @@
+{% set t = s.title_run or none %}
+{% set d = s.title_done or none %}
+{% set busy = t and t.status in ('queued', 'running') %}
+<div class="title-block" id="title-{{ s.id }}" data-seg="{{ s.id }}" data-status="{{ t.status if t else '' }}">
+  <div class="title-head">
+    <div class="sec-label">📝 Title &amp; metadata <span class="muted normal">· skill {{ (t.skill if t else none) or title_skill or 'viet-tittle' }} · {{ (t.model if t else none) or title_model or 'opus' }}</span></div>
+    <div class="row gap">
+      {% if busy %}
+        <span class="badge job-running">{{ 'đang viết' if t.status == 'running' else 'đang chờ' }}</span>
+        <button class="btn btn-small btn-ghost" onclick="cancelTitle({{ s.id }})">Hủy</button>
+      {% else %}
+        <button class="btn btn-small {{ 'btn-ghost' if d else 'btn-primary' }}" onclick="runTitle({{ s.id }})">{{ 'Viết lại title' if d else 'Viết Title' }}</button>
+      {% endif %}
+    </div>
+  </div>
+  {% if busy %}<div class="small muted">{{ t.progress_msg or 'đang chờ tới lượt…' }}</div>{% endif %}
+  {% if t and t.status == 'failed' %}<div class="small error">Lượt gần nhất không xong: {{ t.error }}</div>{% endif %}
+  {% if d %}
+    {% set j = d.data or {} %}
+    {% if d.recommended_title %}
+      <div class="yt-title"><span id="rt-{{ s.id }}">{{ d.recommended_title }}</span>
+        <span class="muted small">{{ d.recommended_title|length }} ký tự</span>
+        <button class="btn btn-tiny" onclick="copyEl('rt-{{ s.id }}')">Copy</button></div>
+    {% endif %}
+    {% if j.titles_format1 or j.titles_format2 %}
+    <div class="title-options">
+      {% for label, key in [('Format 1 · trực diện', 'titles_format1'), ('Format 2 · câu hỏi gợi mở', 'titles_format2')] %}
+        {% if j[key] %}
+        <div><div class="small muted">{{ label }}</div>
+          <ol>{% for tt in j[key] %}<li><span id="t{{ s.id }}-{{ key }}-{{ loop.index }}">{{ tt }}</span>
+            <span class="muted small">{{ tt|length }}</span>
+            <button class="btn btn-tiny" onclick="copyEl('t{{ s.id }}-{{ key }}-{{ loop.index }}')">Copy</button></li>{% endfor %}</ol>
+        </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% for label, key in [('Description', 'description'), ('Timestamps', 'timestamps'), ('Tags', 'tags'), ('Thumbnail', 'thumbnail'), ('Image prompt', 'image_prompt')] %}
+      {% if j[key] %}
+      <div class="meta-block">
+        <div class="meta-head"><span class="small muted">{{ label }}{% if key == 'tags' and j.tags_chars %} · {{ j.tags_chars }}/500 ký tự{% endif %}</span>
+          <button class="btn btn-tiny" onclick="copyEl('m{{ s.id }}-{{ key }}')">Copy</button></div>
+        <pre class="meta-pre" id="m{{ s.id }}-{{ key }}">{{ j[key] }}</pre>
+      </div>
+      {% endif %}
+    {% endfor %}
+    {% if j.warnings %}<div class="small warn">⚠️ {{ j.warnings|join(' · ') }}</div>{% endif %}
+    {% if d.output_md %}<details class="raw"><summary>Toàn bộ kết quả của skill</summary><div class="md">{{ d.output_md|md|safe }}</div></details>{% endif %}
+    <div class="small muted">{{ d.progress_msg or '' }}{% if d.finished_at %} · {{ d.finished_at }}{% endif %}</div>
+  {% endif %}
+</div>

@@ -179,6 +179,28 @@ CREATE TABLE IF NOT EXISTS publications (
   updated_at     TEXT
 );
 
+-- title & metadata runs (skill viet-tittle) for one highlight; every run is kept, the page shows the latest
+CREATE TABLE IF NOT EXISTS segment_titles (
+  id                INTEGER PRIMARY KEY,
+  segment_id        INTEGER NOT NULL REFERENCES segments(id) ON DELETE CASCADE,
+  skill             TEXT,
+  model             TEXT,
+  effort            TEXT,
+  status            TEXT NOT NULL,        -- queued | running | done | failed
+  progress_msg      TEXT,
+  output_md         TEXT,                 -- the skill's full answer
+  output_json       TEXT,                 -- structured fields written by the run
+  recommended_title TEXT,
+  error             TEXT,
+  models_used       TEXT,
+  usage_json        TEXT,
+  duration_sec      REAL,
+  created_at        TEXT NOT NULL,
+  started_at        TEXT,
+  finished_at       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_segment_titles_segment ON segment_titles(segment_id);
+
 -- pipeline
 CREATE TABLE IF NOT EXISTS jobs (
   id          INTEGER PRIMARY KEY,

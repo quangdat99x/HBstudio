@@ -36,7 +36,8 @@
 <section class="card">
   <div class="card-header"><h2>Đoạn highlight ({{ segments|length }})</h2>
     <div class="row gap">
-      <span class="muted small">bấm vào một đoạn để đọc tóm tắt, hook, keyword và xem clip</span>
+      <span class="muted small">bấm vào một đoạn để đọc tóm tắt, hook, keyword, xem clip và viết title</span>
+      <button class="btn btn-small btn-ghost" onclick="runAllTitles('{{ ep.id }}')" title="Chạy skill {{ title_skill or 'viet-tittle' }} cho mọi đoạn chưa có title">Viết Title cho mọi đoạn</button>
       <button class="btn btn-small" onclick="toggleAll(true)">Mở tất cả</button>
       <button class="btn btn-small btn-ghost" onclick="toggleAll(false)">Thu gọn</button>
     </div>
@@ -52,6 +53,8 @@
         {% if s.intensity %}<span class="pill">i{{ s.intensity }}</span>{% endif %}
         {% if s.final_score %}<span class="pill">score {{ s.final_score }}</span>{% endif %}
         {% if s.core_keyword %}<span class="pill kw">{{ s.core_keyword }}{% if s.keyword_reach %} · {{ s.keyword_reach }}{% endif %}</span>{% endif %}
+        {% if s.title_done %}<span class="pill ok" title="đã có title">📝 title</span>
+        {% elif s.title_run and s.title_run.status in ('queued', 'running') %}<span class="pill" title="đang viết title">⏳ title</span>{% endif %}
         <span class="badge st-{{ s.status }}">{{ s.status }}</span>
       </span>
     </summary>
@@ -117,6 +120,7 @@
         {% if s.clip_zoomed_path or s.clip_path %}<button class="btn btn-small btn-ghost" data-path="{{ s.clip_zoomed_path or s.clip_path }}" onclick="openFolder(this.dataset.path)">Mở vị trí</button>{% endif %}
       </div>
       <div class="preview"></div>
+      {% if s.kind == 'highlight' %}{% include '_title_block.html' %}{% endif %}
       {% if s.analysis_md %}
         <details class="raw"><summary>Nguyên văn khối phân tích (để copy)</summary><div class="md">{{ s.analysis_md|md|safe }}</div></details>
       {% endif %}
@@ -162,5 +166,23 @@ async function runEpisode(id){ const r=await api('/api/episodes/'+id+'/run',{});
 async function stopEpisode(id){ const r=await api('/api/episodes/'+id+'/stop',{}); toast(r.error||r.message||'Đã gửi lệnh dừng'); }
 async function approve(id){ const r=await api('/api/episodes/'+id+'/approve',{}); toast(r.error||r.message||'Đã duyệt'); setTimeout(()=>location.reload(),1200); }
 if(location.hash && location.hash.startsWith('#seg-')){ const d=document.querySelector(location.hash); if(d){ d.open=true; d.scrollIntoView({block:'start'}); } }
+const NEED_RESTART='Studio chưa nạp tính năng Viết Title: bấm Stop rồi Start JRE Studio trong Tool Manager';
+async function runTitle(id){ const r=await api('/api/segments/'+id+'/title',{});
+  if(r.error){ toast(String(r.error).includes('404')? NEED_RESTART : r.error); return; }
+  toast(r.message||'Đã xếp vào hàng đợi viết title'); refreshTitle(id); }
+async function cancelTitle(id){ const r=await api('/api/segments/'+id+'/title/cancel',{}); toast(r.error||r.message); refreshTitle(id); }
+async function refreshTitle(id){
+  try{ const res=await fetch('/segments/'+id+'/title-block'); if(!res.ok) return;
+    const el=document.getElementById('title-'+id); if(!el) return;
+    el.outerHTML=await res.text();
+    const n=document.getElementById('title-'+id);
+    if(n && ['queued','running'].includes(n.dataset.status)) setTimeout(()=>refreshTitle(id),4000);
+  }catch(e){ setTimeout(()=>refreshTitle(id),8000); } }
+async function runAllTitles(ep){
+  if(!confirm('Viết title cho mọi đoạn highlight chưa có title của tập này? Mỗi đoạn là một lượt Claude, chạy lần lượt.')) return;
+  const r=await api('/api/episodes/'+ep+'/titles',{});
+  if(r.error){ toast(String(r.error).includes('404')? NEED_RESTART : r.error); return; }
+  toast(r.message); setTimeout(()=>location.reload(),1200); }
+document.querySelectorAll('.title-block').forEach(b=>{ if(['queued','running'].includes(b.dataset.status)) setTimeout(()=>refreshTitle(b.dataset.seg),4000); });
 </script>
 {% endblock %}

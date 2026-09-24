@@ -36,6 +36,34 @@ db.init_db()
 
 _orchestrator = None
 _orch_lock = threading.Lock()
+_title_worker = None
+_title_lock = threading.Lock()
+
+
+def title_worker():
+    """Worker for the "Viết Title" button (own queue, never blocks the main pipeline)."""
+    global _title_worker
+    if os.environ.get("STUDIO_NO_WORKER") == "1":
+        return None
+    with _title_lock:
+        if _title_worker is None:
+            try:
+                from studio.pipeline.titles import TitleWorker
+                _title_worker = TitleWorker()
+                _title_worker.start()
+            except Exception as e:  # noqa: BLE001
+                log.warning("title worker unavailable: %s", e)
+                _title_worker = False
+    return _title_worker or None
+
+
+def _attach_titles(episode_id: str, segments: list[dict]) -> None:
+    from studio.pipeline.titles import runs_for_episode
+    runs = runs_for_episode(episode_id)
+    for s in segments:
+        r = runs.get(s["id"]) or {}
+        s["title_run"] = r.get("latest")
+        s["title_done"] = r.get("done")
 
 
 def orchestrator():
@@ -123,8 +151,21 @@ def episode_page(episode_id):
             profile = json.loads(ep["guest_profile_json"])
         except Exception:  # noqa: BLE001
             profile = None
+    _attach_titles(ep["id"], highlights)
     jobs = db.rows("SELECT * FROM jobs WHERE episode_id=? ORDER BY id DESC LIMIT 20", (ep["id"],))
-    return render_template("episode.html", page="episodes", ep=ep, segments=highlights, profile=profile, jobs=jobs)
+    return render_template("episode.html", page="episodes", ep=ep, segments=highlights, profile=profile, jobs=jobs,
+                           title_skill=db.get_setting("title_skill"), title_model=db.get_setting("claude_model_title"))
+
+
+@app.route("/segments/<int:seg_id>/title-block")
+def title_block(seg_id):
+    """HTML fragment of the title section of one segment (polled while a run is in progress)."""
+    s = db.row("SELECT * FROM segments WHERE id=?", (seg_id,))
+    if not s:
+        abort(404)
+    _attach_titles(s["episode_id"], [s])
+    return render_template("_title_block.html", s=s, title_skill=db.get_setting("title_skill"),
+                           title_model=db.get_setting("claude_model_title"))
 
 
 @app.route("/search")
@@ -164,11 +205,17 @@ def ask_page():
 @app.route("/settings", methods=["GET", "POST"])
 def settings_page():
     if request.method == "POST":
-        for key in config.DEFAULT_SETTINGS:
-            if key in request.form:
+        checkboxes = ("zoom_hooks", "review_gate", "delete_original_clip_after_zoom", "watch_enabled")
+        changed = request.form.get("_changed")
+        # Only fields the user actually edited: a page left open with old values must not overwrite newer settings.
+        keys = [k for k in changed.split(",") if k] if changed is not None else list(config.DEFAULT_SETTINGS)
+        for key in keys:
+            if key not in config.DEFAULT_SETTINGS:
+                continue
+            if key in checkboxes:
+                db.set_setting(key, "1" if key in request.form else "0")
+            elif key in request.form:
                 db.set_setting(key, request.form[key].strip())
-            elif key in ("zoom_hooks", "review_gate", "delete_original_clip_after_zoom", "watch_enabled"):
-                db.set_setting(key, "0")
         return redirect(url_for("settings_page", saved=1))
     return render_template("settings.html", page="settings", s=db.all_settings(), saved=request.args.get("saved"),
                            claude=_claude_status())
@@ -298,6 +345,36 @@ def api_approve(episode_id):
     return jsonify(orch.approve(episode_id.upper()))
 
 
+@app.route("/api/segments/<int:seg_id>/title", methods=["POST"])
+def api_title(seg_id):
+    tw = title_worker()
+    if not tw:
+        return jsonify({"error": "bộ viết title chưa sẵn sàng"}), 503
+    return jsonify(tw.enqueue(seg_id))
+
+
+@app.route("/api/segments/<int:seg_id>/title/cancel", methods=["POST"])
+def api_title_cancel(seg_id):
+    tw = title_worker()
+    if not tw:
+        return jsonify({"error": "bộ viết title chưa sẵn sàng"}), 503
+    return jsonify(tw.cancel(seg_id))
+
+
+@app.route("/api/episodes/<episode_id>/titles", methods=["POST"])
+def api_titles_for_episode(episode_id):
+    """Queue "Viết Title" for every highlight of the episode that has no finished title yet."""
+    tw = title_worker()
+    if not tw:
+        return jsonify({"error": "bộ viết title chưa sẵn sàng"}), 503
+    segs = db.rows("""SELECT s.id FROM segments s WHERE s.episode_id=? AND s.kind='highlight' AND s.start_sec IS NOT NULL
+                      AND s.id NOT IN (SELECT segment_id FROM segment_titles WHERE status IN ('done','queued','running'))
+                      ORDER BY COALESCE(s.content_rank, 999), s.rank""", (episode_id.upper(),))
+    queued = [tw.enqueue(r["id"]) for r in segs]
+    return jsonify({"queued": len([q for q in queued if q.get("run_id")]),
+                    "message": f"đã xếp {len(queued)} đoạn vào hàng đợi viết title" if queued else "mọi đoạn đều đã có title"})
+
+
 @app.route("/api/episodes/<episode_id>/stop", methods=["POST"])
 def api_stop_episode(episode_id):
     orch = orchestrator()
@@ -386,9 +463,10 @@ def api_tag_pending():
     return jsonify(tagging.pending(limit=int(request.args.get("limit") or 40), episode_id=request.args.get("episode")))
 
 
-# Start the pipeline worker as soon as the module is imported (Tool Manager imports `app` and calls app.run()).
+# Start the workers as soon as the module is imported (Tool Manager imports `app` and calls app.run()).
 if os.environ.get("STUDIO_NO_WORKER") != "1":
     orchestrator()
+    title_worker()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", config.PORT_STUDIO))

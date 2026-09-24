@@ -38,6 +38,18 @@ def rebuild_index(segment_ids: Optional[list[int]] = None) -> int:
             c.execute("DELETE FROM segment_search")
         for s in segs:
             analysis = s["analysis_md"] or ""
+            try:
+                t = c.execute("SELECT recommended_title, output_json FROM segment_titles WHERE segment_id=? AND status='done' "
+                              "ORDER BY id DESC LIMIT 1", (s["id"],)).fetchone()
+            except Exception:  # noqa: BLE001  (table missing on an old database)
+                t = None
+            if t:
+                analysis += "\n" + (t["recommended_title"] or "")
+                try:
+                    tj = json.loads(t["output_json"] or "{}")
+                    analysis += "\n" + " ".join(str(tj.get(k) or "") for k in ("tags", "titles_format1", "titles_format2"))
+                except ValueError:
+                    pass
             if s["analysis_json"]:
                 try:
                     aj = json.loads(s["analysis_json"])

@@ -47,6 +47,13 @@ work/  logs/            file tạm, log
 
 Skill `chon-noi-dung-jre-v2` được copy tự động từ thư mục plugin của app desktop vào `.claude/skills/` trước mỗi lần chạy, nên luôn cùng phiên bản với bản chạy tay.
 
+## Viết Title cho từng đoạn
+
+- Trên trang tập, mỗi đoạn highlight có khối **📝 Title & metadata** với nút **Viết Title**. Nút này chạy skill `viet-tittle` bằng Claude headless cho đúng đoạn đó, mặc định model **opus**, effort high (đổi ở Cài đặt → Viết Title).
+- Skill nhận đúng thứ nó cần như khi chạy tay: transcript của đoạn theo định dạng file `.txt` của Video Cutter (timestamp gốc + dòng "Thời gian: start → end") và cutlist của riêng đoạn đó cho Bước 0.
+- Kết quả hiện ngay trên đoạn: title khuyên dùng, 3 title Format 1, 3 title Format 2, description, timestamps, tags kèm số ký tự, thumbnail, image prompt, mỗi phần có nút Copy, cùng toàn văn câu trả lời của skill. Mọi lượt đều được lưu trong bảng `segment_titles`, bấm "Viết lại title" để chạy lượt mới.
+- Hàng đợi viết title chạy riêng, lần lượt từng đoạn, không chặn pipeline cắt và zoom. Nút "Viết Title cho mọi đoạn" ở đầu danh sách xếp tất cả đoạn chưa có title vào hàng đợi.
+
 ## Sao lưu, làm sạch, khôi phục
 
 - Trang **Cài đặt → Làm sạch dữ liệu**, hoặc `hldb reset --yes`: sao lưu `studio.db` vào `backups\` rồi xóa mọi tập, đoạn, transcript, theme đã gán, job. Giữ cài đặt và danh sách theme. Không đụng tới file trên đĩa.

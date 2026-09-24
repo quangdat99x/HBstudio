@@ -15,7 +15,7 @@ from pathlib import Path
 from . import config, db
 
 BACKUP_DIR = config.BASE_DIR / "backups"
-DATA_TABLES = ["segment_search", "segment_topics", "segment_themes", "segment_entities", "compilation_items",
+DATA_TABLES = ["segment_titles", "segment_search", "segment_topics", "segment_themes", "segment_entities", "compilation_items",
                "publications", "compilations", "transcript_lines", "segments", "episodes", "topics", "entities",
                "job_events", "jobs", "ingest_log"]
 
