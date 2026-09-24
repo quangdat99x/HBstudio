@@ -152,6 +152,12 @@ def segment_detail(seg_id: int) -> Optional[dict]:
     d["hooks"] = [dict(r) for r in conn.execute(
         "SELECT id, rank, start_hms, end_hms, duration_sec, title, quote_en, hook_type, clip_path, clip_zoomed_path, status "
         "FROM segments WHERE parent_id=? ORDER BY rank", (seg_id,))]
+    try:
+        t = conn.execute("SELECT recommended_title, output_json, finished_at FROM segment_titles WHERE segment_id=? "
+                         "AND status='done' ORDER BY id DESC LIMIT 1", (seg_id,)).fetchone()
+        d["title_result"] = dict(t) if t else None
+    except Exception:  # noqa: BLE001
+        d["title_result"] = None
     d["compilations"] = [dict(r) for r in conn.execute(
         "SELECT c.id, c.theme, c.slug, ci.ord, ci.role FROM compilation_items ci JOIN compilations c ON c.id=ci.compilation_id "
         "WHERE ci.segment_id=?", (seg_id,))]

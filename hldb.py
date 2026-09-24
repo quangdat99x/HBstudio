@@ -128,6 +128,17 @@ def main(argv=None):
                     print(f"{k}: {d[k]}")
             if d.get("analysis_md"):
                 print("\n--- analysis ---\n" + d["analysis_md"])
+            t = db.row("SELECT recommended_title, output_json, finished_at FROM segment_titles WHERE segment_id=? AND status='done' "
+                       "ORDER BY id DESC LIMIT 1", (sid,))
+            if t:
+                print(f"\n--- title ({t['finished_at']}) ---\nrecommended: {t['recommended_title']}")
+                try:
+                    tj = json.loads(t["output_json"] or "{}")
+                    for k in ("titles_format1", "titles_format2", "tags"):
+                        if tj.get(k):
+                            print(f"{k}: {tj[k]}")
+                except ValueError:
+                    pass
     elif args.cmd == "episodes":
         _print(db.rows("SELECT e.id, e.guest, e.stage, e.source_video, "
                        "(SELECT COUNT(*) FROM segments s WHERE s.episode_id=e.id AND s.kind='highlight') AS highlights, "
