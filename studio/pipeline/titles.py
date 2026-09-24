@@ -149,6 +149,11 @@ class TitleProgress:
             self.thinking += int(data or 0)
             self._emit()
             return
+        if kind in ("writing", "writing_tool"):
+            what = "ghi file kết quả" if kind == "writing_tool" else "viết title, description, tags"
+            self.last = f"đang {what} (~{int(data or 0):,} ký tự)".replace(",", ".")
+            self._emit()
+            return
         if kind == "text":
             self.last = str(data).strip().replace("\n", " ")[-140:]
             self._emit(force=True)

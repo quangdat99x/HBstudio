@@ -74,6 +74,10 @@ class SelectProgress:
             self.thinking += int(data or 0)
             self._emit(self.message())
             return
+        if kind in ("writing", "writing_tool"):
+            what = "soạn nội dung file" if kind == "writing_tool" else "viết kết quả"
+            self._emit(f"{self.phase} · đang {what} (~{int(data or 0):,} ký tự)".replace(",", "."))
+            return
         if kind == "text":
             self._emit(str(data).strip().replace("\n", " ")[-150:], force=True)
             return

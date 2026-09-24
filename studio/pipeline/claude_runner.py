@@ -97,7 +97,7 @@ def run(prompt: str, *, cwd: Path | None = None, allowed_tools: str | None = Non
     if not cmd:
         return {"ok": False, "error": "Claude Code CLI chưa cài (xem README: E:\\Tool\\claude-cli)", "text": ""}
     cwd = Path(cwd or config.BASE_DIR)
-    args = cmd + ["-p", "--output-format", "stream-json", "--verbose",
+    args = cmd + ["-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
                   "--permission-mode", permission_mode or db.get_setting("claude_permission_mode")]
     for d in add_dirs or []:
         if d and Path(d).exists():
@@ -122,6 +122,7 @@ def run(prompt: str, *, cwd: Path | None = None, allowed_tools: str | None = Non
     logf = open(log_path, "w", encoding="utf-8") if log_path else None
     texts, result, usage, cost, is_error, err_msg = [], "", {}, None, False, ""
     model_usage: dict = {}
+    written = {"text": 0, "tool": 0}      # characters streamed so far (answer text / tool input such as a file body)
     try:
         proc = subprocess.Popen(args, cwd=str(cwd), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 text=True, encoding="utf-8", errors="replace", env=env,
@@ -140,7 +141,8 @@ def run(prompt: str, *, cwd: Path | None = None, allowed_tools: str | None = Non
             err_msg = "dừng theo yêu cầu"
             is_error = True
             break
-        if logf:
+        partial = line.startswith('{"type":"stream_event"')
+        if logf and not partial:                 # partial chunks would bloat the log; final messages are kept
             logf.write(line)
         line = line.strip()
         if not line.startswith("{"):
@@ -150,6 +152,15 @@ def run(prompt: str, *, cwd: Path | None = None, allowed_tools: str | None = Non
         except ValueError:
             continue
         et = ev.get("type")
+        if et == "stream_event":
+            delta = (ev.get("event") or {}).get("delta") or {}
+            if delta.get("type") == "text_delta":
+                written["text"] += len(delta.get("text") or "")
+                _safe_call(on_event, "writing", written["text"])
+            elif delta.get("type") == "input_json_delta":
+                written["tool"] += len(delta.get("partial_json") or "")
+                _safe_call(on_event, "writing_tool", written["tool"])
+            continue
         if et == "assistant":
             for block in (ev.get("message") or {}).get("content") or []:
                 if block.get("type") == "text" and block.get("text"):
