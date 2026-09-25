@@ -4,7 +4,7 @@
 - Trạng thái: ĐÃ DUYỆT 2026-09-23, quyết định A đến F như đề xuất, kèm 3 điều chỉnh của người dùng:
   1. Tool zoom bỏ hẳn chức năng tạo thumbnail (mặc định tắt, bản zoom chỉ ra file mp4).
   2. Cutter không ghi 3 file phụ mỗi clip (`.txt`, `.json`, `.manifest.json`) nữa; chỉ ghi khi bật ô "Xuất kèm transcript + manifest" cho luồng viet-prompt-v2.
-  3. Khối phân tích của skill chọn nội dung (Tóm tắt, Tại sao đắt, Hook cold open, Keyword, Fit) được lưu nguyên văn vào database cho từng đoạn (`segments.analysis_md` + `analysis_json`), lấy từ file `analysis_<id>.json` của lần chạy headless hoặc dán tay trên UI.
+  3. Khối phân tích của skill chọn nội dung (Tóm tắt, Tại sao đắt, Hook cold open, Keyword, Fit) được lưu nguyên văn vào database cho từng đoạn (`segments.analysis_md` + `analysis_json`), lấy từ câu trả lời của lần chạy headless (Studio tự tách từng khối, từ 2026-09-25 không bắt Claude ghi thêm bản sao `analysis_<id>.json` nữa, xem README mục "Bước chọn nội dung tốn bao nhiêu") hoặc dán tay trên UI.
 - Tiến độ triển khai: xem Mục 12.
 - Phạm vi: CHỈ JRE (Joe Rogan Experience và JRE MMA Show). Không làm SRS, GoodHang hay podcast khác.
 - Thư mục dự án: `E:\DataBase` (code + `studio.db`), đăng ký vào Tool Manager `E:\Tool\run.pyw` làm tool thứ 4, port 5004.

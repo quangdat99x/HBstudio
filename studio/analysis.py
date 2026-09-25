@@ -1,10 +1,12 @@
 """Capture the skill's per-segment analysis block (Mục VI locked format) and store it on the segment.
 
 Sources:
-1. `analysis_<episode>.json` written by the headless run (structured, preferred).
-2. Text pasted from the desktop app or captured from the headless chat log. The paste may be raw markdown
-   ("[1]. **Title**") or the rendered text copied from the chat ("1. Title", no ** markers, emoji kept), so the
-   splitter tries several layouts and the matcher uses Start/End, hook timestamps, CUT BLOCK json, title, keyword.
+1. The answer of the headless run: the skill prints every block once, Studio splits it here. The run only adds a
+   small `tags_<episode>.json` with themes/entities per highlight (import_tags), so nothing is written twice.
+2. Text pasted from the desktop app. The paste may be raw markdown ("[1]. **Title**") or the rendered text copied
+   from the chat ("1. Title", no ** markers, emoji kept), so the splitter tries several layouts and the matcher
+   uses Start/End, hook timestamps, CUT BLOCK json, title, keyword.
+3. `analysis_<episode>.json` of older headless runs (structured, every section plus raw_md), via hldb import.
 """
 from __future__ import annotations
 
@@ -47,10 +49,14 @@ def _heads(text: str, pattern: re.Pattern, require_body: bool) -> list[tuple[int
     return out
 
 
+def _block_heads(text: str) -> list[tuple[int, int, str]]:
+    return _heads(text, _RE_HEAD_MD, require_body=False) or _heads(text, _RE_HEAD_PLAIN, require_body=True)
+
+
 def split_blocks(text: str) -> list[dict]:
     """Split a skill output into per-segment blocks: [{index, title, raw}]."""
     text = text.replace("\r\n", "\n")
-    heads = _heads(text, _RE_HEAD_MD, require_body=False) or _heads(text, _RE_HEAD_PLAIN, require_body=True)
+    heads = _block_heads(text)
     if not heads:
         # no headings survived (rendered copy without numbers): split at Start: lines, else at Tóm tắt: lines
         anchors = [m.start() for m in _RE_START.finditer(text)] or [m.start() for m in _RE_TOMTAT.finditer(text)]
@@ -196,6 +202,64 @@ def import_markdown(episode_id: str, text: str, source: str = "manual") -> dict:
     return stats
 
 
+_RE_GUEST_HEAD = [re.compile(r"^.*HỒ SƠ KHÁCH MỜI.*$", re.M), re.compile(r"^.*GUEST CARD.*$", re.M)]
+
+
+def extract_guest_card(text: str) -> Optional[str]:
+    """The Guest Card printed by the skill ("🎙️ HỒ SƠ KHÁCH MỜI — ..."), up to the first segment block.
+
+    Case-sensitive on purpose: status notes such as "lập Guest Card" must not be taken for the card itself.
+    """
+    text = (text or "").replace("\r\n", "\n")
+    for pat in _RE_GUEST_HEAD:
+        m = pat.search(text)
+        if not m:
+            continue
+        end = next((pos for pos, _, _ in _block_heads(text) if pos > m.start()), None)
+        card = text[m.start():end if end is not None else m.start() + 6000]
+        card = re.sub(r"(?m)^[ \t]*```[\w-]*[ \t]*\n?", "", card)    # the skill's template shows the card in a code fence
+        card = re.sub(r"(\n\s*-{3,}\s*)+$", "", card.strip()).strip()
+        if len(card) > 80:
+            return card
+    return None
+
+
+def _content_rank_segment(conn, episode_id: str, rank) -> Optional[int]:
+    try:
+        rank = int(rank)
+    except (TypeError, ValueError):
+        return None
+    r = conn.execute("SELECT id FROM segments WHERE episode_id=? AND kind='highlight' AND content_rank=?",
+                     (episode_id, rank)).fetchone()
+    return r["id"] if r else None
+
+
+def import_tags(episode_id: str, data) -> dict:
+    """Themes/entities per highlight from tags_<episode>.json: {"segments": [{content_rank, start, end, themes, entities}]}.
+
+    The file is written together with the cutlist, so content_rank points at the right highlight; start/end are the
+    fallback when a later fix moved the ranks.
+    """
+    items = data.get("segments") if isinstance(data, dict) else data
+    stats = {"items": len(items or []), "tagged": 0, "unmatched": []}
+    conn = db.get_conn()
+    for it in items or []:
+        if not isinstance(it, dict):
+            continue
+        seg_id = _content_rank_segment(conn, episode_id, it.get("content_rank"))
+        if seg_id is None:
+            seg_id = match_segment(episode_id, {"start_hms": it.get("start"), "end_hms": it.get("end")}, it.get("title", ""))
+        if seg_id is None:
+            stats["unmatched"].append(it.get("content_rank") or it.get("start"))
+            continue
+        try:
+            _apply_item_tags(seg_id, it)
+            stats["tagged"] += 1
+        except Exception:  # noqa: BLE001  (tags are a bonus, never fail the import)
+            stats["unmatched"].append(it.get("content_rank") or it.get("start"))
+    return stats
+
+
 def import_analysis_json(episode_id: str, data, source: str = "headless") -> dict:
     """Attach entries of analysis_<episode>.json: [{content_rank|title|start|end, tom_tat, ly_do_dat, ..., raw_md}]."""
     items = data.get("segments") if isinstance(data, dict) else data
@@ -207,9 +271,7 @@ def import_analysis_json(episode_id: str, data, source: str = "headless") -> dic
             parsed.update({k: v for k, v in parse_block(it["raw_md"]).items() if k not in parsed or not parsed[k]})
         seg_id = match_segment(episode_id, parsed, it.get("title", ""))
         if seg_id is None and it.get("content_rank"):
-            r = conn.execute("SELECT id FROM segments WHERE episode_id=? AND kind='highlight' AND content_rank=?",
-                             (episode_id, int(it["content_rank"]))).fetchone()
-            seg_id = r["id"] if r else None
+            seg_id = _content_rank_segment(conn, episode_id, it["content_rank"])
         if seg_id is None:
             stats["unmatched"].append(it.get("title"))
             continue

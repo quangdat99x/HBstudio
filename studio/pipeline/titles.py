@@ -147,13 +147,16 @@ class TitleProgress:
         self.update(f"[{int((now - self.started) // 60)} phút · {self.tools} lượt công cụ{think}] {self.last}")
 
     def __call__(self, kind: str, data) -> None:
+        if kind == "text_delta":                          # raw streamed text; "writing" already counts it
+            return
         if kind == "thinking":
             self.thinking += int(data or 0)
             self._emit()
             return
         if kind in ("writing", "writing_tool"):
             what = "ghi file kết quả" if kind == "writing_tool" else "viết title, description, tags"
-            self.last = f"đang {what} (~{int(data or 0):,} ký tự)".replace(",", ".")
+            chars = f"{int(data or 0):,}".replace(",", ".")
+            self.last = f"đang {what} (~{chars} ký tự)"
             self._emit()
             return
         if kind == "text":
