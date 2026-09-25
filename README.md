@@ -25,7 +25,7 @@ studio/
     orchestrator.py     worker + state machine mỗi tập, hàng đợi trong SQLite
     intake.py           theo dõi thư mục media, tải URL qua Downloader
     transcribe.py       whisper_worker.py của Cutter (CUDA)
-    select_ai.py        claude -p "/chon-noi-dung-jre-v2 ..." headless + validator
+    select_ai.py        chon-noi-dung-jre-v2 headless (skill + transcript trong prompt) + validator + sửa lỗi bằng --resume
     cut.py  zoom.py     gọi Cutter (/api/cut-headless) và Zoom (/api/enqueue-path)
     claude_runner.py    chạy Claude Code CLI, bắt stream-json
 .claude/skills/         chon-noi-dung-jre-v2 (sync từ app desktop), kho-highlight (mới)
@@ -46,6 +46,19 @@ work/  logs/            file tạm, log
 4. Chọn model ở cùng trang: model và effort riêng cho bước chọn nội dung và cho Hỏi AI (bí danh `fable`, `opus`, `sonnet`, `haiku` hoặc tên đầy đủ), model dự phòng khi quá tải. Để trống = model mặc định của Claude Code cho tài khoản. Nút "Kiểm tra" chạy một lượt nhỏ và in ra model thực tế trả lời; mỗi job chọn nội dung cũng ghi model, số token và thời gian vào cột thông báo.
 
 Skill `chon-noi-dung-jre-v2` được copy tự động từ thư mục plugin của app desktop vào `.claude/skills/` trước mỗi lần chạy, nên luôn cùng phiên bản với bản chạy tay.
+
+### Bước chọn nội dung tốn bao nhiêu và vì sao
+
+Mỗi lần Claude gọi một công cụ là một request mới, đọc lại toàn bộ hội thoại từ đầu (phần đọc lại tính giá cache, rẻ nhưng cộng dồn rất nhanh), còn mọi chữ Claude viết ra là output, đắt và chậm (~100 token/giây). Ba lần chạy đầu (JRE-2368, 2551, 2558, opus xhigh) tốn 22–41 phút, 3,3–4,5 triệu token, 168–245 nghìn token output mỗi tập vì: đọc transcript từng khúc 400–800 dòng (6–8 request), mỗi request mang theo ~30 nghìn token của MCP (Premiere, Canva, ElevenLabs, Trello…), danh sách 49 skill và memory, chạy python tự kiểm tra rồi đi xem file của tập cũ, và viết phân tích ba lần (câu trả lời, `analysis_<id>.json` có cả `raw_md` lẫn từng mục tách riêng, cộng cutlist).
+
+Cách chạy hiện nay:
+- Toàn văn skill và toàn văn transcript nằm ngay trong prompt, không đọc file từng khúc.
+- CLI chạy cô lập: `--strict-mcp-config`, `--disable-slash-commands`, `--tools Read,Write,Edit,WebSearch,WebFetch`, tắt auto-memory và connector claude.ai. Phần cố định mỗi request (system prompt, định nghĩa tool, danh sách skill/MCP) giảm khoảng 4 lần (lượt đo thử: ~31 nghìn xuống ~7 nghìn token).
+- Chạy thử 2026-09-25 (45 phút đầu JRE-2558, tối đa 2 đoạn, opus xhigh): 3 request thay vì 15–20, 9 phút, 58 nghìn token viết ra (42 nghìn là suy nghĩ), $2.10; lượt sửa lỗi bằng `--resume` thêm 20 giây, $0.21.
+- Phân tích (Guest Card + khối Mục VI của từng đoạn) chỉ in một lần trong câu trả lời, Studio tự tách và gắn vào từng đoạn. Ngoài cutlist, Claude chỉ ghi thêm `work\<id>\tags_<id>.json` rất nhỏ (content_rank, start, end, themes, entities).
+- Studio tự kiểm tra cutlist. Có lỗi thì gửi danh sách lỗi vào đúng phiên cũ (`--resume`, cache còn nóng) để Claude sửa file, không chạy lại từ đầu.
+- Cột thông báo của job ghi: tổng token (phần đọc lại cache), token viết ra (phần suy nghĩ), chi phí quy đổi, thời gian.
+- Effort `xhigh` làm phần suy nghĩ chiếm 100–140 nghìn token mỗi tập (hơn nửa thời gian chạy). Muốn nhanh hơn nữa thì hạ effort bước chọn nội dung xuống `high` ở trang Cài đặt.
 
 ## Viết Title cho từng đoạn
 
@@ -71,6 +84,14 @@ Skill `chon-noi-dung-jre-v2` được copy tự động từ thư mục plugin c
 
 - Nút **Dừng** ở trang Hàng đợi và trang tập: bỏ tập khỏi hàng đợi, hoặc dừng bước đang chạy ở điểm an toàn gần nhất (Claude bị dừng ngay, Cutter/Zoom làm nốt đoạn đang xử lý).
 - Khởi động lại Studio giữa chừng là an toàn: tập đang dở tự vào lại hàng đợi, bước cắt chờ Cutter xong việc cũ và dùng lại clip đã có, bước zoom dùng lại job Zoom đang chạy.
+- Clip chỉ được tính là xong khi ffprobe mở được. Clip bị ghi dở (Cutter bị ngắt giữa chừng, lỗi "moov atom not found") được đưa vào Thùng rác và cắt lại ở lần "Chạy tiếp" sau; bản zoom render dở cũng vậy. Việc này chỉ làm khi Cutter đang rảnh, không đụng file đang ghi.
+
+## Xoá đoạn
+
+- Trang tập: nút **🗑 Xoá đoạn** trong từng đoạn, nút **✕** cạnh từng hook, hoặc tick ô bên trái nhiều đoạn rồi bấm **Xoá đoạn đã chọn**. Xoá một highlight thì các hook của nó đi theo.
+- Đoạn đã xoá không hiện trên trang tập, trong tìm kiếm, trong các con số; bước cắt và zoom bỏ qua, "Chạy tiếp" nạp lại cutlist cũng không làm nó hiện lại (trạng thái `archived`). File cutlist trong thư mục media giữ nguyên.
+- Hộp xác nhận có ô **chuyển luôn file clip (bản gốc + bản zoom) vào Thùng rác của Windows**. Không tick thì file vẫn nằm trên ổ đĩa.
+- Mục **Đoạn đã xoá** cuối trang tập có nút **Khôi phục**. Đoạn khôi phục mà file đã vào Thùng rác sẽ được cắt và zoom lại khi bấm "Chạy tiếp pipeline".
 - Template tự nạp lại khi sửa; sửa file `.py` thì cần Stop rồi Start Studio.
 
 ## Sửa đổi ở tool cũ

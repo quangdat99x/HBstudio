@@ -141,9 +141,9 @@ def main(argv=None):
                     pass
     elif args.cmd == "episodes":
         _print(db.rows("SELECT e.id, e.guest, e.stage, e.source_video, "
-                       "(SELECT COUNT(*) FROM segments s WHERE s.episode_id=e.id AND s.kind='highlight') AS highlights, "
-                       "(SELECT COUNT(*) FROM segments s WHERE s.episode_id=e.id AND s.kind='hook') AS hooks, "
-                       "(SELECT COUNT(*) FROM segments s WHERE s.episode_id=e.id AND s.clip_zoomed_path IS NOT NULL) AS zoomed "
+                       "(SELECT COUNT(*) FROM segments s WHERE s.episode_id=e.id AND s.kind='highlight' AND s.status!='archived') AS highlights, "
+                       "(SELECT COUNT(*) FROM segments s WHERE s.episode_id=e.id AND s.kind='hook' AND s.status!='archived') AS hooks, "
+                       "(SELECT COUNT(*) FROM segments s WHERE s.episode_id=e.id AND s.clip_zoomed_path IS NOT NULL AND s.status!='archived') AS zoomed "
                        "FROM episodes e ORDER BY e.podcast_id, e.number DESC"), as_json)
     elif args.cmd == "episode":
         ep = db.row("SELECT * FROM episodes WHERE id=?", (args.episode_id.upper(),))
@@ -166,11 +166,11 @@ def main(argv=None):
     elif args.cmd == "stats":
         _print({
             "episodes": db.scalar("SELECT COUNT(*) FROM episodes"),
-            "highlights": db.scalar("SELECT COUNT(*) FROM segments WHERE kind='highlight'"),
-            "hooks": db.scalar("SELECT COUNT(*) FROM segments WHERE kind='hook'"),
-            "with_clip": db.scalar("SELECT COUNT(*) FROM segments WHERE clip_path IS NOT NULL"),
-            "zoomed": db.scalar("SELECT COUNT(*) FROM segments WHERE clip_zoomed_path IS NOT NULL"),
-            "with_analysis": db.scalar("SELECT COUNT(*) FROM segments WHERE analysis_md IS NOT NULL"),
+            "highlights": db.scalar("SELECT COUNT(*) FROM segments WHERE kind='highlight' AND status!='archived'"),
+            "hooks": db.scalar("SELECT COUNT(*) FROM segments WHERE kind='hook' AND status!='archived'"),
+            "with_clip": db.scalar("SELECT COUNT(*) FROM segments WHERE clip_path IS NOT NULL AND status!='archived'"),
+            "zoomed": db.scalar("SELECT COUNT(*) FROM segments WHERE clip_zoomed_path IS NOT NULL AND status!='archived'"),
+            "with_analysis": db.scalar("SELECT COUNT(*) FROM segments WHERE analysis_md IS NOT NULL AND status!='archived'"),
             "topics": db.scalar("SELECT COUNT(*) FROM topics"),
             "themes": db.scalar("SELECT COUNT(*) FROM themes"),
             "transcript_lines": db.scalar("SELECT COUNT(*) FROM transcript_lines"),

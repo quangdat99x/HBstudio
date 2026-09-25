@@ -1,4 +1,9 @@
-"""Stage: render zoomed versions with the Podcast Zoom tool (path mode, no thumbnail)."""
+"""Stage: render zoomed versions with the Podcast Zoom tool (path mode, no thumbnail).
+
+Zoomed files count as done only when ffprobe can open them: a render that was interrupted leaves a
+half-written `_zoomed.mp4` behind. Input clips are checked before they are sent, so a clip that was cut only
+halfway gets a clear message and is cut again by the next "Chạy tiếp" instead of failing inside the Zoom tool.
+"""
 from __future__ import annotations
 
 import logging
@@ -7,7 +12,7 @@ import time
 from pathlib import Path
 
 from .. import db
-from ..util import now_iso
+from ..util import discard_broken, ffmpeg_error_summary, media_ok, now_iso
 from . import tools
 
 log = logging.getLogger("studio.zoom")
@@ -36,14 +41,17 @@ def pending_segments(episode_id: str) -> list[dict]:
         clip = Path(s["clip_path"])
         if not clip.exists():
             continue
+        expected = (s["end_sec"] or 0) - (s["start_sec"] or 0)
         zoomed = clip.with_name(clip.stem + "_zoomed.mp4")
-        if (s["clip_zoomed_path"] and Path(s["clip_zoomed_path"]).exists()) or zoomed.exists():
-            if not s["clip_zoomed_path"] or not Path(s["clip_zoomed_path"]).exists():
+        known = Path(s["clip_zoomed_path"]) if s["clip_zoomed_path"] else None
+        done = known if known and media_ok(known, expected) else zoomed if media_ok(zoomed, expected) else None
+        if done:
+            if s["clip_zoomed_path"] != str(done):
                 with db.tx() as c:
                     c.execute("UPDATE segments SET clip_zoomed_path=?, status=CASE WHEN status IN ('selected','cut') THEN 'zoomed' ELSE status END, "
-                              "updated_at=? WHERE id=?", (str(zoomed), now_iso(), s["id"]))
+                              "updated_at=? WHERE id=?", (str(done), now_iso(), s["id"]))
             continue
-        out.append(s)
+        out.append(s)                                      # no zoomed file, or a half-rendered one
     return out
 
 
@@ -70,14 +78,24 @@ def zoom_episode(episode_id: str, progress_cb=None, stop_flag=None) -> dict:
     for n, s in enumerate(todo, 1):
         if stop_flag and stop_flag():
             raise RuntimeError("dừng theo yêu cầu")
+        cur = db.row("SELECT status FROM segments WHERE id=?", (s["id"],))
+        if not cur or cur["status"] == "archived":         # deleted on the episode page while this stage ran
+            continue
         clip = Path(s["clip_path"])
         out = clip.with_name(clip.stem + "_zoomed.mp4")
         job_id = _existing_job(base, clip.name)
         if not job_id:
+            if not media_ok(clip, (s["end_sec"] or 0) - (s["start_sec"] or 0)):
+                failed.append(f"{clip.name}: file clip hỏng (bị ghi dở khi cắt), bấm Chạy tiếp để cắt lại đoạn này")
+                with db.tx() as c:                         # the cut stage sees it as missing and cuts it again
+                    c.execute("UPDATE segments SET clip_path=NULL, updated_at=? WHERE id=?", (now_iso(), s["id"]))
+                continue
+            if out.exists():                               # left by a render that stopped midway, no job owns it
+                log.warning("half-rendered zoom output for %s: %s", s["id"], discard_broken(out))
             res = tools.post_json(f"{base}/api/enqueue-path", {"path": str(clip), "output_path": str(out), "config": cfg},
                                   timeout=60)
             if res.get("error"):
-                failed.append(f"{clip.name}: {res['error']}")
+                failed.append(f"{clip.name}: {ffmpeg_error_summary(str(res['error']), 300)}")
                 continue
             job_id = res["job_id"]
         while True:
@@ -90,8 +108,9 @@ def zoom_episode(episode_id: str, progress_cb=None, stop_flag=None) -> dict:
             if st.get("status") in ("complete", "error"):
                 break
             time.sleep(3)
-        if st.get("status") == "error" or not out.exists():
-            failed.append(f"{clip.name}: {st.get('error') or 'không thấy file output'}")
+        if st.get("status") == "error" or not media_ok(out):
+            failed.append(f"{clip.name}: " + (ffmpeg_error_summary(str(st["error"]), 300) if st.get("error")
+                                              else "Zoom báo xong nhưng file output thiếu hoặc hỏng"))
             continue
         with db.tx() as c:
             c.execute("UPDATE segments SET clip_zoomed_path=?, status=CASE WHEN status IN ('selected','cut') THEN 'zoomed' ELSE status END, "

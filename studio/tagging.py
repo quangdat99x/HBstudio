@@ -45,7 +45,7 @@ def pending(limit: int = 40, episode_id: str | None = None) -> dict:
         f"""SELECT s.id, s.episode_id, e.guest, s.title, s.summary_en, s.core_keyword,
                    (SELECT group_concat(t.name, ' ; ') FROM segment_topics st JOIN topics t ON t.id=st.topic_id WHERE st.segment_id=s.id) AS topics
             FROM segments s JOIN episodes e ON e.id=s.episode_id
-            WHERE s.kind='highlight' AND s.id NOT IN (SELECT segment_id FROM segment_themes) {where}
+            WHERE s.kind='highlight' AND s.status!='archived' AND s.id NOT IN (SELECT segment_id FROM segment_themes) {where}
             ORDER BY s.episode_id, s.rank LIMIT ?""", params)
     themes = db.rows("SELECT slug, name_vi FROM themes ORDER BY slug")
     return {"themes": themes, "segments": segs,

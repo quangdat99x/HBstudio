@@ -151,6 +151,94 @@ def ffprobe_duration(path: Path) -> float:
         return 0.0
 
 
+_MEDIA_OK: dict[str, tuple[int, int, float]] = {}     # path -> (size, mtime_ns, duration): probe each file version once
+
+
+def media_ok(path: Path, expected_sec: Optional[float] = None) -> bool:
+    """A finished media file: ffprobe can open it and it lasts about as long as expected.
+
+    An MP4 whose writing was cut short (ffmpeg killed or the tool stopped mid-clip) has no moov atom: it has a
+    plausible size but no player, ffprobe or ffmpeg can open it.
+    """
+    path = Path(path)
+    try:
+        st = path.stat()
+    except OSError:
+        return False
+    if st.st_size < 1024:
+        return False
+    hit = _MEDIA_OK.get(str(path))
+    if hit and hit[:2] == (st.st_size, st.st_mtime_ns):
+        duration = hit[2]
+    else:
+        duration = ffprobe_duration(path)
+        _MEDIA_OK[str(path)] = (st.st_size, st.st_mtime_ns, duration)
+    if duration <= 0:
+        return False
+    return not expected_sec or expected_sec <= 3 or duration >= expected_sec * 0.9 - 1.0
+
+
+def send_to_trash(path: Path) -> None:
+    """Move a file to the Windows Recycle Bin (the user can still restore it). Raises OSError if the shell refuses.
+
+    FOF_WANTNUKEWARNING makes Windows ask instead of silently deleting for good when a file is too big for the bin.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    class SHFILEOPSTRUCTW(ctypes.Structure):
+        _fields_ = [("hwnd", wintypes.HWND), ("wFunc", wintypes.UINT), ("pFrom", wintypes.LPCWSTR),
+                    ("pTo", wintypes.LPCWSTR), ("fFlags", ctypes.c_ushort), ("fAnyOperationsAborted", wintypes.BOOL),
+                    ("hNameMappings", ctypes.c_void_p), ("lpszProgressTitle", wintypes.LPCWSTR)]
+
+    FO_DELETE, FOF_SILENT, FOF_NOCONFIRMATION, FOF_ALLOWUNDO, FOF_NOERRORUI, FOF_WANTNUKEWARNING = 3, 0x4, 0x10, 0x40, 0x400, 0x4000
+    full = str(Path(path).resolve())
+    if not Path(full).exists():
+        raise OSError(f"không thấy file: {full}")
+    buf = ctypes.create_unicode_buffer(full, len(full) + 2)     # pFrom needs a double null terminator
+    op = SHFILEOPSTRUCTW(hwnd=None, wFunc=FO_DELETE, pFrom=ctypes.cast(buf, wintypes.LPCWSTR), pTo=None,
+                         fFlags=FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI | FOF_WANTNUKEWARNING)
+    rc = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(op))
+    if rc or op.fAnyOperationsAborted or Path(full).exists():
+        raise OSError(f"không chuyển được vào Thùng rác (mã {rc:#x}, file đang mở?): {Path(full).name}")
+    _MEDIA_OK.pop(full, None)
+
+
+def discard_broken(path: Path) -> str:
+    """Get a half-written media file out of the way: Recycle Bin, or rename to .broken when that fails."""
+    try:
+        send_to_trash(path)
+        return f"{Path(path).name} → Thùng rác"
+    except OSError:
+        dst = Path(path).with_name(Path(path).name + ".broken")
+        if dst.exists():
+            dst = dst.with_name(f"{Path(path).name}.{int(Path(path).stat().st_mtime)}.broken")
+        Path(path).replace(dst)
+        return f"{Path(path).name} → {dst.name}"
+
+
+_FFMPEG_ERR = re.compile(r"error|invalid|not found|failed|no such|denied|could not|unable|corrupt", re.I)
+
+
+def ffmpeg_error_summary(text: str, limit: int = 400) -> str:
+    """The lines of an ffmpeg/tool error that say what went wrong, without the version banner, plus a hint."""
+    text = text or ""
+    hints = []
+    if "moov atom not found" in text:
+        hints.append("file clip bị ghi dở (thiếu moov atom), thường do bước cắt bị ngắt giữa chừng")
+    elif "No space left" in text:
+        hints.append("ổ đĩa đầy")
+    keep: list[str] = []
+    for raw in text.splitlines():
+        ln = re.sub(r"\s*:?\s*-?-enable-\S+.*$", "", raw).strip()     # tail of the "configuration: --enable-..." line
+        ln = re.sub(r"^\[[^\]]*@ [0-9a-fx]+\]\s*", "", ln)              # "[in#0 @ 000002...] "
+        if ln and _FFMPEG_ERR.search(ln) and not ln.lower().startswith(("configuration", "built with")) and ln not in keep:
+            keep.append(ln)
+    if not keep and text.strip():
+        keep = [text.strip().splitlines()[-1]]
+    return " — ".join(hints + [" · ".join(keep)] if keep else hints)[:limit]
+
+
 def find_transcript(video_path: Path) -> Optional[Path]:
     stem = video_path.stem
     for cand in (video_path.with_name(f"{stem}.transcript.json"),

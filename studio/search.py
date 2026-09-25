@@ -107,6 +107,8 @@ def search(q: str = "", *, episode_id: str = None, podcast_id: str = None, guest
         where.append("s.keyword_reach=?"); params.append(keyword_reach.upper())
     if status:
         where.append("s.status=?"); params.append(status)
+    else:
+        where.append("s.status!='archived'")          # deleted on the episode page
     if theme:
         where.append("s.id IN (SELECT st.segment_id FROM segment_themes st JOIN themes th ON th.id=st.theme_id WHERE th.slug=?)")
         params.append(theme)

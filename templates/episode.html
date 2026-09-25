@@ -36,7 +36,10 @@
 <section class="card">
   <div class="card-header"><h2>Đoạn highlight ({{ segments|length }})</h2>
     <div class="row gap">
-      <span class="muted small">bấm vào một đoạn để đọc tóm tắt, hook, keyword, xem clip và viết title</span>
+      <span id="pick-bar" class="pick-bar" hidden>đã chọn <b id="pick-n">0</b> đoạn
+        <button class="btn btn-small btn-danger" onclick="deletePicked()">🗑 Xoá đoạn đã chọn</button>
+        <button class="btn btn-small btn-ghost" onclick="clearPicked()">Bỏ chọn</button></span>
+      <span class="muted small">bấm vào một đoạn để đọc tóm tắt, hook, keyword, xem clip và viết title; tick ô bên trái để xoá nhiều đoạn</span>
       <button class="btn btn-small btn-ghost" onclick="runAllTitles('{{ ep.id }}')" title="Chạy skill {{ title_skill or 'viet-tittle' }} cho mọi đoạn chưa có title">Viết Title cho mọi đoạn</button>
       <button class="btn btn-small" onclick="toggleAll(true)">Mở tất cả</button>
       <button class="btn btn-small btn-ghost" onclick="toggleAll(false)">Thu gọn</button>
@@ -46,7 +49,8 @@
   {% set a = s.analysis or {} %}
   <details class="segment {{ 'is-hook' if s.kind == 'hook' else '' }}" id="seg-{{ s.id }}">
     <summary>
-      <span class="rank">#{{ s.rank or '–' }}</span>
+      <span class="rank"><input type="checkbox" class="seg-pick" value="{{ s.id }}" title="chọn để xoá"
+        data-label="#{{ s.rank or '–' }} {{ s.title }}" onclick="event.stopPropagation()" onchange="onPick()">#{{ s.rank or '–' }}</span>
       <span class="time">{{ s.start_hms }} → {{ s.end_hms }} <span class="muted">({{ '%d:%02d'|format((s.duration_sec or 0)//60, (s.duration_sec or 0)%60) }})</span></span>
       <span class="title">{{ s.title }}{% if s.preview %}<span class="sub">{{ s.preview }}</span>{% endif %}</span>
       <span class="meta">
@@ -91,6 +95,8 @@
             <div class="hook-row"><b>{{ h.title[:8] }}</b> {{ h.start_hms }} → {{ h.end_hms }} ({{ (h.duration_sec or 0)|round|int }}s)
               <span class="badge st-{{ h.status }}">{{ h.status }}</span>
               {% if h.clip_zoomed_path or h.clip_path %}<button class="btn btn-tiny" data-path="{{ h.clip_zoomed_path or h.clip_path }}" onclick="preview(this.dataset.path, this)">▶</button>{% endif %}
+              <button class="btn btn-tiny btn-danger" title="xoá riêng hook này" data-label="#{{ h.rank or '–' }} {{ h.title }}"
+                onclick="askDelete([{{ h.id }}], this.dataset.label)">✕</button>
             </div>
             {% endfor %}
           </div>
@@ -118,6 +124,9 @@
         {% if s.clip_zoomed_path %}<button class="btn btn-small" data-path="{{ s.clip_zoomed_path }}" onclick="preview(this.dataset.path, this)">▶ Bản zoom</button>{% endif %}
         {% if s.clip_path %}<button class="btn btn-small btn-ghost" data-path="{{ s.clip_path }}" onclick="preview(this.dataset.path, this)">▶ Bản gốc</button>{% endif %}
         {% if s.clip_zoomed_path or s.clip_path %}<button class="btn btn-small btn-ghost" data-path="{{ s.clip_zoomed_path or s.clip_path }}" onclick="openFolder(this.dataset.path)">Mở vị trí</button>{% endif %}
+        <span class="grow"></span>
+        <button class="btn btn-small btn-danger" data-label="#{{ s.rank or '–' }} {{ s.title }}{% if s.hooks %} (kèm {{ s.hooks|length }} hook){% endif %}"
+          onclick="askDelete([{{ s.id }}], this.dataset.label)">🗑 Xoá đoạn</button>
       </div>
       <div class="preview"></div>
       {% if s.kind == 'highlight' %}{% include '_title_block.html' %}{% endif %}
@@ -131,6 +140,35 @@
   </details>
   {% endfor %}
 </section>
+
+<dialog id="del-dialog" class="modal">
+  <h3>Xoá đoạn</h3>
+  <ul id="del-what" class="small"></ul>
+  <p class="small muted">Đoạn biến khỏi trang tập và kết quả tìm kiếm, pipeline không cắt, không zoom nó nữa, "Chạy tiếp" không làm nó hiện lại. Hook của đoạn highlight bị xoá được xoá theo. Khôi phục được ở mục "Đoạn đã xoá" cuối trang.</p>
+  <label class="check"><input type="checkbox" id="del-files"> Chuyển luôn file clip (bản gốc + bản zoom) vào Thùng rác của Windows</label>
+  <div class="row gap end">
+    <button class="btn btn-small btn-ghost" onclick="document.getElementById('del-dialog').close()">Huỷ</button>
+    <button id="del-ok" class="btn btn-small btn-danger-solid" onclick="confirmDelete()">Xoá</button>
+  </div>
+</dialog>
+
+{% if deleted %}
+<section class="card">
+  <details class="deleted-list">
+    <summary class="card-header"><h2>Đoạn đã xoá ({{ deleted|length }})</h2>
+      <span class="muted small">không cắt, không zoom, không hiện khi tìm kiếm; bấm Khôi phục để đưa lại</span></summary>
+    <table class="table"><thead><tr><th>#</th><th>Loại</th><th>Thời gian</th><th>Tiêu đề</th><th>File</th><th></th></tr></thead>
+      <tbody>{% for s in deleted %}<tr class="{{ 'is-hook' if s.kind == 'hook' }}">
+        <td>{{ s.rank or '–' }}</td><td>{{ s.kind }}</td><td class="nowrap small">{{ s.start_hms }} → {{ s.end_hms }}</td>
+        <td>{{ s.title }}</td>
+        <td class="small">{% if s.has_zoom %}bản zoom{% elif s.has_clip %}bản gốc{% else %}<span class="muted">không còn</span>{% endif %}</td>
+        <td><button class="btn btn-tiny" onclick="restoreSegs([{{ s.id }}])">Khôi phục</button></td></tr>{% endfor %}</tbody></table>
+    <div class="card-body"><div class="row gap">
+      <button class="btn btn-small" onclick="restoreSegs([{{ deleted|map(attribute='id')|join(',') }}])">Khôi phục tất cả</button>
+      <span class="small muted">đoạn không còn file sẽ được cắt lại khi bấm "Chạy tiếp pipeline"</span></div></div>
+  </details>
+</section>
+{% endif %}
 
 <section class="card">
   <div class="card-header"><h2>Dán khối phân tích</h2>
@@ -184,5 +222,25 @@ async function runAllTitles(ep){
   if(r.error){ toast(String(r.error).includes('404')? NEED_RESTART : r.error); return; }
   toast(r.message); setTimeout(()=>location.reload(),1200); }
 document.querySelectorAll('.title-block').forEach(b=>{ if(['queued','running'].includes(b.dataset.status)) setTimeout(()=>refreshTitle(b.dataset.seg),4000); });
+// ---- delete / restore segments
+function pickedBoxes(){ return [...document.querySelectorAll('.seg-pick:checked')]; }
+function onPick(){ const n=pickedBoxes().length; document.getElementById('pick-bar').hidden=!n; document.getElementById('pick-n').textContent=n; }
+function clearPicked(){ pickedBoxes().forEach(b=>b.checked=false); onPick(); }
+function askDelete(ids, labels){ const d=document.getElementById('del-dialog'); d.dataset.ids=ids.join(',');
+  document.getElementById('del-what').innerHTML=[].concat(labels).map(l=>'<li>'+esc(l)+'</li>').join('');
+  document.getElementById('del-files').checked=false; d.showModal(); }
+function deletePicked(){ const boxes=pickedBoxes(); if(!boxes.length) return;
+  askDelete(boxes.map(b=>+b.value), boxes.map(b=>b.dataset.label)); }
+async function confirmDelete(){ const d=document.getElementById('del-dialog'), btn=document.getElementById('del-ok');
+  const ids=d.dataset.ids.split(',').map(Number), files=document.getElementById('del-files').checked;
+  btn.disabled=true; const r=await api('/api/segments/delete',{ids, files}); btn.disabled=false; d.close();
+  if(r.error){ toast(r.error); return; }
+  let msg=`Đã xoá ${r.highlights} đoạn highlight, ${r.hooks} hook`;
+  if(r.trashed && r.trashed.length) msg+=` · ${r.trashed.length} file vào Thùng rác`;
+  if(r.errors && r.errors.length) msg+=' · chưa chuyển được: '+r.errors.join('; ');
+  toast(msg); setTimeout(()=>location.reload(), r.errors && r.errors.length ? 5000 : 1200); }
+async function restoreSegs(ids){ const r=await api('/api/segments/restore',{ids}); if(r.error){ toast(r.error); return; }
+  toast(`Đã khôi phục ${r.restored} đoạn`+(r.missing_clips?` · ${r.missing_clips} đoạn chưa có clip, bấm "Chạy tiếp pipeline" để cắt lại`:''));
+  setTimeout(()=>location.reload(),1500); }
 </script>
 {% endblock %}

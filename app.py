@@ -99,8 +99,8 @@ def index():
 def queue_page():
     orchestrator()
     episodes = db.rows(
-        """SELECT e.*, (SELECT COUNT(*) FROM segments s WHERE s.episode_id=e.id AND s.kind='highlight') AS highlights,
-                  (SELECT COUNT(*) FROM segments s WHERE s.episode_id=e.id AND s.clip_zoomed_path IS NOT NULL) AS zoomed
+        """SELECT e.*, (SELECT COUNT(*) FROM segments s WHERE s.episode_id=e.id AND s.kind='highlight' AND s.status!='archived') AS highlights,
+                  (SELECT COUNT(*) FROM segments s WHERE s.episode_id=e.id AND s.clip_zoomed_path IS NOT NULL AND s.status!='archived') AS zoomed
            FROM episodes e ORDER BY e.updated_at DESC""")
     jobs = db.rows("SELECT * FROM jobs ORDER BY id DESC LIMIT 60")
     orch = orchestrator()
@@ -112,11 +112,11 @@ def queue_page():
 @app.route("/episodes")
 def episodes_page():
     episodes = db.rows(
-        """SELECT e.*, (SELECT COUNT(*) FROM segments s WHERE s.episode_id=e.id AND s.kind='highlight') AS highlights,
-                  (SELECT COUNT(*) FROM segments s WHERE s.episode_id=e.id AND s.kind='hook') AS hooks,
-                  (SELECT COUNT(*) FROM segments s WHERE s.episode_id=e.id AND s.clip_path IS NOT NULL) AS cut,
-                  (SELECT COUNT(*) FROM segments s WHERE s.episode_id=e.id AND s.clip_zoomed_path IS NOT NULL) AS zoomed,
-                  (SELECT COUNT(*) FROM segments s WHERE s.episode_id=e.id AND s.analysis_md IS NOT NULL) AS analysed
+        """SELECT e.*, (SELECT COUNT(*) FROM segments s WHERE s.episode_id=e.id AND s.kind='highlight' AND s.status!='archived') AS highlights,
+                  (SELECT COUNT(*) FROM segments s WHERE s.episode_id=e.id AND s.kind='hook' AND s.status!='archived') AS hooks,
+                  (SELECT COUNT(*) FROM segments s WHERE s.episode_id=e.id AND s.clip_path IS NOT NULL AND s.status!='archived') AS cut,
+                  (SELECT COUNT(*) FROM segments s WHERE s.episode_id=e.id AND s.clip_zoomed_path IS NOT NULL AND s.status!='archived') AS zoomed,
+                  (SELECT COUNT(*) FROM segments s WHERE s.episode_id=e.id AND s.analysis_md IS NOT NULL AND s.status!='archived') AS analysed
            FROM episodes e ORDER BY e.podcast_id, e.number DESC""")
     return render_template("episodes.html", page="episodes", episodes=episodes)
 
@@ -127,6 +127,8 @@ def episode_page(episode_id):
     if not ep:
         abort(404)
     segs = db.rows("SELECT * FROM segments WHERE episode_id=? ORDER BY COALESCE(rank, 999), start_sec", (ep["id"],))
+    deleted = [s for s in segs if s["status"] == "archived"]
+    segs = [s for s in segs if s["status"] != "archived"]
     by_id = {s["id"]: s for s in segs}
     for s in segs:
         s["topics"] = [r["name"] for r in db.rows(
@@ -153,8 +155,12 @@ def episode_page(episode_id):
             profile = None
     _attach_titles(ep["id"], highlights)
     jobs = db.rows("SELECT * FROM jobs WHERE episode_id=? ORDER BY id DESC LIMIT 20", (ep["id"],))
+    for s in deleted:
+        s["has_clip"] = bool(s["clip_path"] and Path(s["clip_path"]).exists())
+        s["has_zoom"] = bool(s["clip_zoomed_path"] and Path(s["clip_zoomed_path"]).exists())
     return render_template("episode.html", page="episodes", ep=ep, segments=highlights, profile=profile, jobs=jobs,
-                           title_skill=db.get_setting("title_skill"), title_model=db.get_setting("claude_model_title"))
+                           deleted=deleted, title_skill=db.get_setting("title_skill"),
+                           title_model=db.get_setting("claude_model_title"))
 
 
 @app.route("/segments/<int:seg_id>/title-block")
@@ -249,10 +255,10 @@ def media():
 def api_stats():
     return jsonify({
         "episodes": db.scalar("SELECT COUNT(*) FROM episodes"),
-        "highlights": db.scalar("SELECT COUNT(*) FROM segments WHERE kind='highlight'"),
-        "hooks": db.scalar("SELECT COUNT(*) FROM segments WHERE kind='hook'"),
-        "zoomed": db.scalar("SELECT COUNT(*) FROM segments WHERE clip_zoomed_path IS NOT NULL"),
-        "with_analysis": db.scalar("SELECT COUNT(*) FROM segments WHERE analysis_md IS NOT NULL"),
+        "highlights": db.scalar("SELECT COUNT(*) FROM segments WHERE kind='highlight' AND status!='archived'"),
+        "hooks": db.scalar("SELECT COUNT(*) FROM segments WHERE kind='hook' AND status!='archived'"),
+        "zoomed": db.scalar("SELECT COUNT(*) FROM segments WHERE clip_zoomed_path IS NOT NULL AND status!='archived'"),
+        "with_analysis": db.scalar("SELECT COUNT(*) FROM segments WHERE analysis_md IS NOT NULL AND status!='archived'"),
     })
 
 
@@ -287,6 +293,24 @@ def api_segment_patch(seg_id):
                   list(sets.values()) + [now_iso(), seg_id])
     search.rebuild_index([seg_id])
     return jsonify({"ok": True})
+
+
+@app.route("/api/segments/delete", methods=["POST"])
+def api_segments_delete():
+    """Delete segments from the episode page: {"ids": [...], "files": bool}. Hooks of a deleted highlight go too."""
+    data = request.json or {}
+    ids = [int(i) for i in data.get("ids") or [] if str(i).isdigit()]
+    if not ids:
+        return jsonify({"error": "chưa chọn đoạn nào"}), 400
+    return jsonify(maintenance.delete_segments(ids, trash_files=bool(data.get("files"))))
+
+
+@app.route("/api/segments/restore", methods=["POST"])
+def api_segments_restore():
+    ids = [int(i) for i in (request.json or {}).get("ids") or [] if str(i).isdigit()]
+    if not ids:
+        return jsonify({"error": "chưa chọn đoạn nào"}), 400
+    return jsonify(maintenance.restore_segments(ids))
 
 
 @app.route("/api/export", methods=["POST"])
@@ -407,7 +431,7 @@ def api_titles_for_episode(episode_id):
     if not tw:
         return jsonify({"error": "bộ viết title chưa sẵn sàng"}), 503
     segs = db.rows("""SELECT s.id FROM segments s WHERE s.episode_id=? AND s.kind='highlight' AND s.start_sec IS NOT NULL
-                      AND s.id NOT IN (SELECT segment_id FROM segment_titles WHERE status IN ('done','queued','running'))
+                      AND s.status!='archived' AND s.id NOT IN (SELECT segment_id FROM segment_titles WHERE status IN ('done','queued','running'))
                       ORDER BY COALESCE(s.content_rank, 999), s.rank""", (episode_id.upper(),))
     queued = [tw.enqueue(r["id"]) for r in segs]
     return jsonify({"queued": len([q for q in queued if q.get("run_id")]),
