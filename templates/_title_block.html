@@ -45,7 +45,29 @@
       {% endif %}
     {% endfor %}
     {% if j.warnings %}<div class="small warn">⚠️ {{ j.warnings|join(' · ') }}</div>{% endif %}
-    {% if d.output_md %}<details class="raw"><summary>Toàn bộ kết quả của skill</summary><div class="md">{{ d.output_md|md|safe }}</div></details>{% endif %}
+    {% set full = s.title_full_md or d.output_md %}
+    {% if full %}<details class="raw"><summary>Toàn bộ kết quả của skill</summary><div class="md">{{ full|md|safe }}</div></details>{% endif %}
     <div class="small muted">{{ d.progress_msg or '' }}{% if d.finished_at %} · {{ d.finished_at }}{% endif %}</div>
+
+    <div class="title-chat">
+      <div class="small muted">💬 Nhắn Claude để chỉnh metadata của đoạn này. Claude nhớ transcript, skill và bản vừa viết; mỗi tin nhắn sửa thẳng kết quả ở trên.</div>
+      {% for m in s.title_thread %}
+        <div class="chat-msg user">{{ m.user_message }}</div>
+        {% if m.status == 'done' %}
+          <div class="chat-msg bot"><div class="md">{{ (m.output_md or 'Đã xong.')|md|safe }}</div>
+            <div class="small muted">{{ m.progress_msg or '' }}</div></div>
+        {% elif m.status in ('queued', 'running') %}
+          <div class="chat-msg bot small muted">⏳ {{ m.progress_msg or 'đang chờ tới lượt…' }}</div>
+        {% else %}
+          <div class="chat-msg bot small error">Không xong: {{ m.error or 'lỗi không rõ' }}</div>
+        {% endif %}
+      {% endfor %}
+      <div class="chat-input">
+        <textarea class="input" id="chat-{{ s.id }}" rows="2" {% if busy %}disabled{% endif %}
+          placeholder="VD: title ngắn hơn, đưa “{{ j.core_keyword or 'keyword' }}” lên đầu · thêm tag … · description giọng kịch tính hơn · vì sao chọn keyword này? (Ctrl+Enter để gửi)"
+          onkeydown="if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();sendTitleChat({{ s.id }})}"></textarea>
+        <button class="btn btn-small btn-primary" onclick="sendTitleChat({{ s.id }})" {% if busy %}disabled{% endif %}>Gửi</button>
+      </div>
+    </div>
   {% endif %}
 </div>

@@ -133,3 +133,10 @@ dialog.modal h3 { font-size: 15px; margin-bottom: 10px; } dialog.modal ul { marg
 .row.end { justify-content: flex-end; margin-top: 14px; }
 details.deleted-list > summary { list-style: none; } details.deleted-list > summary::-webkit-details-marker { display: none; }
 details.deleted-list:not([open]) > summary { border-bottom: none; }
+/* chat with Claude under the title result */
+.title-chat { display: flex; flex-direction: column; gap: 6px; border-top: 1px dashed rgba(251,191,36,.25); padding-top: 10px; margin-top: 4px; }
+.chat-msg { padding: 7px 11px; border-radius: 10px; max-width: 92%; font-size: 13.5px; line-height: 1.5; }
+.chat-msg.user { align-self: flex-end; background: var(--accent-glow); border: 1px solid rgba(139,92,246,.35); white-space: pre-wrap; }
+.chat-msg.bot { align-self: flex-start; background: var(--bg-input); border: 1px solid var(--border); }
+.chat-msg.bot .md p:first-child { margin-top: 0; } .chat-msg.bot .md p:last-child { margin-bottom: 0; }
+.chat-input { display: flex; gap: 8px; align-items: flex-end; } .chat-input textarea { flex: 1; min-height: 44px; }

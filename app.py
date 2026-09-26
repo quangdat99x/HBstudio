@@ -64,6 +64,8 @@ def _attach_titles(episode_id: str, segments: list[dict]) -> None:
         r = runs.get(s["id"]) or {}
         s["title_run"] = r.get("latest")
         s["title_done"] = r.get("done")
+        s["title_thread"] = r.get("thread") or []
+        s["title_full_md"] = r.get("full_md")
 
 
 def orchestrator():
@@ -414,6 +416,18 @@ def api_title(seg_id):
     if not tw:
         return jsonify({"error": "bộ viết title chưa sẵn sàng"}), 503
     return jsonify(tw.enqueue(seg_id))
+
+
+@app.route("/api/segments/<int:seg_id>/title/chat", methods=["POST"])
+def api_title_chat(seg_id):
+    """Message Claude about the title/metadata of one segment; it edits the latest result in the same session."""
+    tw = title_worker()
+    if not tw:
+        return jsonify({"error": "bộ viết title chưa sẵn sàng"}), 503
+    message = ((request.json or {}).get("message") or "").strip()
+    if not message:
+        return jsonify({"error": "chưa nhập nội dung"}), 400
+    return jsonify(tw.enqueue_chat(seg_id, message[:4000]))
 
 
 @app.route("/api/segments/<int:seg_id>/title/cancel", methods=["POST"])

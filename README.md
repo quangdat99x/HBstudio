@@ -66,6 +66,8 @@ Cách chạy hiện nay:
 - Skill nhận đúng thứ nó cần như khi chạy tay: transcript của đoạn theo định dạng file `.txt` của Video Cutter (timestamp gốc + dòng "Thời gian: start → end") và cutlist của riêng đoạn đó cho Bước 0.
 - Kết quả hiện ngay trên đoạn: title khuyên dùng, 3 title Format 1, 3 title Format 2, description, timestamps, tags kèm số ký tự, thumbnail, image prompt, mỗi phần có nút Copy, cùng toàn văn câu trả lời của skill. Mọi lượt đều được lưu trong bảng `segment_titles`, bấm "Viết lại title" để chạy lượt mới.
 - Hàng đợi viết title chạy riêng, lần lượt từng đoạn, không chặn pipeline cắt và zoom. Nút "Viết Title cho mọi đoạn" ở đầu danh sách xếp tất cả đoạn chưa có title vào hàng đợi.
+- **Chat để chỉnh metadata**: dưới kết quả có ô nhắn Claude (Ctrl+Enter để gửi), ví dụ "title ngắn hơn", "đưa keyword lên đầu", "thêm tag …", "description giọng kịch tính hơn", hay hỏi "vì sao chọn keyword này?". Mỗi tin nhắn tiếp tục đúng phiên Claude đã viết title (`--resume`, Claude nhớ skill, transcript và bản vừa viết), Claude sửa thẳng file JSON kết quả, trang hiện ngay bản mới và cả luồng hỏi đáp. Mỗi tin nhắn là một lượt mới trong `segment_titles` (`parent_id`, `user_message`), nên mọi phiên bản đều còn trong database. Lượt title viết trước khi có tính năng này chưa lưu phiên: tin nhắn đầu tiên mở phiên mới kèm skill, transcript và kết quả cũ, các tin sau nối tiếp phiên đó.
+- Lượt Viết Title chạy Claude ở chế độ cô lập như bước chọn nội dung (skill nằm trong prompt, không MCP, không danh sách skill), request đầu còn ~42 nghìn token thay vì ~61 nghìn. Chạy thử 2026-09-27: chat tiếp đúng phiên 8–16 giây, $0.04–0.05 mỗi tin; tin đầu tiên trên lượt cũ (mở phiên mới) 21 giây, $0.44.
 
 ## Dịch khi bôi đen (Google Dịch)
 

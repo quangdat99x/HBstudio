@@ -197,7 +197,11 @@ CREATE TABLE IF NOT EXISTS segment_titles (
   duration_sec      REAL,
   created_at        TEXT NOT NULL,
   started_at        TEXT,
-  finished_at       TEXT
+  finished_at       TEXT,
+  session_id        TEXT,                 -- Claude Code session of this run; a chat turn resumes it
+  parent_id         INTEGER,              -- chat turn: the run whose metadata it adjusts (NULL = fresh "Viết Title")
+  user_message      TEXT,                 -- chat turn: what the user asked Claude to change
+  session_cost_usd  REAL                  -- total_cost_usd reported by the CLI (cumulative over a resumed session)
 );
 CREATE INDEX IF NOT EXISTS idx_segment_titles_segment ON segment_titles(segment_id);
 

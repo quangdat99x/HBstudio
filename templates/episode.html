@@ -209,6 +209,11 @@ async function runTitle(id){ const r=await api('/api/segments/'+id+'/title',{});
   if(r.error){ toast(String(r.error).includes('404')? NEED_RESTART : r.error); return; }
   toast(r.message||'Đã xếp vào hàng đợi viết title'); refreshTitle(id); }
 async function cancelTitle(id){ const r=await api('/api/segments/'+id+'/title/cancel',{}); toast(r.error||r.message); refreshTitle(id); }
+async function sendTitleChat(id){ const box=document.getElementById('chat-'+id); if(!box) return;
+  const message=box.value.trim(); if(!message){ toast('Nhập điều muốn Claude chỉnh'); box.focus(); return; }
+  box.disabled=true; const r=await api('/api/segments/'+id+'/title/chat',{message});
+  if(r.error){ box.disabled=false; toast(String(r.error).includes('404')? NEED_RESTART : r.error); return; }
+  toast(r.message||'Đã gửi cho Claude'); refreshTitle(id); }
 async function refreshTitle(id){
   try{ const res=await fetch('/segments/'+id+'/title-block'); if(!res.ok) return;
     const el=document.getElementById('title-'+id); if(!el) return;

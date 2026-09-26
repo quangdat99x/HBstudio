@@ -55,6 +55,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
             "analysis_md": "TEXT", "analysis_json": "TEXT", "keyword_reason": "TEXT",
             "transcript": "TEXT", "last_seen": "TEXT",
         },
+        "segment_titles": {
+            "session_id": "TEXT", "parent_id": "INTEGER", "user_message": "TEXT", "session_cost_usd": "REAL",
+        },
     }
     for table, cols in wanted.items():
         existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
