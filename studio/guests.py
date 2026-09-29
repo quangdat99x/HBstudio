@@ -3,8 +3,13 @@
 A guest is a person and can appear in several episodes; episodes link to guests by the name in `episodes.guest`
 ("A & B" counts as two guests). Every guest has one main group and up to two secondary groups. Claude picks them:
 the selection run writes them into tags_<id>.json for its own guest, and the "Phân nhóm bằng Claude" button on the
-Khách mời page classifies the guests that still have no group in one short call (no tools, small model). A group the
-user sets by hand (source 'manual') is never overwritten.
+Khách mời page classifies the guests that still have no group in one short call (no tools). A group the user sets
+by hand (source 'manual') is never overwritten.
+
+The groups serve a highlight channel (playlists, topic compilations, which episode to do next), so they follow the
+guest's CLIPS, not the guest's job: Claude gets the Guest Card data plus every selected highlight (score, keyword,
+theme, title) and the per-group spread of those highlights. A secondary group needs clips behind it; one that no
+highlight of the guest touches (e.g. "creator" only because the guest is a YouTuber or a host) is dropped.
 """
 from __future__ import annotations
 
@@ -56,6 +61,18 @@ DEFAULT_GROUPS = [
     ("other", "Khác", "không hợp nhóm nào ở trên"),
 ]
 
+# segment theme (tagged per highlight by the selection run) -> guest group(s) it is evidence for
+THEME_TO_GROUPS = {
+    "ufo-uap": ("ufo-uap",), "ancient-civilizations": ("ancient-history",), "giants-nephilim": ("ancient-history",),
+    "religion-theology": ("religion",), "politics-culture-war": ("politics",), "slavery-human-rights": ("politics",),
+    "history-war": ("military-intel",), "government-coverup": ("conspiracy-investigation",),
+    "combat-sports": ("mma-combat",), "comedy-stories": ("comedy",), "physics-cosmology": ("science-space",),
+    "ai-tech-risk": ("tech-ai",), "health-longevity": ("health-fitness",),
+    "consciousness-psychedelics": ("psychedelics-consciousness",), "cryptids-paranormal": ("paranormal-mystery",),
+    "true-crime-mystery": ("paranormal-mystery", "crime-prison"), "wildlife-nature": ("hunting-outdoors",),
+    "psychology-self-improvement": ("psychology-philosophy",), "celebrity-hollywood": ("entertainment",),
+    "business-money": ("business-creators",),
+}
 _RE_SPLIT = re.compile(r"\s+(?:&|and|\+|và)\s+", re.I)
 _seeded: set[str] = set()                             # databases already given the default groups in this process
 
@@ -114,11 +131,52 @@ def groups() -> list[dict]:
     return db.rows("SELECT * FROM guest_groups ORDER BY sort, slug")
 
 
+def short_name(name_vi: str) -> str:
+    """'Khoa học, vật lý & vũ trụ' -> 'Khoa học' for compact lists."""
+    return re.split(r"[,&(]", name_vi or "")[0].strip() or name_vi
+
+
+def highlights_by_episode() -> dict[str, list[dict]]:
+    """Selected highlights with their themes (primary first), strongest first."""
+    out: dict[str, list[dict]] = defaultdict(list)
+    for r in db.rows("""SELECT s.id, s.episode_id, s.title, s.core_keyword, s.final_score,
+                          (SELECT group_concat(slug) FROM (SELECT th.slug AS slug FROM segment_themes st
+                             JOIN themes th ON th.id=st.theme_id WHERE st.segment_id=s.id
+                             ORDER BY st.is_primary DESC, th.slug)) AS themes
+                        FROM segments s WHERE s.kind='highlight' AND s.status!='archived'
+                        ORDER BY s.episode_id, COALESCE(s.final_score, 0) DESC"""):
+        r["themes"] = [t for t in (r["themes"] or "").split(",") if t]
+        out[r["episode_id"]].append(r)
+    return out
+
+
+def clip_spread(clips: list[dict]) -> list[dict]:
+    """Guest groups the highlights fall into by their primary theme: [{slug, n, score}], strongest first."""
+    agg: dict[str, list[float]] = {}
+    for c in clips:
+        grp = THEME_TO_GROUPS.get(c["themes"][0], (None,))[0] if c["themes"] else None
+        if grp:
+            n, score = agg.get(grp, [0, 0.0])
+            agg[grp] = [n + 1, score + (c["final_score"] or 0)]
+    return sorted(({"slug": g, "n": v[0], "score": round(v[1], 1)} for g, v in agg.items()),
+                  key=lambda x: (-x["score"], -x["n"]))
+
+
+def clip_evidence(clips: list[dict]) -> Optional[set[str]]:
+    """Every group any theme of the guest's highlights points to; None when no highlight is tagged yet."""
+    tagged = [c for c in clips if c["themes"]]
+    if not tagged:
+        return None
+    return {g for c in tagged for t in c["themes"] for g in THEME_TO_GROUPS.get(t, ())}
+
+
 def overview() -> dict:
     """Groups with their guests (main members first, then guests that have it as a secondary group)."""
     sync_guests()
     eps = episodes_by_guest()
+    clips = highlights_by_episode()
     grps = groups()
+    short = {g["slug"]: short_name(g["name_vi"]) for g in grps}
     by_group = {g["slug"]: {"group": g, "main": [], "also": []} for g in grps}
     guests, unassigned = [], []
     for g in db.rows("SELECT * FROM guests"):
@@ -128,6 +186,8 @@ def overview() -> dict:
         g["also"] = [s for s in _list(g["also_json"]) if s in by_group and s != g["group_slug"]]
         g["highlights"] = sum(e["highlights"] for e in g["episodes"])
         g["zoomed"] = sum(e["zoomed"] for e in g["episodes"])
+        g["spread"] = [dict(x, name=short.get(x["slug"], x["slug"]))
+                       for x in clip_spread([c for e in g["episodes"] for c in clips.get(e["id"], [])])]
         guests.append(g)
     guests.sort(key=lambda g: (-g["highlights"], g["name"].lower()))
     for g in guests:
@@ -154,9 +214,14 @@ def set_guest(guest_id: int, group: Optional[str], also: Optional[list] = None, 
 
 
 def apply(items: list[dict], episode_id: Optional[str] = None) -> dict:
-    """Store Claude's grouping ([{id?|name, group, also, expertise}]); hand-picked groups stay as they are."""
+    """Store Claude's grouping ([{id?|name, group, also, expertise}]); hand-picked groups stay as they are.
+
+    A secondary group that none of the guest's tagged highlights points to is dropped: a group needs clips behind it
+    (being a YouTuber, a host or an investor makes no clip).
+    """
     known = {g["slug"] for g in groups()}
-    stats = {"updated": 0, "kept_manual": 0, "unmatched": []}
+    stats = {"updated": 0, "kept_manual": 0, "unmatched": [], "dropped_also": []}
+    eps, clips = episodes_by_guest(), highlights_by_episode()
     ep_guests = []
     if episode_id:
         ep = db.row("SELECT guest FROM episodes WHERE id=?", (episode_id,))
@@ -177,6 +242,11 @@ def apply(items: list[dict], episode_id: Optional[str] = None) -> dict:
             continue
         group = it.get("group") if it.get("group") in known else "other"
         also = it.get("also") if isinstance(it.get("also"), list) else []
+        evidence = clip_evidence([c for e in eps.get(row["name_norm"], []) for c in clips.get(e["id"], [])])
+        if evidence is not None:
+            dropped = [s for s in also if s not in evidence]
+            also = [s for s in also if s in evidence]
+            stats["dropped_also"] += [f"{row['name']}: {s}" for s in dropped]
         set_guest(row["id"], group, also, str(it.get("expertise") or "").strip()[:200] or None, source="claude")
         stats["updated"] += 1
     return stats
@@ -195,7 +265,7 @@ def prompt_group_lines() -> list[str]:
     return [f"  - {g['slug']}: {g['name_vi']} ({g['hint']})" for g in groups()]
 
 
-def _guest_info(g: dict, eps: list[dict]) -> str:
+def _guest_info(g: dict, eps: list[dict], clips: dict[str, list[dict]]) -> str:
     parts = []
     for e in eps[:2]:
         try:
@@ -208,31 +278,55 @@ def _guest_info(g: dict, eps: list[dict]) -> str:
                 "khán giả muốn nghe: " + "; ".join((p.get("audience_wants") or [])[:3]) if p.get("audience_wants") else None]
         bits = [str(b) for b in bits if b]
         if bits:
-            parts.append(" | ".join(bits))
+            parts.append("Guest Card: " + " | ".join(bits))
         elif e.get("guest_card_md"):
-            parts.append(re.sub(r"\s+", " ", e["guest_card_md"])[:600])
+            parts.append("Guest Card: " + re.sub(r"\s+", " ", e["guest_card_md"])[:600])
+    mine = sorted((c for e in eps for c in clips.get(e["id"], [])), key=lambda c: -(c["final_score"] or 0))
+    if mine:
+        spread = clip_spread(mine)
+        parts.append(f"Clip đã chọn: {len(mine)} highlight" + (
+            "; theo theme chính: " + ", ".join(f"{x['slug']} {x['n']} clip (tổng điểm {x['score']})" for x in spread)
+            if spread else "; chưa gắn theme, đọc title/keyword"))
+        parts += [f"- {c['final_score'] if c['final_score'] is not None else '?'} · {c['themes'][0] if c['themes'] else '-'} · "
+                  f"\"{c['core_keyword'] or ''}\" · {c['title']}" for c in mine[:12]]
+    else:
+        parts.append("Chưa có clip nào được chọn: dựa vào Guest Card.")
     head = f"[id={g['id']}] {g['name']} (tập {', '.join(e['id'] for e in eps)})"
     return head + "\n   " + ("\n   ".join(parts) if parts else "(chưa có hồ sơ; dựa vào hiểu biết của bạn về người này)")
 
 
+# The same principles go into the selection prompt (select_ai.build_prompt), where Claude has just picked the clips.
+GROUPING_RULES = [
+    "Nhóm chính `group` = nhóm chứa nhiều clip mạnh nhất của khách (tổng điểm cuối cao nhất), tức là thứ người xem bấm "
+    "vào clip của khách để nghe; đối chiếu với \"khán giả muốn nghe\" của Guest Card, và đọc title/keyword để sửa chỗ theme "
+    "gắn chưa chuẩn. Không xếp theo nghề, bằng cấp hay danh tiếng chung chung.",
+    "Ngoại lệ persona: diễn viên hài luôn có nhóm chính comedy, võ sĩ và HLV luôn là mma-combat (người xem bấm vì chính con "
+    "người họ); chủ đề clip của họ thành nhóm phụ.",
+    "Nhóm phụ `also` (0–2) chỉ khi khách có ít nhất 2 clip thật sự thuộc nhóm đó. KHÔNG BAO GIỜ thêm nhóm chỉ vì nghề, "
+    "nền tảng hay chức danh (YouTuber, podcaster, host, nhà đầu tư, tác giả sách, giáo sư…): những thứ đó không sinh ra clip.",
+    "`expertise` = 1 câu tiếng Việt, tối đa 18 từ, viết như mô tả playlist: clip của khách cho người xem nghe gì (sự kiện, "
+    "bằng chứng, câu chuyện cụ thể), kèm một danh xưng ngắn giúp title đáng tin (vd \"cựu nghiên cứu viên OpenAI\").",
+]
+
+
 def build_prompt(rows: list[dict], eps: dict[str, list[dict]]) -> str:
+    clips = highlights_by_episode()
     return "\n".join([
-        "Phân nhóm khách mời của podcast Joe Rogan Experience theo lĩnh vực làm khán giả JRE tìm xem họ.",
+        "Bạn làm kênh highlight Joe Rogan Experience. Xếp khách mời vào nhóm để dựng playlist và tập tổng hợp theo chủ đề, "
+        "chọn tập nên làm tiếp, và biết clip của mỗi khách \"bán\" được chủ đề gì. Nhóm đi theo CLIP của khách, không theo "
+        "nghề của khách.",
         "",
         "NHÓM (slug: tên (ai thuộc nhóm này)):",
         *prompt_group_lines(),
         "",
         "LUẬT:",
-        "1. Mỗi khách đúng MỘT nhóm chính \"group\": lĩnh vực khán giả tìm xem họ nhất (chuyên môn cấp 1, archetype). "
-        "Diễn viên hài luôn là comedy, võ sĩ và HLV luôn là mma-combat, dù trong tập nói về chủ đề gì.",
-        "2. \"also\": 0–2 nhóm phụ khi khách có chuyên môn thứ hai rõ rệt; không thêm cho đủ.",
-        "3. \"expertise\": 1 câu tiếng Việt, tối đa 15 từ: họ là ai, khán giả tìm xem họ vì gì.",
-        "4. Chỉ dùng slug trong danh sách. Trả về DUY NHẤT một khối ```json``` dạng "
+        *[f"{i}. {r}" for i, r in enumerate(GROUPING_RULES, 1)],
+        f"{len(GROUPING_RULES) + 1}. Chỉ dùng slug trong danh sách. Trả về DUY NHẤT một khối ```json``` dạng "
         "[{\"id\": <id>, \"name\": \"...\", \"group\": \"...\", \"also\": [...], \"expertise\": \"...\"}] "
         "đủ mọi khách dưới đây, giữ nguyên id và tên. Không dùng công cụ.",
         "",
-        "KHÁCH MỜI:",
-        *[_guest_info(g, eps.get(g["name_norm"], [])) for g in rows],
+        "KHÁCH MỜI (Guest Card do skill chọn nội dung lập; mỗi clip: điểm cuối · theme chính · keyword hạt nhân · title):",
+        *[_guest_info(g, eps.get(g["name_norm"], []), clips) for g in rows],
     ])
 
 

@@ -222,9 +222,10 @@ def build_prompt(ep: dict, skill_text: str, transcript: str, cutlist_path: Path,
         "6. `themes`: 1–3 slug chọn trong danh sách dưới đây, slug đầu tiên là chủ đề chính của đoạn; không bịa slug mới. "
         "`entities`: người, địa danh, tổ chức, tác phẩm, sự kiện có tên riêng được nhắc trong đoạn (tối đa 15).",
         *_theme_lines(),
-        "   `guests`: mỗi khách mời một phần tử, xếp theo Guest Card. `group` = lĩnh vực khán giả JRE tìm xem khách nhất "
-        "(diễn viên hài luôn là comedy, võ sĩ và HLV luôn là mma-combat); `also` = 0–2 nhóm phụ khi có chuyên môn thứ hai rõ "
-        "rệt; `expertise` = 1 câu tiếng Việt, tối đa 15 từ. Slug nhóm khách:",
+        "   `guests`: mỗi khách mời một phần tử, xếp để làm playlist/tổng hợp cho kênh highlight, dựa vào Guest Card và "
+        "chính các highlight vừa chọn (điểm cuối, theme, keyword):",
+        *[f"   - {r}" for r in guests.GROUPING_RULES],
+        "   Slug nhóm khách:",
         *guests.prompt_group_lines(),
         "7. Timestamp phải tra trực tiếp từ transcript, tuyệt đối không ước lượng. Hook phải nằm trong biên đoạn cha, dài 5–25 giây.",
         f"8. Cutlist được Studio chấp nhận khi: episode.id đúng {ep['id']}; mọi entry có `kind` (hook|highlight) và `title`; "

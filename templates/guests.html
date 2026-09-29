@@ -13,6 +13,8 @@
         data-also="{{ x.also|join(',') }}" data-expertise="{{ x.expertise or '' }}" onclick="editGuest(this)">Sửa nhóm</button>
     </div>
     {% if x.expertise and not secondary %}<div class="small">{{ x.expertise }}</div>{% endif %}
+    {% if x.spread and not secondary %}<div class="small muted" title="số highlight theo theme chính, nhóm có tổng điểm cao nhất đứng đầu">clip:
+      {% for c in x.spread %}<span class="{{ 'ok' if c.slug == x.group_slug }}">{{ c.name }} {{ c.n }}</span>{{ ' · ' if not loop.last }}{% endfor %}</div>{% endif %}
     {% if x.also and not secondary %}<div class="small muted">nhóm phụ: {% for s in x.also %}<a href="#group-{{ s }}">{{ ov.names[s] }}</a>{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}
   </li>
 {% endmacro %}
@@ -27,8 +29,8 @@
     </div>
   </div>
   <div class="card-body small muted">
-    {{ ov.guests|length }} khách · {{ used|length }} nhóm có khách. Nhóm chính là lĩnh vực khán giả JRE tìm xem khách đó nhất; khách có chuyên môn thứ hai hiện thêm, mờ hơn, ở nhóm phụ.
-    Khách của tập mới được Claude xếp nhóm ngay ở bước chọn nội dung. Bấm "xem highlight" để mở mọi highlight của cả nhóm trong trang Tìm kiếm.
+    {{ ov.guests|length }} khách · {{ used|length }} nhóm có khách. Nhóm đi theo clip của khách, không theo nghề: nhóm chính là nơi có nhiều highlight mạnh nhất (diễn viên hài và võ sĩ giữ nhóm theo con người họ), nhóm phụ cần ít nhất 2 clip, hiện mờ ở nhóm đó.
+    Dòng "clip:" đếm highlight theo theme chính. Khách của tập mới được Claude xếp nhóm ngay ở bước chọn nội dung. Bấm "xem highlight" để mở mọi highlight của cả nhóm trong trang Tìm kiếm.
   </div>
 </section>
 
@@ -58,7 +60,7 @@
 {% set empty = ov.groups|rejectattr('main')|rejectattr('also')|list %}
 {% if empty %}
 <section class="card"><div class="card-body small muted">Nhóm chưa có khách:
-  {% for g in empty %}<span class="pill" title="{{ g.group.hint }}">{{ g.group.name_vi }}</span>{% endfor %}</div></section>
+  <div class="row wrap gap">{% for g in empty %}<span class="pill" title="{{ g.group.hint }}">{{ g.group.name_vi }}</span>{% endfor %}</div></div></section>
 {% endif %}
 
 <dialog id="guest-dialog" class="modal">
