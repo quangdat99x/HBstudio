@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% set title = "Khách mời" %}
+{% macro guest_row(x, secondary) %}
+  <li class="guest-row {{ 'secondary' if secondary }}" data-name="{{ x.name|lower }}">
+    <div class="guest-line">
+      <b>{{ x.name }}</b>
+      {% for e in x.episodes %}<a class="pill ep" href="/episodes/{{ e.id }}">{{ e.id }}</a>{% endfor %}
+      <span class="muted small">{{ x.highlights }} highlight{% if x.zoomed %} · {{ x.zoomed }} đã zoom{% endif %}</span>
+      {% if secondary %}<span class="muted small">· nhóm chính: {{ ov.names.get(x.group_slug, '?') }}</span>{% endif %}
+      {% if x.source == 'manual' %}<span class="pill" title="nhóm do bạn chọn, Claude không đổi">✋ sửa tay</span>{% endif %}
+      <span class="grow"></span>
+      <button class="btn btn-tiny btn-ghost" data-id="{{ x.id }}" data-name="{{ x.name }}" data-group="{{ x.group_slug or '' }}"
+        data-also="{{ x.also|join(',') }}" data-expertise="{{ x.expertise or '' }}" onclick="editGuest(this)">Sửa nhóm</button>
+    </div>
+    {% if x.expertise and not secondary %}<div class="small">{{ x.expertise }}</div>{% endif %}
+    {% if x.also and not secondary %}<div class="small muted">nhóm phụ: {% for s in x.also %}<a href="#group-{{ s }}">{{ ov.names[s] }}</a>{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}
+  </li>
+{% endmacro %}
+{% block content %}
+{% set used = ov.groups|selectattr('main')|list %}
+<section class="card">
+  <div class="card-header"><h2>Khách mời theo nhóm chuyên môn</h2>
+    <div class="row gap">
+      <input class="input" id="guest-filter" placeholder="Lọc tên khách…" oninput="filterGuests(this.value)">
+      {% if ov.unassigned %}<button class="btn btn-small btn-primary js-classify" onclick="classify(false)">Phân nhóm {{ ov.unassigned|length }} khách bằng Claude</button>{% endif %}
+      <button class="btn btn-small btn-ghost js-classify" onclick="classify(true)" title="Claude xếp lại mọi khách, trừ khách bạn đã sửa tay">Phân nhóm lại tất cả</button>
+    </div>
+  </div>
+  <div class="card-body small muted">
+    {{ ov.guests|length }} khách · {{ used|length }} nhóm có khách. Nhóm chính là lĩnh vực khán giả JRE tìm xem khách đó nhất; khách có chuyên môn thứ hai hiện thêm, mờ hơn, ở nhóm phụ.
+    Khách của tập mới được Claude xếp nhóm ngay ở bước chọn nội dung. Bấm "xem highlight" để mở mọi highlight của cả nhóm trong trang Tìm kiếm.
+  </div>
+</section>
+
+{% if ov.unassigned %}
+<section class="card group-card unassigned">
+  <div class="card-header"><h2>Chưa phân nhóm ({{ ov.unassigned|length }})</h2></div>
+  <ul class="guest-list">{% for x in ov.unassigned %}{{ guest_row(x, false) }}{% endfor %}</ul>
+</section>
+{% endif %}
+
+<div class="group-grid">
+{% for g in ov.groups if g.main or g.also %}
+  <section class="card group-card" id="group-{{ g.group.slug }}">
+    <div class="card-header">
+      <h2>{{ g.group.name_vi }} <span class="muted">{{ g.main|length }}{% if g.also %} + {{ g.also|length }} phụ{% endif %}</span></h2>
+      <a class="small nowrap" href="/search?group={{ g.group.slug }}&kind=highlight">xem highlight →</a>
+    </div>
+    <div class="group-hint small muted">{{ g.group.hint }}</div>
+    <ul class="guest-list">
+      {% for x in g.main %}{{ guest_row(x, false) }}{% endfor %}
+      {% for x in g.also %}{{ guest_row(x, true) }}{% endfor %}
+    </ul>
+  </section>
+{% endfor %}
+</div>
+
+{% set empty = ov.groups|rejectattr('main')|rejectattr('also')|list %}
+{% if empty %}
+<section class="card"><div class="card-body small muted">Nhóm chưa có khách:
+  {% for g in empty %}<span class="pill" title="{{ g.group.hint }}">{{ g.group.name_vi }}</span>{% endfor %}</div></section>
+{% endif %}
+
+<dialog id="guest-dialog" class="modal">
+  <h3 id="gd-name"></h3>
+  <label>Nhóm chính<select class="input" id="gd-group">
+    {% for g in ov.groups %}<option value="{{ g.group.slug }}">{{ g.group.name_vi }}</option>{% endfor %}</select></label>
+  <div class="small muted" style="margin-top:10px">Nhóm phụ (tối đa 2)</div>
+  <div class="gd-also">{% for g in ov.groups %}<label class="check small"><input type="checkbox" value="{{ g.group.slug }}"> {{ g.group.name_vi }}</label>{% endfor %}</div>
+  <label style="margin-top:10px">Chuyên môn (1 câu)<input class="input" id="gd-expertise"></label>
+  <p class="small muted">Nhóm sửa tay được giữ nguyên khi bấm "Phân nhóm lại tất cả".</p>
+  <div class="row gap end">
+    <button class="btn btn-small btn-ghost" onclick="document.getElementById('guest-dialog').close()">Huỷ</button>
+    <button class="btn btn-small btn-primary" onclick="saveGuest()">Lưu</button>
+  </div>
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script>
+function filterGuests(q){ q=q.trim().toLowerCase();
+  document.querySelectorAll('.guest-row').forEach(li=>li.hidden = !!q && !li.dataset.name.includes(q));
+  document.querySelectorAll('.group-card').forEach(c=>c.hidden = !!q && !c.querySelector('.guest-row:not([hidden])')); }
+async function classify(all){
+  if(all && !confirm('Claude xếp lại nhóm cho mọi khách (trừ khách bạn đã sửa tay)?')) return;
+  document.querySelectorAll('.js-classify').forEach(b=>{ b.disabled=true; });
+  toast('Claude đang phân nhóm khách mời, chờ chút…');
+  const r=await api('/api/guests/classify',{all});
+  if(r.error){ toast(r.error); document.querySelectorAll('.js-classify').forEach(b=>{ b.disabled=false; }); return; }
+  toast(`Đã xếp ${r.updated||0}/${r.asked||0} khách`+(r.kept_manual?` · giữ ${r.kept_manual} khách sửa tay`:'')+(r.summary?` · ${r.summary}`:'')+(r.message?` · ${r.message}`:''));
+  setTimeout(()=>location.reload(), 1800); }
+function editGuest(btn){ const d=btn.dataset, dlg=document.getElementById('guest-dialog'); dlg.dataset.id=d.id;
+  document.getElementById('gd-name').textContent=d.name;
+  document.getElementById('gd-group').value=d.group||'other';
+  const also=(d.also||'').split(',').filter(Boolean);
+  dlg.querySelectorAll('.gd-also input').forEach(cb=>cb.checked=also.includes(cb.value));
+  document.getElementById('gd-expertise').value=d.expertise||''; dlg.showModal(); }
+async function saveGuest(){ const dlg=document.getElementById('guest-dialog'), group=document.getElementById('gd-group').value;
+  const also=[...dlg.querySelectorAll('.gd-also input:checked')].map(cb=>cb.value).filter(s=>s!==group).slice(0,2);
+  const r=await api('/api/guests/'+dlg.dataset.id,{group, also, expertise:document.getElementById('gd-expertise').value});
+  if(r.error){ toast(r.error); return; } dlg.close(); toast('Đã lưu nhóm'); setTimeout(()=>location.reload(),700); }
+</script>
+{% endblock %}

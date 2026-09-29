@@ -140,3 +140,19 @@ details.deleted-list:not([open]) > summary { border-bottom: none; }
 .chat-msg.bot { align-self: flex-start; background: var(--bg-input); border: 1px solid var(--border); }
 .chat-msg.bot .md p:first-child { margin-top: 0; } .chat-msg.bot .md p:last-child { margin-bottom: 0; }
 .chat-input { display: flex; gap: 8px; align-items: flex-end; } .chat-input textarea { flex: 1; min-height: 44px; }
+/* Khách mời page: guests grouped by expertise */
+.group-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 16px; align-items: start; }
+.group-card .card-header h2 .muted { font-weight: 400; font-size: 13px; margin-left: 4px; }
+.group-hint { padding: 8px 16px 0; }
+.guest-list { list-style: none; padding: 6px 16px 12px; display: flex; flex-direction: column; }
+.guest-row { padding: 8px 0; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 3px; }
+.guest-row:last-child { border-bottom: none; }
+.guest-row.secondary { opacity: .6; }
+.guest-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pill.ep { background: var(--bg-input); color: var(--text-secondary); text-decoration: none; }
+.pill.ep:hover { color: var(--text); }
+.group-card.unassigned { border-color: rgba(251,191,36,.45); }
+.gd-also { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; margin-top: 4px; }
+.pill.group-main { background: rgba(52,211,153,.12); color: var(--success); font-size: 12px; text-decoration: none; }
+.pill.group-also { font-size: 12px; text-decoration: none; opacity: .75; }
+@media (max-width: 700px) { .group-grid { grid-template-columns: 1fr; } .gd-also { grid-template-columns: 1fr; } }

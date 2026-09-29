@@ -86,9 +86,15 @@ def _fts_query(q: str) -> str:
 def search(q: str = "", *, episode_id: str = None, podcast_id: str = None, guest: str = None, kind: str = None,
            min_intensity: float = None, min_gtf: float = None, min_score: float = None, keyword_reach: str = None,
            status: str = None, theme: str = None, topic: str = None, unused: bool = False, limit: int = 30,
-           offset: int = 0) -> list[dict]:
+           offset: int = 0, group: str = None) -> list[dict]:
     conn = db.get_conn()
     where, params = [], []
+    if group:                                      # guest group (Khách mời page): episodes of its guests
+        from .guests import episode_ids_for_group
+        ids = episode_ids_for_group(group)
+        if not ids:
+            return []
+        where.append(f"s.episode_id IN ({','.join('?' * len(ids))})"); params.extend(ids)
     if episode_id:
         where.append("s.episode_id=?"); params.append(episode_id)
     if podcast_id:

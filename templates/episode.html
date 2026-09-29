@@ -3,7 +3,9 @@
 {% block content %}
 <section class="card">
   <div class="card-header">
-    <h2>{{ ep.id }} · {{ ep.guest or '' }}</h2>
+    <h2>{{ ep.id }} · {{ ep.guest or '' }}
+      {% for g in guest_groups %}<a class="pill {{ 'group-main' if g.main else 'group-also' }}" href="/guests#group-{{ g.slug }}"
+        title="{{ g.guest }} · nhóm {{ 'chính' if g.main else 'phụ' }}">{{ g.name }}</a>{% endfor %}</h2>
     <div class="row gap">
       <span class="badge stage-{{ (ep.stage or 'new').split(':')[0] }}">{{ ep.stage }}</span>
       {% if ep.clip_folder %}<button class="btn btn-small" data-path="{{ ep.clip_folder }}" onclick="openFolder(this.dataset.path)">Mở thư mục clip</button>{% endif %}

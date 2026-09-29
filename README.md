@@ -69,6 +69,13 @@ Cách chạy hiện nay:
 - **Chat để chỉnh metadata**: dưới kết quả có ô nhắn Claude (Ctrl+Enter để gửi), ví dụ "title ngắn hơn", "đưa keyword lên đầu", "thêm tag …", "description giọng kịch tính hơn", hay hỏi "vì sao chọn keyword này?". Mỗi tin nhắn tiếp tục đúng phiên Claude đã viết title (`--resume`, Claude nhớ skill, transcript và bản vừa viết), Claude sửa thẳng file JSON kết quả, trang hiện ngay bản mới và cả luồng hỏi đáp. Mỗi tin nhắn là một lượt mới trong `segment_titles` (`parent_id`, `user_message`), nên mọi phiên bản đều còn trong database. Lượt title viết trước khi có tính năng này chưa lưu phiên: tin nhắn đầu tiên mở phiên mới kèm skill, transcript và kết quả cũ, các tin sau nối tiếp phiên đó.
 - Lượt Viết Title chạy Claude ở chế độ cô lập như bước chọn nội dung (skill nằm trong prompt, không MCP, không danh sách skill), request đầu còn ~42 nghìn token thay vì ~61 nghìn. Chạy thử 2026-09-27: chat tiếp đúng phiên 8–16 giây, $0.04–0.05 mỗi tin; tin đầu tiên trên lượt cũ (mở phiên mới) 21 giây, $0.44.
 
+## Khách mời theo nhóm chuyên môn
+
+- Tab **Khách mời** xếp khách vào 20 nhóm theo kiểu JRE: UFO/UAP, lịch sử cổ đại, tôn giáo, chính trị, quân đội & tình báo, MMA, diễn viên hài, khoa học & vũ trụ, AI, sức khỏe, psychedelics, bí ẩn & mất tích, điều tra & tố giác, săn bắn, tâm lý & triết học, giải trí, kinh doanh, thể thao, tội phạm & nhà tù, khác (`studio/guests.py`, bảng `guest_groups` + `guests`).
+- Mỗi khách có một nhóm chính (lĩnh vực khán giả JRE tìm xem họ nhất; diễn viên hài luôn là hài, võ sĩ luôn là MMA) và tối đa 2 nhóm phụ, hiện mờ ở nhóm phụ. Khách xuất hiện nhiều tập được gộp theo tên; "A & B" là hai khách.
+- Claude xếp nhóm: khách của tập mới được xếp ngay trong bước chọn nội dung (khóa `guests` của `tags_<id>.json`); khách cũ bấm **Phân nhóm N khách bằng Claude** (một lượt sonnet, không công cụ, khoảng 10–20 giây, $0.04 cho 11 khách). **Sửa nhóm** để chọn tay; khách sửa tay không bị Claude đổi khi bấm "Phân nhóm lại tất cả".
+- "xem highlight →" mở trang Tìm kiếm lọc theo nhóm (bộ lọc "Nhóm khách" mới), trang tập hiện nhãn nhóm cạnh tên khách, `hldb guests [--group slug]` và `hldb search --group slug` cho skill kho-highlight.
+
 ## Dịch khi bôi đen (Google Dịch)
 
 - Bôi đen chữ tiếng Anh ở bất kỳ trang nào, bấm nút **🌐 Dịch** hiện cạnh đoạn chọn. Khung bản dịch có nút Copy, nút mở Google Dịch và ô "Tự dịch ngay khi bôi đen" để bỏ bước bấm nút. Esc hoặc bấm ra ngoài để đóng.

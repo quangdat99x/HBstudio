@@ -13,7 +13,7 @@ from flask import Flask, abort, jsonify, redirect, render_template, request, sen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from studio import config, db, export as export_mod, ingest, maintenance, search, tagging  # noqa: E402
+from studio import config, db, export as export_mod, guests, ingest, maintenance, search, tagging  # noqa: E402
 from studio.analysis import import_markdown, sections_for_display  # noqa: E402
 from studio.textfmt import md_to_html  # noqa: E402
 from studio.util import now_iso, parse_episode_name  # noqa: E402
@@ -88,7 +88,7 @@ def orchestrator():
 # ---------------------------------------------------------------- pages
 @app.context_processor
 def _ctx():
-    return {"nav": [("queue", "Hàng đợi"), ("episodes", "Tập"), ("search", "Tìm kiếm"),
+    return {"nav": [("queue", "Hàng đợi"), ("episodes", "Tập"), ("guests", "Khách mời"), ("search", "Tìm kiếm"),
                     ("compilations", "Compilation"), ("ask", "Hỏi AI"), ("settings", "Cài đặt")]}
 
 
@@ -161,8 +161,14 @@ def episode_page(episode_id):
         s["has_clip"] = bool(s["clip_path"] and Path(s["clip_path"]).exists())
         s["has_zoom"] = bool(s["clip_zoomed_path"] and Path(s["clip_zoomed_path"]).exists())
     return render_template("episode.html", page="episodes", ep=ep, segments=highlights, profile=profile, jobs=jobs,
-                           deleted=deleted, title_skill=db.get_setting("title_skill"),
+                           deleted=deleted, guest_groups=guests.groups_for_episode(ep.get("guest")),
+                           title_skill=db.get_setting("title_skill"),
                            title_model=db.get_setting("claude_model_title"))
+
+
+@app.route("/guests")
+def guests_page():
+    return render_template("guests.html", page="guests", ov=guests.overview())
 
 
 @app.route("/segments/<int:seg_id>/title-block")
@@ -185,13 +191,14 @@ def search_page():
         "min_intensity": float(args["min_intensity"]) if args.get("min_intensity") else None,
         "min_gtf": float(args["min_gtf"]) if args.get("min_gtf") else None,
         "keyword_reach": args.get("reach") or None, "status": args.get("status") or None,
-        "theme": args.get("theme") or None, "topic": args.get("topic") or None,
+        "theme": args.get("theme") or None, "topic": args.get("topic") or None, "group": args.get("group") or None,
         "unused": args.get("unused") == "1", "limit": int(args.get("limit") or 50),
     }
     results = search.search(q, **filters) if (q or any(v for k, v in filters.items() if k != "limit")) else []
     themes = db.rows("SELECT slug, name_vi FROM themes ORDER BY slug")
     episodes = db.rows("SELECT id, guest FROM episodes ORDER BY podcast_id, number DESC")
-    return render_template("search.html", page="search", q=q, f=args, results=results, themes=themes, episodes=episodes)
+    return render_template("search.html", page="search", q=q, f=args, results=results, themes=themes, episodes=episodes,
+                           guest_groups=guests.groups())
 
 
 @app.route("/compilations")
@@ -313,6 +320,28 @@ def api_segments_restore():
     if not ids:
         return jsonify({"error": "chưa chọn đoạn nào"}), 400
     return jsonify(maintenance.restore_segments(ids))
+
+
+@app.route("/api/guests/classify", methods=["POST"])
+def api_guests_classify():
+    """Let Claude group the guests without a group ({"all": true}: every guest not grouped by hand)."""
+    try:
+        return jsonify(guests.classify(only_missing=not (request.json or {}).get("all")))
+    except Exception as e:  # noqa: BLE001
+        log.exception("guest classification failed")
+        return jsonify({"error": f"phân nhóm lỗi: {e}"}), 500
+
+
+@app.route("/api/guests/<int:guest_id>", methods=["POST"])
+def api_guest_update(guest_id):
+    """Group picked by hand: {"group", "also": [...], "expertise"}; Claude never overwrites it."""
+    data = request.json or {}
+    try:
+        guests.set_guest(guest_id, data.get("group") or None, data.get("also") or [],
+                         (data.get("expertise") or "").strip() or None, source="manual")
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"ok": True})
 
 
 @app.route("/api/export", methods=["POST"])

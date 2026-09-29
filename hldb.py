@@ -24,7 +24,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 from studio import db  # noqa: E402
 from studio import export as export_mod  # noqa: E402
-from studio import ingest, search  # noqa: E402
+from studio import guests as guests_mod, ingest, search  # noqa: E402
 from studio.analysis import import_analysis_json, import_markdown  # noqa: E402
 
 
@@ -63,6 +63,7 @@ def main(argv=None):
     p.add_argument("--episode"); p.add_argument("--podcast"); p.add_argument("--guest"); p.add_argument("--kind")
     p.add_argument("--min-intensity", type=float); p.add_argument("--min-gtf", type=float); p.add_argument("--min-score", type=float)
     p.add_argument("--reach"); p.add_argument("--status"); p.add_argument("--theme"); p.add_argument("--topic")
+    p.add_argument("--group", help="guest group slug (see: hldb guests)")
     p.add_argument("--unused", action="store_true"); p.add_argument("--limit", type=int, default=30); p.add_argument("--offset", type=int, default=0)
     p.add_argument("--json", action="store_true")
 
@@ -71,6 +72,8 @@ def main(argv=None):
     p = sub.add_parser("episode", help="show one episode with its segments"); p.add_argument("episode_id"); p.add_argument("--json", action="store_true")
     p = sub.add_parser("topics", help="list topics by frequency"); p.add_argument("--top", type=int, default=50); p.add_argument("--json", action="store_true")
     p = sub.add_parser("themes", help="list themes"); p.add_argument("--json", action="store_true")
+    p = sub.add_parser("guests", help="guests grouped by expertise (UFO, ancient history, religion, ...)")
+    p.add_argument("--group"); p.add_argument("--json", action="store_true")
     p = sub.add_parser("stats", help="counts"); p.add_argument("--json", action="store_true")
     p = sub.add_parser("suggest-compilations", help="topics with >=4 segments from >=2 episodes"); p.add_argument("--json", action="store_true")
 
@@ -110,7 +113,7 @@ def main(argv=None):
         res = search.search(args.q, episode_id=args.episode, podcast_id=args.podcast, guest=args.guest, kind=args.kind,
                             min_intensity=args.min_intensity, min_gtf=args.min_gtf, min_score=args.min_score,
                             keyword_reach=args.reach, status=args.status, theme=args.theme, topic=args.topic,
-                            unused=args.unused, limit=args.limit, offset=args.offset)
+                            unused=args.unused, limit=args.limit, offset=args.offset, group=args.group)
         _print(res, as_json)
     elif args.cmd == "show":
         sid = search.resolve_segment_ref(args.ref)
@@ -163,6 +166,20 @@ def main(argv=None):
     elif args.cmd == "themes":
         _print(db.rows("SELECT th.slug, th.name_vi, COUNT(st.segment_id) AS n FROM themes th "
                        "LEFT JOIN segment_themes st ON st.theme_id=th.id GROUP BY th.id ORDER BY n DESC"), as_json)
+    elif args.cmd == "guests":
+        ov = guests_mod.overview()
+        out = []
+        for g in ov["groups"]:
+            if args.group and g["group"]["slug"] != args.group:
+                continue
+            members = [{"name": x["name"], "main": True, "expertise": x["expertise"], "episodes": [e["id"] for e in x["episodes"]],
+                        "highlights": x["highlights"]} for x in g["main"]]
+            members += [{"name": x["name"], "main": False, "episodes": [e["id"] for e in x["episodes"]]} for x in g["also"]]
+            if members or args.group:
+                out.append({"group": g["group"]["slug"], "name": g["group"]["name_vi"], "guests": members})
+        if ov["unassigned"] and not args.group:
+            out.append({"group": None, "name": "Chưa phân nhóm", "guests": [{"name": x["name"]} for x in ov["unassigned"]]})
+        _print(out, True)
     elif args.cmd == "stats":
         _print({
             "episodes": db.scalar("SELECT COUNT(*) FROM episodes"),

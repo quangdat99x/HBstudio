@@ -114,8 +114,8 @@ def run(prompt: str, *, cwd: Path | None = None, allowed_tools: str | None = Non
         if d and Path(d).exists():
             args += ["--add-dir", str(d)]              # variadic flag: always followed by another flag below
     args += ["--max-turns", str(max_turns or db.setting_int("claude_max_turns"))]
-    if tools:
-        args += ["--tools", tools]                     # variadic too
+    if tools is not None:
+        args += ["--tools", tools]                     # variadic too; "" = no tools at all
     allowed = allowed_tools or db.get_setting("claude_allowed_tools")
     if allowed:
         args += ["--allowedTools", allowed]

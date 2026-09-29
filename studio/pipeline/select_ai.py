@@ -18,7 +18,7 @@ import time
 from glob import glob
 from pathlib import Path
 
-from .. import config, db, ingest
+from .. import config, db, guests, ingest
 from ..analysis import extract_guest_card, import_markdown, import_tags
 from ..util import now_iso, read_json, transcript_to_txt
 from . import claude_runner
@@ -214,12 +214,18 @@ def build_prompt(ep: dict, skill_text: str, transcript: str, cutlist_path: Path,
         f"4. Sau đó XUẤT CUTLIST theo Mục Vb (layout flat_hooks, hook đứng ngay trước đoạn cha, rank liên tục) vào đúng MỘT file: {cutlist_path}",
         f"5. Trong CÙNG lượt đó (hai lệnh Write song song) ghi thêm file nhãn nhỏ {tags_path} dạng JSON: "
         f"{{\"episode_id\": \"{ep['id']}\", \"segments\": [{{\"content_rank\": 1, \"start\": \"hh:mm:ss\", \"end\": \"hh:mm:ss\", "
-        "\"themes\": [\"<slug>\", ...], \"entities\": [{\"name\": \"<tên riêng>\", \"type\": \"person|place|org|work|event|other\"}]}]}. "
+        "\"themes\": [\"<slug>\", ...], \"entities\": [{\"name\": \"<tên riêng>\", \"type\": \"person|place|org|work|event|other\"}]}], "
+        "\"guests\": [{\"name\": \"<tên khách mời>\", \"group\": \"<slug nhóm chính>\", \"also\": [\"<slug>\"], "
+        "\"expertise\": \"<1 câu tiếng Việt>\"}]}. "
         "Mỗi đoạn highlight của cutlist có đúng một phần tử (khớp content_rank, start, end); chỉ các khóa trên, "
         "không chép tóm tắt hay phân tích vào file này.",
         "6. `themes`: 1–3 slug chọn trong danh sách dưới đây, slug đầu tiên là chủ đề chính của đoạn; không bịa slug mới. "
         "`entities`: người, địa danh, tổ chức, tác phẩm, sự kiện có tên riêng được nhắc trong đoạn (tối đa 15).",
         *_theme_lines(),
+        "   `guests`: mỗi khách mời một phần tử, xếp theo Guest Card. `group` = lĩnh vực khán giả JRE tìm xem khách nhất "
+        "(diễn viên hài luôn là comedy, võ sĩ và HLV luôn là mma-combat); `also` = 0–2 nhóm phụ khi có chuyên môn thứ hai rõ "
+        "rệt; `expertise` = 1 câu tiếng Việt, tối đa 15 từ. Slug nhóm khách:",
+        *guests.prompt_group_lines(),
         "7. Timestamp phải tra trực tiếp từ transcript, tuyệt đối không ước lượng. Hook phải nằm trong biên đoạn cha, dài 5–25 giây.",
         f"8. Cutlist được Studio chấp nhận khi: episode.id đúng {ep['id']}; mọi entry có `kind` (hook|highlight) và `title`; "
         "`rank` là số nguyên liên tục 1..N; start < end và không vượt thời lượng video; mỗi hook có `parent_rank` trỏ tới "
@@ -377,7 +383,9 @@ def select_episode(episode_id: str, progress_cb=None, force: bool = False, stop_
     tag_stats = None
     if tags_path.exists():
         try:
-            tag_stats = import_tags(episode_id, read_json(tags_path))
+            tags_data = read_json(tags_path)
+            tag_stats = import_tags(episode_id, tags_data)
+            guests.import_from_tags(episode_id, tags_data)       # guest group for the Khách mời page
         except Exception as e:  # noqa: BLE001
             log.warning("tags json unusable for %s: %s", episode_id, e)
     total = claude_runner.merge_runs(all_runs)

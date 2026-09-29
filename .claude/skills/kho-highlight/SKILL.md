@@ -23,6 +23,7 @@ E:\DataBase\.venv\Scripts\python.exe E:\DataBase\hldb.py <lệnh> [tham số]
 | `episodes --json` | Danh sách tập, stage, số đoạn, số zoom. |
 | `topics --top 80 --json` | Topics thô hay gặp nhất. |
 | `themes --json` | Danh sách theme có kiểm soát và số đoạn mỗi theme. |
+| `guests [--group ufo-uap] --json` | Khách mời theo nhóm chuyên môn (ufo-uap, ancient-history, religion, politics, military-intel, mma-combat, comedy, science-space, tech-ai, health-fitness, psychedelics-consciousness, paranormal-mystery, conspiracy-investigation, …): tên, nhóm chính/phụ, các tập. Lọc highlight của cả nhóm: `search --group <slug>`. |
 | `suggest-compilations --json` | Topic có >= 4 đoạn từ >= 2 tập chưa dùng. |
 | `export --ids 12 15 18 --format pool --theme "<tên>" --out <file.json>` | Pool cho skill `tong-hop-rabbit-hole` (mỗi đoạn tự mang episode_id, guest, source_video, timestamp, summary, hook, intensity). |
 | `export --ids ... --format multi --theme "<tên>" --out <file.json>` | `cut_multi_<slug>.json` để Video Cutter cắt đa tập. |

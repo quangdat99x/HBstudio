@@ -10,6 +10,7 @@
     <div class="row gap wrap small">
       <select class="input" name="episode"><option value="">Mọi tập</option>{% for e in episodes %}<option value="{{ e.id }}" {{ 'selected' if f.get('episode')==e.id }}>{{ e.id }} · {{ e.guest }}</option>{% endfor %}</select>
       <input class="input" name="guest" value="{{ f.get('guest','') }}" placeholder="Khách mời">
+      <select class="input" name="group"><option value="">Mọi nhóm khách</option>{% for g in guest_groups %}<option value="{{ g.slug }}" {{ 'selected' if f.get('group')==g.slug }}>{{ g.name_vi }}</option>{% endfor %}</select>
       <select class="input" name="kind"><option value="">Highlight + hook</option><option value="highlight" {{ 'selected' if f.get('kind')=='highlight' }}>Chỉ highlight</option><option value="hook" {{ 'selected' if f.get('kind')=='hook' }}>Chỉ hook</option></select>
       <input class="input narrow" name="min_intensity" value="{{ f.get('min_intensity','') }}" placeholder="intensity ≥">
       <input class="input narrow" name="min_gtf" value="{{ f.get('min_gtf','') }}" placeholder="GTF ≥">

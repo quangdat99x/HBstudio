@@ -82,6 +82,8 @@ DEFAULT_SETTINGS = {
     "title_skill": "viet-tittle",   # skill run by the "Viết Title" button on each highlight
     "claude_model_title": "opus",   # model for "Viết Title" (user default: opus)
     "claude_effort_title": "high",
+    "claude_model_groups": "sonnet", # "Phân nhóm bằng Claude" on the Khách mời page (short classification)
+    "claude_effort_groups": "low",
     "select_retry": "1",
     "watch_enabled": "1",
     "file_stable_seconds": "30",

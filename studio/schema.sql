@@ -205,6 +205,24 @@ CREATE TABLE IF NOT EXISTS segment_titles (
 );
 CREATE INDEX IF NOT EXISTS idx_segment_titles_segment ON segment_titles(segment_id);
 
+-- guests grouped by what JRE listeners come to hear them on (studio/guests.py)
+CREATE TABLE IF NOT EXISTS guest_groups (
+  slug        TEXT PRIMARY KEY,
+  name_vi     TEXT NOT NULL,
+  hint        TEXT,                        -- who belongs here (page + Claude's classification prompt)
+  sort        INTEGER DEFAULT 100
+);
+CREATE TABLE IF NOT EXISTS guests (
+  id          INTEGER PRIMARY KEY,
+  name        TEXT NOT NULL,
+  name_norm   TEXT NOT NULL UNIQUE,        -- episodes link by norm_key(episodes.guest), "A & B" = two guests
+  group_slug  TEXT,                        -- main group
+  also_json   TEXT,                        -- secondary groups ["slug", ...] (0-2)
+  expertise   TEXT,                        -- one line: what listeners come to hear them on
+  source      TEXT,                        -- claude | manual (manual is never overwritten)
+  updated_at  TEXT
+);
+
 -- pipeline
 CREATE TABLE IF NOT EXISTS jobs (
   id          INTEGER PRIMARY KEY,
