@@ -8,6 +8,8 @@
   --radius: 12px; --radius-sm: 6px;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
+/* the hidden attribute must win over display:flex/grid of any class (cards, panes, guest rows) */
+[hidden] { display: none !important; }
 body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5;
   -webkit-font-smoothing: antialiased; background-image: linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px);
   background-size: 32px 32px; }
@@ -156,3 +158,31 @@ details.deleted-list:not([open]) > summary { border-bottom: none; }
 .pill.group-main { background: rgba(52,211,153,.12); color: var(--success); font-size: 12px; text-decoration: none; }
 .pill.group-also { font-size: 12px; text-decoration: none; opacity: .75; }
 @media (max-width: 700px) { .group-grid { grid-template-columns: 1fr; } .gd-also { grid-template-columns: 1fr; } }
+/* Make Documentary Film */
+.normal-text { font-weight: 400; font-size: 13px; }
+dialog.modal.wide { width: min(820px, 94vw); } dialog.modal.tall { max-height: 88vh; overflow: auto; }
+.steps { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.step-btn.done { border-color: var(--success); color: var(--success); }
+.docfilm-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 1100px) { .docfilm-grid { grid-template-columns: 1fr; } }
+.chat-thread { display: flex; flex-direction: column; gap: 8px; max-height: 68vh; overflow: auto; padding-right: 4px; }
+.chat-msg.user.step { background: rgba(52,211,153,.10); border-color: rgba(52,211,153,.35); font-weight: 500; }
+.chat-msg.bot { max-width: 100%; }
+.chat-msg.bot .md h3, .chat-msg.bot .md h4, .chat-msg.bot .md h5, .chat-msg.bot .md h6 { font-size: 14px; margin: 10px 0 4px; }
+.chat-msg.bot.running { color: var(--info); border-color: rgba(96,165,250,.35); }
+.bot-foot { margin-top: 6px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.spin { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--info); border-right-color: transparent; border-radius: 50%;
+  animation: spin 0.9s linear infinite; vertical-align: -1px; margin-right: 4px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.art-tabs { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.art-pane { display: flex; flex-direction: column; gap: 8px; }
+.art-pane video { width: 100%; border-radius: var(--radius-sm); background: #000; }
+.art-md { max-height: 62vh; overflow: auto; font-size: 13.5px; }
+.img-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+.img-grid a { display: flex; flex-direction: column; gap: 2px; text-decoration: none; }
+.img-grid img { width: 100%; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+.sel-thesis { font-size: 14.5px; font-weight: 500; color: #ddd6fe; }
+.sel-seg { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.rules-md { font-size: 14px; line-height: 1.65; } .rules-md h3 { font-size: 17px; margin-top: 18px; } .rules-md h4 { font-size: 15px; margin-top: 14px; }
+.md blockquote { border-left: 3px solid var(--accent); padding: 2px 10px; margin: 4px 0; color: var(--text-secondary); background: rgba(139,92,246,.05); }
+textarea.mono { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; line-height: 1.5; }

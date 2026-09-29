@@ -223,6 +223,59 @@ CREATE TABLE IF NOT EXISTS guests (
   updated_at  TEXT
 );
 
+-- Make Documentary Film tab (studio/docfilm): projects, their chat with Claude, rulebook history
+CREATE TABLE IF NOT EXISTS docfilm_projects (
+  id               INTEGER PRIMARY KEY,
+  slug             TEXT NOT NULL UNIQUE,
+  title            TEXT NOT NULL,
+  topic            TEXT NOT NULL,          -- what the film is about (seed of the database search)
+  brief            TEXT,                   -- the user's notes: angle, audience, must-have segments, ...
+  format           TEXT DEFAULT '16:9',    -- 16:9 | 9:16
+  target_sec       INTEGER,
+  credit_budget    REAL,                   -- Higgsfield credits the project may spend without asking
+  stage            TEXT NOT NULL DEFAULT 'new',   -- new | research | script | film (computed from its files)
+  dir              TEXT NOT NULL,          -- project folder
+  session_id       TEXT,                   -- Claude Code session shared by every turn of the project
+  session_cost_usd REAL,                   -- total_cost_usd of that session (cumulative, as the CLI reports it)
+  rules_version    INTEGER,                -- rulebook version the session was last told about
+  cost_usd         REAL DEFAULT 0,         -- Claude cost of the project so far
+  created_at       TEXT NOT NULL,
+  updated_at       TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS docfilm_messages (
+  id            INTEGER PRIMARY KEY,
+  project_id    INTEGER NOT NULL REFERENCES docfilm_projects(id) ON DELETE CASCADE,
+  role          TEXT NOT NULL,             -- user | assistant
+  kind          TEXT NOT NULL DEFAULT 'chat',   -- chat | research | script | build
+  content       TEXT,                      -- user text, or Claude's final answer (markdown)
+  log_md        TEXT,                      -- assistant: every text block of the run (progress notes included)
+  status        TEXT NOT NULL DEFAULT 'done',   -- assistant: queued | running | done | failed
+  progress_msg  TEXT,
+  reply_to      INTEGER,                   -- assistant: the user message it answers
+  model         TEXT,
+  effort        TEXT,
+  models_used   TEXT,
+  usage_json    TEXT,
+  cost_usd      REAL,                      -- this turn only
+  duration_sec  REAL,
+  session_id    TEXT,
+  rules_version INTEGER,                   -- set when the turn changed the rulebook
+  error         TEXT,
+  created_at    TEXT NOT NULL,
+  started_at    TEXT,
+  finished_at   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_docfilm_messages_project ON docfilm_messages(project_id);
+CREATE TABLE IF NOT EXISTS docfilm_rules (
+  version     INTEGER PRIMARY KEY,
+  body        TEXT NOT NULL,
+  source      TEXT,                        -- seed | claude | manual | file | restore
+  project_id  INTEGER,
+  message_id  INTEGER,
+  note        TEXT,
+  created_at  TEXT NOT NULL
+);
+
 -- pipeline
 CREATE TABLE IF NOT EXISTS jobs (
   id          INTEGER PRIMARY KEY,

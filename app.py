@@ -38,6 +38,25 @@ _orchestrator = None
 _orch_lock = threading.Lock()
 _title_worker = None
 _title_lock = threading.Lock()
+_docfilm_worker = None
+_docfilm_lock = threading.Lock()
+
+
+def docfilm_worker():
+    """Worker of the Make Documentary Film tab (own queue: one Claude turn at a time)."""
+    global _docfilm_worker
+    if os.environ.get("STUDIO_NO_WORKER") == "1":
+        return None
+    with _docfilm_lock:
+        if _docfilm_worker is None:
+            try:
+                from studio.docfilm.worker import DocFilmWorker
+                _docfilm_worker = DocFilmWorker()
+                _docfilm_worker.start()
+            except Exception as e:  # noqa: BLE001
+                log.warning("docfilm worker unavailable: %s", e)
+                _docfilm_worker = False
+    return _docfilm_worker or None
 
 
 def title_worker():
@@ -89,7 +108,7 @@ def orchestrator():
 @app.context_processor
 def _ctx():
     return {"nav": [("queue", "Hàng đợi"), ("episodes", "Tập"), ("guests", "Khách mời"), ("search", "Tìm kiếm"),
-                    ("compilations", "Compilation"), ("ask", "Hỏi AI"), ("settings", "Cài đặt")]}
+                    ("compilations", "Compilation"), ("docfilm", "Phim tài liệu"), ("ask", "Hỏi AI"), ("settings", "Cài đặt")]}
 
 
 @app.route("/")
@@ -215,6 +234,184 @@ def compilations_page():
 @app.route("/ask")
 def ask_page():
     return render_template("ask.html", page="ask")
+
+
+# ---------------------------------------------------------------- Make Documentary Film
+def _docfilm_project(pid: int) -> dict:
+    from studio.docfilm import store as dstore
+    p = dstore.get_project(pid)
+    if not p:
+        abort(404)
+    return p
+
+
+@app.route("/docfilm")
+def docfilm_page():
+    from studio.docfilm import store as dstore
+    docfilm_worker()
+    rules = dstore.current_rules()
+    return render_template("docfilm.html", page="docfilm", projects=dstore.list_projects(), rules=rules,
+                           rules_path=str(dstore.rules_path()), root=str(dstore.root()), stage_names=dstore.STAGE_NAMES,
+                           s=db.all_settings())
+
+
+@app.route("/docfilm/rules")
+def docfilm_rules_page():
+    from studio.docfilm import store as dstore
+    return render_template("docfilm_rules.html", page="docfilm", rules=dstore.current_rules(),
+                           history=dstore.rules_history(), rules_path=str(dstore.rules_path()))
+
+
+@app.route("/docfilm/<int:pid>")
+def docfilm_project_page(pid):
+    from studio.docfilm import store as dstore
+    docfilm_worker()
+    p = _docfilm_project(pid)
+    return render_template("docfilm_project.html", page="docfilm", p=p, msgs=dstore.messages(pid), a=dstore.artifacts(p),
+                           busy=dstore.busy_turn(pid), stage_names=dstore.STAGE_NAMES, rules=dstore.current_rules(),
+                           model=db.get_setting("claude_model_docfilm"), effort=db.get_setting("claude_effort_docfilm"))
+
+
+@app.route("/docfilm/<int:pid>/chat")
+def docfilm_chat_fragment(pid):
+    from studio.docfilm import store as dstore
+    p = _docfilm_project(pid)
+    return render_template("_docfilm_chat.html", p=p, msgs=dstore.messages(pid), busy=dstore.busy_turn(pid))
+
+
+@app.route("/docfilm/<int:pid>/artifacts")
+def docfilm_artifacts_fragment(pid):
+    from studio.docfilm import store as dstore
+    p = _docfilm_project(pid)
+    return render_template("_docfilm_artifacts.html", p=p, a=dstore.artifacts(p))
+
+
+@app.route("/docfilm/<int:pid>/file")
+def docfilm_file(pid):
+    from studio.docfilm import store as dstore
+    p = _docfilm_project(pid)
+    target = dstore.safe_file(p, request.args.get("path", ""))
+    if not target:
+        abort(404)
+    return send_file(str(target), conditional=True)
+
+
+@app.route("/api/docfilm/projects", methods=["POST"])
+def api_docfilm_create():
+    from studio.docfilm import store as dstore
+    data = request.json or {}
+    try:
+        p = dstore.create_project(data.get("title") or "", data.get("topic") or "", data.get("brief") or "",
+                                  data.get("format") or "16:9", int(data["target_sec"]) if data.get("target_sec") else None,
+                                  float(data["credit_budget"]) if data.get("credit_budget") not in (None, "") else None)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except OSError as e:
+        return jsonify({"error": f"không tạo được thư mục dự án: {e}"}), 500
+    out = {"ok": True, "id": p["id"], "url": url_for("docfilm_project_page", pid=p["id"])}
+    if data.get("start_research"):
+        w = docfilm_worker()
+        out["queued"] = w.enqueue(p["id"], "", "research") if w else {"error": "bộ dựng phim chưa sẵn sàng"}
+    return jsonify(out)
+
+
+@app.route("/api/docfilm/<int:pid>/message", methods=["POST"])
+def api_docfilm_message(pid):
+    _docfilm_project(pid)
+    w = docfilm_worker()
+    if not w:
+        return jsonify({"error": "bộ dựng phim chưa sẵn sàng"}), 503
+    data = request.json or {}
+    res = w.enqueue(pid, (data.get("text") or "")[:8000], data.get("kind") or "chat")
+    return jsonify(res), (400 if res.get("error") else 200)
+
+
+@app.route("/api/docfilm/<int:pid>/cancel", methods=["POST"])
+def api_docfilm_cancel(pid):
+    w = docfilm_worker()
+    if not w:
+        return jsonify({"error": "bộ dựng phim chưa sẵn sàng"}), 503
+    return jsonify(w.cancel(pid))
+
+
+@app.route("/api/docfilm/<int:pid>/state")
+def api_docfilm_state(pid):
+    from studio.docfilm import store as dstore
+    p = _docfilm_project(pid)
+    busy = dstore.busy_turn(pid)
+    last = db.scalar("SELECT MAX(id) FROM docfilm_messages WHERE project_id=?", (pid,))
+    done = db.scalar("SELECT COUNT(*) FROM docfilm_messages WHERE project_id=? AND status IN ('done','failed')", (pid,))
+    return jsonify({"busy": bool(busy), "status": busy["status"] if busy else None,
+                    "progress": busy["progress_msg"] if busy else None, "last_id": last, "done": done,
+                    "stage": dstore.artifacts(p, light=True)["stage"], "cost_usd": p.get("cost_usd")})
+
+
+@app.route("/api/docfilm/<int:pid>/update", methods=["POST"])
+def api_docfilm_update(pid):
+    from studio.docfilm import store as dstore
+    _docfilm_project(pid)
+    data = request.json or {}
+    fields = {k: data[k] for k in ("title", "topic", "brief", "format", "target_sec", "credit_budget") if k in data}
+    if "target_sec" in fields:
+        fields["target_sec"] = int(fields["target_sec"]) if fields["target_sec"] else None
+    if "credit_budget" in fields:
+        fields["credit_budget"] = float(fields["credit_budget"]) if fields["credit_budget"] not in (None, "") else None
+    dstore.update_project(pid, **fields)
+    dstore.write_brief(dstore.get_project(pid))
+    return jsonify({"ok": True})
+
+
+@app.route("/api/docfilm/<int:pid>/delete", methods=["POST"])
+def api_docfilm_delete(pid):
+    from studio.docfilm import store as dstore
+    from studio.util import send_to_trash
+    p = _docfilm_project(pid)
+    data = request.json or {}
+    if (data.get("confirm") or "").strip().upper() != "XOA":
+        return jsonify({"error": "cần gõ XOA để xác nhận"}), 400
+    if dstore.busy_turn(pid):
+        return jsonify({"error": "dự án đang chạy, bấm Dừng trước"}), 409
+    with db.tx() as c:
+        c.execute("DELETE FROM docfilm_messages WHERE project_id=?", (pid,))
+        c.execute("DELETE FROM docfilm_projects WHERE id=?", (pid,))
+    trashed = False
+    if data.get("trash_folder") and Path(p["dir"]).exists():
+        from studio.docfilm.scaffold import unlink_node_modules
+        unlink_node_modules(Path(p["dir"]))     # the shared engine install must never go with the folder
+        send_to_trash(Path(p["dir"]))
+        trashed = True
+    return jsonify({"ok": True, "trashed": trashed})
+
+
+@app.route("/api/docfilm/rules", methods=["POST"])
+def api_docfilm_rules_save():
+    from studio.docfilm import store as dstore
+    data = request.json or {}
+    body = (data.get("body") or "").strip()
+    if len(body) < 50:
+        return jsonify({"error": "bộ quy tắc trống hoặc quá ngắn"}), 400
+    version = dstore.set_rules(body + "\n", source="manual", note=(data.get("note") or "sửa tay trên Studio")[:200])
+    return jsonify({"ok": True, "version": version})
+
+
+@app.route("/api/docfilm/rules/restore", methods=["POST"])
+def api_docfilm_rules_restore():
+    from studio.docfilm import store as dstore
+    try:
+        version = dstore.restore_rules(int((request.json or {}).get("version") or 0))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"ok": True, "version": version})
+
+
+@app.route("/api/docfilm/rules/<int:version>")
+def api_docfilm_rules_version(version):
+    from studio.docfilm import store as dstore
+    r = dstore.rules_version(version)
+    if not r:
+        abort(404)
+    return jsonify({"version": r["version"], "body": r["body"], "html": md_to_html(r["body"]), "source": r["source"],
+                    "note": r["note"], "created_at": r["created_at"]})
 
 
 @app.route("/settings", methods=["GET", "POST"])
@@ -573,6 +770,7 @@ def api_tag_pending():
 if os.environ.get("STUDIO_NO_WORKER") != "1":
     orchestrator()
     title_worker()
+    docfilm_worker()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", config.PORT_STUDIO))

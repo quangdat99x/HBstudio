@@ -87,7 +87,8 @@ def run(prompt: str, *, cwd: Path | None = None, allowed_tools: str | None = Non
         max_turns: int | None = None, model: str | None = None, effort: str | None = None,
         fallback_model: str | None = None, timeout: int = 3 * 3600, log_path: Path | None = None, on_text=None,
         stop_flag=None, on_event=None, add_dirs: list[str] | None = None, tools: str | None = None,
-        isolated: bool = False, resume: str | None = None) -> dict:
+        isolated: bool = False, resume: str | None = None, extra_args: list[str] | None = None,
+        env_extra: dict | None = None) -> dict:
     """Execute one headless run.
 
     `tools` limits the built-in tool set the model sees (`--tools`); `allowed_tools` only pre-approves tools.
@@ -95,6 +96,8 @@ def run(prompt: str, *, cwd: Path | None = None, allowed_tools: str | None = Non
     otherwise ride along in every request: MCP servers and claude.ai connectors (hundreds of tool names), the
     skill and slash-command list, auto-memory. The caller then passes the skill text inside the prompt.
     `resume` continues an earlier session (same context, prompt cache still warm) instead of starting over.
+    `extra_args` / `env_extra` add CLI flags and environment variables (the documentary runs keep the claude.ai
+    connectors for Higgsfield but drop the slash-command list and auto-memory this way).
 
     Returns {ok, error, text, texts, result, usage, models, model_usage, cost_usd, duration_sec, returncode,
     session_id, log_path}. `models` lists the model ids the CLI actually used (from the result event), so the
@@ -110,6 +113,7 @@ def run(prompt: str, *, cwd: Path | None = None, allowed_tools: str | None = Non
         args += ["--resume", resume]
     if isolated:
         args += ["--strict-mcp-config", "--disable-slash-commands"]
+    args += list(extra_args or [])
     for d in add_dirs or []:
         if d and Path(d).exists():
             args += ["--add-dir", str(d)]              # variadic flag: always followed by another flag below
@@ -133,6 +137,7 @@ def run(prompt: str, *, cwd: Path | None = None, allowed_tools: str | None = Non
     if isolated:
         env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"   # the memory index of E:\DataBase is for chat sessions
         env["ENABLE_CLAUDEAI_MCP_SERVERS"] = "false"   # claude.ai connectors (Canva, ElevenLabs, Trello, ...)
+    env.update({k: str(v) for k, v in (env_extra or {}).items()})
     started = time.time()
     log.info("claude run in %s: %s", cwd, " ".join(args[len(cmd):]))
     logf = open(log_path, "w", encoding="utf-8") if log_path else None

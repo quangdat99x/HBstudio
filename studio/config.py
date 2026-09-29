@@ -90,3 +90,16 @@ DEFAULT_SETTINGS = {
 }
 
 VIDEO_EXTS = {".mp4", ".mkv", ".webm", ".mov", ".m4v"}
+
+# Make Documentary Film tab (studio/docfilm): engine template + first rulebook live in the repo;
+# projects and the working copy of the rulebook live under the docfilm_root setting.
+DOCFILM_DIR = BASE_DIR / "docfilm"
+DOCFILM_ENGINE_DIR = DOCFILM_DIR / "engine"
+DOCFILM_RULEBOOK_SEED = DOCFILM_DIR / "RULEBOOK.seed.md"
+DEFAULT_SETTINGS.update({
+    "docfilm_root": r"D:\VideoLab\docfilms",
+    "claude_model_docfilm": "opus",
+    "claude_effort_docfilm": "high",
+    "docfilm_max_turns": "400",
+    "docfilm_credit_budget": "40",      # Higgsfield credits a project may spend without asking
+})

@@ -9,6 +9,7 @@ from __future__ import annotations
 import html
 import re
 
+_RE_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
 _RE_BOLD = re.compile(r"\*\*(.+?)\*\*")
 _RE_ITAL = re.compile(r"(?<![*\w])\*(?![*\s])(.+?)(?<![*\s])\*(?![*\w])")
 _RE_CODE = re.compile(r"`([^`]+)`")
@@ -19,6 +20,7 @@ _RE_NUM = re.compile(r"^\s*(\d{1,2})\.\s+(.*)$")
 def _inline(s: str) -> str:
     s = html.escape(s, quote=False)
     s = _RE_CODE.sub(r"<code>\1</code>", s)
+    s = _RE_LINK.sub(r'<a href="\2" target="_blank" rel="noopener">\1</a>', s)
     s = _RE_BOLD.sub(r"<strong>\1</strong>", s)
     s = _RE_ITAL.sub(r"<em>\1</em>", s)
     return s
@@ -119,6 +121,9 @@ def md_to_html(text: str) -> str:
             continue
         if re.fullmatch(r"-{3,}|\*{3,}", stripped):
             out.append("<hr>")
+            continue
+        if stripped.startswith(">"):
+            out.append(f"<blockquote>{_inline(stripped.lstrip('>').strip())}</blockquote>")
             continue
         hm = re.match(r"^(#{1,4})\s+(.*)$", stripped)
         if hm:

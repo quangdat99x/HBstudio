@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% set title = "Phim tài liệu" %}
+{% block content %}
+<section class="card">
+  <div class="card-header">
+    <h2>🎞️ Make Documentary Film</h2>
+    <div class="row gap">
+      <a class="btn btn-small btn-ghost" href="/docfilm/rules">📘 Bộ quy tắc v{{ rules.version }}</a>
+      <button class="btn btn-small btn-primary" onclick="document.getElementById('new-dialog').showModal()">＋ Dự án mới</button>
+    </div>
+  </div>
+  <div class="card-body small muted"><p>
+    Mỗi dự án là một cuộc trò chuyện với Claude: <b>1 · tìm đoạn đắt giá</b> trong kho highlight theo chủ đề →
+    <b>2 · viết kịch bản</b> với xương sống là các câu trích JRE → <b>3 · dựng phim</b> (ảnh Higgsfield + không gian 3D + âm thanh) →
+    nhắn để sửa. Mọi lượt đều theo <a href="/docfilm/rules">bộ quy tắc</a>; nhắn "cập nhật quy tắc: …" để Claude ghi thêm luật mới.
+    Thư mục dự án: <code>{{ root }}</code></p>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-header"><h2>Dự án ({{ projects|length }})</h2></div>
+  {% if projects %}
+  <table class="table">
+    <thead><tr><th>Phim</th><th>Chủ đề</th><th>Tiến độ</th><th>Chi phí Claude</th><th>Cập nhật</th></tr></thead>
+    <tbody>
+    {% for p in projects %}
+      <tr>
+        <td><a href="/docfilm/{{ p.id }}"><b>{{ p.title }}</b></a>
+          <div class="small muted">{{ p.format }}{% if p.target_sec %} · {{ p.target_sec }} s{% endif %}{% if p.credit_budget %} · ngân sách {{ '%g'|format(p.credit_budget) }} credit{% endif %}</div></td>
+        <td class="small">{{ p.topic }}</td>
+        <td>
+          {% set st = p.artifacts.stage %}
+          <span class="badge {{ 'job-done' if st == 'film' else 'job-queued' if st != 'new' else '' }}">{{ stage_names[st] }}</span>
+          {% if p.busy %}<span class="badge job-running">{{ 'đang làm' if p.busy.status == 'running' else 'đang chờ' }}</span>{% endif %}
+          {% if p.artifacts.videos %}<div class="small muted">{{ p.artifacts.videos|length }} bản render</div>{% endif %}
+        </td>
+        <td class="small">{% if p.cost_usd %}${{ '%.2f'|format(p.cost_usd) }}{% else %}–{% endif %}</td>
+        <td class="small muted nowrap">{{ p.updated_at.replace('T', ' ') }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="card-body muted"><p>Chưa có dự án nào. Bấm "＋ Dự án mới", nhập chủ đề (ví dụ: <i>Nephilim và người khổng lồ</i>, <i>UFO rơi trong vụ thử hạt nhân</i>).</p></div>
+  {% endif %}
+</section>
+
+<dialog id="new-dialog" class="modal wide">
+  <h3>Dự án phim tài liệu mới</h3>
+  <div class="grid2">
+    <label>Tên phim<input class="input" id="nd-title" placeholder="VD: The Giants of Kandahar"></label>
+    <label>Chủ đề (dùng để tìm trong kho) *<input class="input" id="nd-topic" placeholder="VD: nephilim giants"></label>
+  </div>
+  <label style="margin-top:10px">Yêu cầu riêng (góc nhìn, đoạn bắt buộc có, phong cách…)
+    <textarea class="input" id="nd-brief" rows="4" placeholder="VD: nhấn vào chứng cứ khảo cổ, dùng đoạn của Timothy Alberino về Kandahar, tông u tối như The Watchers"></textarea></label>
+  <div class="grid3" style="margin-top:10px">
+    <label>Định dạng<select class="input" id="nd-format"><option value="16:9">16:9 (YouTube)</option><option value="9:16">9:16 (Shorts)</option></select></label>
+    <label>Thời lượng mục tiêu (giây)<input class="input" id="nd-target" type="number" min="15" step="15" value="180"></label>
+    <label>Ngân sách credit Higgsfield<input class="input" id="nd-budget" type="number" min="0" step="5" value="{{ s.docfilm_credit_budget }}"></label>
+  </div>
+  <label class="check small" style="margin-top:12px"><input type="checkbox" id="nd-start" checked> Chạy luôn Bước 1 (tìm đoạn đắt giá) sau khi tạo</label>
+  <div class="row gap end">
+    <button class="btn btn-small btn-ghost" onclick="document.getElementById('new-dialog').close()">Huỷ</button>
+    <button class="btn btn-small btn-primary" id="nd-create" onclick="createProject()">Tạo dự án</button>
+  </div>
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script>
+async function createProject(){
+  const v = id => document.getElementById(id).value.trim();
+  if(!v('nd-topic')){ toast('Cần nhập chủ đề'); return; }
+  const btn = document.getElementById('nd-create'); btn.disabled = true;
+  const r = await api('/api/docfilm/projects', {title: v('nd-title'), topic: v('nd-topic'), brief: v('nd-brief'),
+    format: v('nd-format'), target_sec: v('nd-target'), credit_budget: v('nd-budget'), start_research: document.getElementById('nd-start').checked});
+  btn.disabled = false;
+  if(r.error){ toast(r.error); return; }
+  if(r.queued && r.queued.error) toast(r.queued.error);
+  location.href = r.url;
+}
+</script>
+{% endblock %}

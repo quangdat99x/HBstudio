@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% set title = "Bộ quy tắc" %}
+{% set src_names = {'seed': 'bản đầu', 'claude': 'Claude cập nhật', 'manual': 'sửa tay trên Studio', 'file': 'sửa file ngoài Studio', 'restore': 'khôi phục'} %}
+{% block content %}
+<section class="card">
+  <div class="card-header">
+    <h2>📘 Bộ quy tắc dựng phim · v{{ rules.version }}</h2>
+    <div class="row gap">
+      <a class="btn btn-small btn-ghost" href="/docfilm">← Dự án</a>
+      <button class="btn btn-small btn-ghost" onclick="openFolder({{ rules_path|tojson }})">📁 Mở file</button>
+      <button class="btn btn-small btn-primary" id="edit-btn" onclick="toggleEdit()">Sửa tay</button>
+    </div>
+  </div>
+  <div class="card-body small muted"><p>
+    Mọi lượt Claude trên tab Phim tài liệu đều nhận toàn văn bộ quy tắc này. Cách cập nhật: nhắn trong chat của một dự án
+    "cập nhật quy tắc: …" (Claude sửa đúng mục và ghi nhật ký ở mục 12), hoặc sửa tay ở đây, hoặc sửa thẳng file <code>{{ rules_path }}</code>.
+    Mỗi lần đổi là một phiên bản mới, khôi phục được. v{{ rules.version }} · {{ src_names.get(rules.source, rules.source) }} · {{ rules.created_at.replace('T', ' ') }}</p>
+  </div>
+  <div class="card-body" id="rules-edit" hidden>
+    <textarea class="input mono" id="rules-body" rows="30">{{ rules.body }}</textarea>
+    <div class="row gap">
+      <input class="input grow" id="rules-note" placeholder="Ghi chú cho phiên bản này (tùy chọn)">
+      <button class="btn btn-small btn-ghost" onclick="toggleEdit()">Huỷ</button>
+      <button class="btn btn-small btn-primary" onclick="saveRules()">Lưu thành v{{ rules.version + 1 }}</button>
+    </div>
+  </div>
+  <div class="card-body md rules-md" id="rules-view">{{ rules.body|md|safe }}</div>
+</section>
+
+<section class="card">
+  <div class="card-header"><h2>Lịch sử phiên bản</h2></div>
+  <table class="table">
+    <thead><tr><th>Bản</th><th>Nguồn</th><th>Ghi chú</th><th>Lúc</th><th></th></tr></thead>
+    <tbody>
+    {% for h in history %}
+      <tr>
+        <td>v{{ h.version }}</td>
+        <td class="small">{{ src_names.get(h.source, h.source) }}{% if h.project_id %} · <a href="/docfilm/{{ h.project_id }}">{{ h.project_title or ('dự án ' ~ h.project_id) }}</a>{% endif %}</td>
+        <td class="small">{{ h.note or '' }}</td>
+        <td class="small muted nowrap">{{ h.created_at.replace('T', ' ') }}</td>
+        <td class="nowrap">
+          <button class="btn btn-tiny btn-ghost" onclick="viewVersion({{ h.version }})">Xem</button>
+          {% if h.version != rules.version %}<button class="btn btn-tiny btn-ghost" onclick="restoreVersion({{ h.version }})">Khôi phục</button>{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<dialog id="ver-dialog" class="modal wide tall">
+  <div class="row gap"><h3 id="ver-title" class="grow"></h3><button class="btn btn-small btn-ghost" onclick="document.getElementById('ver-dialog').close()">Đóng</button></div>
+  <div class="md rules-md" id="ver-body"></div>
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script>
+function toggleEdit(){
+  const e = document.getElementById('rules-edit'), v = document.getElementById('rules-view');
+  e.hidden = !e.hidden; v.hidden = !e.hidden ? true : false;
+  document.getElementById('edit-btn').hidden = !e.hidden;
+}
+async function saveRules(){
+  const r = await api('/api/docfilm/rules', {body: document.getElementById('rules-body').value, note: document.getElementById('rules-note').value});
+  if(r.error){ toast(r.error); return; } toast('Đã lưu v' + r.version); setTimeout(() => location.reload(), 600);
+}
+async function viewVersion(v){
+  const r = await (await fetch('/api/docfilm/rules/' + v)).json();
+  document.getElementById('ver-title').textContent = `v${r.version} · ${r.created_at.replace('T', ' ')}` + (r.note ? ' · ' + r.note : '');
+  document.getElementById('ver-body').innerHTML = r.html; document.getElementById('ver-dialog').showModal();
+}
+async function restoreVersion(v){
+  if(!confirm(`Khôi phục nội dung của v${v} thành một phiên bản mới?`)) return;
+  const r = await api('/api/docfilm/rules/restore', {version: v});
+  if(r.error){ toast(r.error); return; } toast('Đã khôi phục thành v' + r.version); setTimeout(() => location.reload(), 600);
+}
+</script>
+{% endblock %}

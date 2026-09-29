@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% set title = p.title %}
+{% block content %}
+{% set st = a.stage %}
+<section class="card">
+  <div class="card-header">
+    <div>
+      <h2>🎞️ {{ p.title }} <a class="small muted normal-text" href="/docfilm">← mọi dự án</a></h2>
+      <div class="small muted">Chủ đề: <b>{{ p.topic }}</b> · {{ p.format }}{% if p.target_sec %} · {{ p.target_sec }} s{% endif %}
+        · ngân sách {{ '%g'|format(p.credit_budget or 0) }} credit Higgsfield · Claude {{ model or 'mặc định' }}{% if effort %} ({{ effort }}){% endif %}
+        · đã tốn <span id="cost">${{ '%.2f'|format(p.cost_usd or 0) }}</span></div>
+      {% if p.brief %}<div class="small">{{ p.brief }}</div>{% endif %}
+    </div>
+    <div class="row gap">
+      <a class="btn btn-small btn-ghost" href="/docfilm/rules">📘 Quy tắc v{{ rules.version }}</a>
+      <button class="btn btn-small btn-ghost" onclick="document.getElementById('edit-dialog').showModal()">Sửa thông tin</button>
+      <button class="btn btn-small btn-ghost btn-danger" onclick="document.getElementById('del-dialog').showModal()">Xóa</button>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="steps">
+      {% set steps = [('research', '1 · Tìm đoạn đắt giá', a.has_selection),
+                      ('script', '2 · Viết kịch bản', a.has_script),
+                      ('build', '3 · Dựng phim', a.videos|length > 0)] %}
+      {% for kind, label, done in steps %}
+        <button class="btn btn-small step-btn {{ 'done' if done }}" data-kind="{{ kind }}" onclick="runStep('{{ kind }}')" {% if busy %}disabled{% endif %}>
+          {{ '✓ ' if done }}{{ label }}</button>
+        {% if not loop.last %}<span class="muted">→</span>{% endif %}
+      {% endfor %}
+      <span class="grow"></span>
+      <button class="btn btn-small btn-ghost" id="stop-btn" onclick="stopTurn()" {% if not busy %}hidden{% endif %}>■ Dừng</button>
+    </div>
+    <div class="small muted">Bấm lại một bước là làm lại bước đó (Claude vẫn nhớ cả cuộc trò chuyện). Có thể gõ ghi chú vào ô chat trước khi bấm bước: ghi chú sẽ gửi kèm.</div>
+  </div>
+</section>
+
+<div class="docfilm-grid">
+  <section class="card">
+    <div class="card-header"><h2>💬 Trò chuyện với Claude</h2><span class="small muted">Ctrl+Enter để gửi</span></div>
+    <div class="card-body">
+      <div class="chat-thread" id="chat">{% include "_docfilm_chat.html" %}</div>
+      <div class="chat-input">
+        <textarea class="input" id="msg" rows="3" {% if busy %}disabled{% endif %}
+          placeholder="VD: chọn hướng dàn ý 2 · bỏ đoạn 87, thay bằng đoạn nào có chi tiết cụ thể hơn · cảnh 3 cánh đập mạnh hơn · cập nhật quy tắc: phụ đề trích JRE luôn có tên người nói…"
+          onkeydown="if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();sendMsg()}"></textarea>
+        <button class="btn btn-small btn-primary" id="send-btn" onclick="sendMsg()" {% if busy %}disabled{% endif %}>Gửi</button>
+      </div>
+    </div>
+  </section>
+  <section class="card">
+    <div class="card-header"><h2>📦 Kết quả</h2></div>
+    <div class="card-body" id="artifacts">{% include "_docfilm_artifacts.html" %}</div>
+  </section>
+</div>
+
+<dialog id="edit-dialog" class="modal wide">
+  <h3>Thông tin dự án</h3>
+  <div class="grid2">
+    <label>Tên phim<input class="input" id="ed-title" value="{{ p.title }}"></label>
+    <label>Chủ đề<input class="input" id="ed-topic" value="{{ p.topic }}"></label>
+  </div>
+  <label style="margin-top:10px">Yêu cầu riêng<textarea class="input" id="ed-brief" rows="4">{{ p.brief or '' }}</textarea></label>
+  <div class="grid3" style="margin-top:10px">
+    <label>Định dạng<select class="input" id="ed-format">
+      <option value="16:9" {{ 'selected' if p.format == '16:9' }}>16:9</option><option value="9:16" {{ 'selected' if p.format == '9:16' }}>9:16</option></select></label>
+    <label>Thời lượng (giây)<input class="input" id="ed-target" type="number" value="{{ p.target_sec or '' }}"></label>
+    <label>Ngân sách credit<input class="input" id="ed-budget" type="number" value="{{ '%g'|format(p.credit_budget or 0) }}"></label>
+  </div>
+  <p class="small muted">Claude đọc project.json ở lượt kế tiếp, nên thay đổi ở đây áp dụng từ lượt sau.</p>
+  <div class="row gap end">
+    <button class="btn btn-small btn-ghost" onclick="document.getElementById('edit-dialog').close()">Huỷ</button>
+    <button class="btn btn-small btn-primary" onclick="saveInfo()">Lưu</button>
+  </div>
+</dialog>
+
+<dialog id="del-dialog" class="modal">
+  <h3>Xóa dự án "{{ p.title }}"?</h3>
+  <p class="small">Xóa dự án và toàn bộ cuộc trò chuyện khỏi Studio. Bộ quy tắc giữ nguyên.</p>
+  <label class="check small"><input type="checkbox" id="del-folder"> Chuyển cả thư mục dự án vào Thùng rác ({{ p.dir }})</label>
+  <label style="margin-top:10px">Gõ XOA để xác nhận<input class="input" id="del-confirm"></label>
+  <div class="row gap end">
+    <button class="btn btn-small btn-ghost" onclick="document.getElementById('del-dialog').close()">Huỷ</button>
+    <button class="btn btn-small btn-danger-solid" onclick="deleteProject()">Xóa</button>
+  </div>
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script>
+const PID = {{ p.id }};
+let polling = null, lastSig = null, currentTab = null;
+try { currentTab = sessionStorage.getItem('docfilm.tab.' + PID); } catch (e) {}
+
+// Tabs are ordered newest-first (video, script, selection, pool, images): without a choice of the user,
+// the most advanced result is shown, and a finished turn jumps to it again.
+function showTab(key, byUser){
+  const panes = document.querySelectorAll('.art-pane'); if(!panes.length) return;
+  if(!key || !document.querySelector(`.art-pane[data-pane="${key}"]`)) key = panes[0].dataset.pane;
+  panes.forEach(el => el.hidden = el.dataset.pane !== key);
+  document.querySelectorAll('.art-tab').forEach(b => b.classList.toggle('btn-primary', b.dataset.tab === key));
+  currentTab = key; if(byUser){ try { sessionStorage.setItem('docfilm.tab.' + PID, key); } catch (e) {} }
+}
+function scrollChat(){ const c = document.getElementById('chat'); c.scrollTop = c.scrollHeight; }
+function setBusy(b){
+  document.getElementById('msg').disabled = b; document.getElementById('send-btn').disabled = b;
+  document.querySelectorAll('.step-btn').forEach(x => x.disabled = b);
+  document.getElementById('stop-btn').hidden = !b;
+}
+async function refreshChat(){
+  const html = await (await fetch(`/docfilm/${PID}/chat`)).text();
+  document.getElementById('chat').innerHTML = html; scrollChat();
+}
+async function refreshArtifacts(jumpToNewest){
+  const html = await (await fetch(`/docfilm/${PID}/artifacts`)).text();
+  document.getElementById('artifacts').innerHTML = html; showTab(jumpToNewest ? null : currentTab);
+}
+async function poll(){
+  let s; try { s = await (await fetch(`/api/docfilm/${PID}/state`)).json(); } catch (e) { return; }
+  const sig = [s.last_id, s.done, s.progress].join('|');
+  if(sig !== lastSig){
+    const finished = lastSig !== null && lastSig.split('|')[1] !== String(s.done);
+    lastSig = sig; await refreshChat();
+    if(finished) { await refreshArtifacts(true); document.getElementById('cost').textContent = '$' + (s.cost_usd || 0).toFixed(2); }
+  }
+  setBusy(s.busy);
+  if(!s.busy && polling){ clearInterval(polling); polling = null; await refreshArtifacts(true); }
+}
+function startPolling(){ if(!polling){ polling = setInterval(poll, 3000); } poll(); }
+async function send(kind, text){
+  const r = await api(`/api/docfilm/${PID}/message`, {kind, text});
+  if(r.error){ toast(r.error); return false; }
+  toast(r.message || 'đã gửi'); document.getElementById('msg').value = ''; setBusy(true); startPolling(); return true;
+}
+function sendMsg(){ const t = document.getElementById('msg').value.trim(); if(!t){ toast('Chưa nhập nội dung'); return; } send('chat', t); }
+function runStep(kind){
+  const note = document.getElementById('msg').value.trim();
+  const labels = {research: 'tìm đoạn đắt giá', script: 'viết kịch bản', build: 'dựng phim (có thể tiêu credit Higgsfield trong ngân sách)'};
+  if(kind === 'build' && !confirm('Bắt đầu ' + labels[kind] + '?')) return;
+  send(kind, note);
+}
+async function stopTurn(){ const r = await api(`/api/docfilm/${PID}/cancel`, {}); toast(r.message || r.error); startPolling(); }
+async function saveInfo(){
+  const v = id => document.getElementById(id).value;
+  const r = await api(`/api/docfilm/${PID}/update`, {title: v('ed-title'), topic: v('ed-topic'), brief: v('ed-brief'),
+    format: v('ed-format'), target_sec: v('ed-target'), credit_budget: v('ed-budget')});
+  if(r.error){ toast(r.error); return; } location.reload();
+}
+async function deleteProject(){
+  const r = await api(`/api/docfilm/${PID}/delete`, {confirm: document.getElementById('del-confirm').value,
+    trash_folder: document.getElementById('del-folder').checked});
+  if(r.error){ toast(r.error); return; } location.href = '/docfilm';
+}
+showTab(currentTab); scrollChat();
+{% if busy %}startPolling();{% endif %}
+</script>
+{% endblock %}

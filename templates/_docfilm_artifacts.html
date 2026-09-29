@@ -1,0 +1,75 @@
+{% set tabs = [] %}
+{% if a.videos %}{% set _ = tabs.append(('video', '🎬 Video (' ~ a.videos|length ~ ')')) %}{% endif %}
+{% if a.script is defined %}{% set _ = tabs.append(('script', '📜 Kịch bản')) %}{% endif %}
+{% if a.selection is defined %}{% set _ = tabs.append(('selection', '⭐ Đoạn chọn')) %}{% endif %}
+{% if a.pool is defined %}{% set _ = tabs.append(('pool', '🔎 Ứng viên (' ~ a.pool_count ~ ')')) %}{% endif %}
+{% if a.images %}{% set _ = tabs.append(('images', '🖼️ Ảnh soát')) %}{% endif %}
+<div class="art-tabs">
+  {% for key, label in tabs %}<button class="btn btn-tiny art-tab" data-tab="{{ key }}" onclick="showTab('{{ key }}', true)">{{ label }}</button>{% endfor %}
+  <span class="grow"></span>
+  <button class="btn btn-tiny btn-ghost" onclick="openFolder({{ a.folder|tojson }})" title="{{ a.folder }}">📁 Thư mục</button>
+</div>
+{% if not tabs %}<div class="small muted">Chưa có kết quả. Kết quả của từng bước (ứng viên, đoạn chọn, kịch bản, video, ảnh soát) sẽ hiện ở đây.</div>{% endif %}
+
+{% if a.videos %}
+<div class="art-pane" data-pane="video">
+  {% set v = a.videos[0] %}
+  <video controls preload="metadata" src="/docfilm/{{ p.id }}/file?path={{ v.path|urlencode }}"></video>
+  <div class="small muted">{{ v.name }} · {{ v.mb }} MB</div>
+  {% if a.videos|length > 1 %}
+  <div class="small">Các bản trước:
+    {% for x in a.videos[1:] %}<a href="/docfilm/{{ p.id }}/file?path={{ x.path|urlencode }}" target="_blank">{{ x.name }}</a>{{ ' · ' if not loop.last }}{% endfor %}</div>
+  {% endif %}
+  {% if a.credits %}<div class="small muted">Credit Higgsfield: {% if a.credits.before is defined %}trước {{ a.credits.before }}{% endif %}{% if a.credits.after is defined %} · sau {{ a.credits.after }}{% endif %}</div>{% endif %}
+</div>
+{% endif %}
+
+{% if a.script is defined %}
+<div class="art-pane" data-pane="script">
+  {% set sc = a.script %}
+  <div class="row gap wrap small muted">
+    {% if sc.title %}<b class="normal-text">{{ sc.title }}</b>{% endif %}
+    {% if sc.scenes %}<span>{{ sc.scenes|length }} cảnh · {{ a.script_duration|round|int }} s</span>{% endif %}
+  </div>
+  {% if a.script_md %}<div class="md art-md">{{ a.script_md|md|safe }}</div>{% endif %}
+  {% if sc.scenes %}
+  <details class="raw"><summary>Bảng cảnh (script.json)</summary>
+    <table class="table small"><thead><tr><th>#</th><th>Loại</th><th>s</th><th>Nội dung</th></tr></thead><tbody>
+    {% for x in sc.scenes %}<tr><td>{{ x.id }}</td><td>{{ x.type }}</td><td>{{ x.duration_sec }}</td>
+      <td>{% if x.quote and x.quote.text %}<i>“{{ x.quote.text }}”</i> <span class="muted">— {{ x.quote.speaker }}</span>{% else %}{{ x.narration_en or x.on_screen_text or '' }}{% endif %}</td></tr>{% endfor %}
+    </tbody></table></details>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if a.selection is defined %}
+<div class="art-pane" data-pane="selection">
+  {% if a.selection.thesis %}<div class="sel-thesis">{{ a.selection.thesis }}</div>{% endif %}
+  {% if a.selection_md %}<div class="md art-md">{{ a.selection_md|md|safe }}</div>
+  {% else %}
+    {% for s in a.selection.segments or [] %}
+      <div class="sel-seg"><b>{{ s.segment_id }}</b> · <a href="/episodes/{{ s.episode_id }}">{{ s.episode_id }}</a> · {{ s.guest }} · {{ s.title }}
+        {% for q in s.quotes or [] %}<div class="quotes small">“{{ q.text }}” <span class="muted">[{{ q.role }}]</span></div>{% endfor %}</div>
+    {% endfor %}
+  {% endif %}
+</div>
+{% endif %}
+
+{% if a.pool is defined %}
+<div class="art-pane" data-pane="pool">
+  <table class="table small"><thead><tr><th>id</th><th>Tập · khách</th><th>Đoạn</th><th>Điểm</th><th>Khớp</th></tr></thead><tbody>
+  {% for s in a.pool %}<tr><td>{{ s.segment_id }}</td><td class="nowrap"><a href="/episodes/{{ s.episode_id }}">{{ s.episode_id }}</a><div class="muted">{{ s.guest }}</div></td>
+    <td>{{ s.title }}{% if s.summary_vi %}<div class="muted">{{ s.summary_vi[:180] }}</div>{% endif %}</td>
+    <td>{{ s.final_score or '–' }}</td><td>{{ s.relevance }}</td></tr>{% endfor %}
+  </tbody></table>
+</div>
+{% endif %}
+
+{% if a.images %}
+<div class="art-pane" data-pane="images">
+  <div class="img-grid">
+    {% for i in a.images %}<a href="/docfilm/{{ p.id }}/file?path={{ i.path|urlencode }}" target="_blank" title="{{ i.path }}">
+      <img loading="lazy" src="/docfilm/{{ p.id }}/file?path={{ i.path|urlencode }}"><span class="small muted">{{ i.name }}</span></a>{% endfor %}
+  </div>
+</div>
+{% endif %}

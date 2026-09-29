@@ -76,6 +76,18 @@ Cách chạy hiện nay:
 - Claude xếp nhóm: khách của tập mới được xếp ngay trong bước chọn nội dung (khóa `guests` của `tags_<id>.json`); khách cũ bấm **Phân nhóm N khách bằng Claude** (một lượt opus, không công cụ). **Sửa nhóm** để chọn tay; khách sửa tay không bị Claude đổi khi bấm "Phân nhóm lại tất cả".
 - "xem highlight →" mở trang Tìm kiếm lọc theo nhóm (bộ lọc "Nhóm khách" mới), trang tập hiện nhãn nhóm cạnh tên khách, `hldb guests [--group slug]` và `hldb search --group slug` cho skill kho-highlight.
 
+## Phim tài liệu (Make Documentary Film)
+
+- Tab **Phim tài liệu** quản lý các dự án phim tài liệu dựng từ kho highlight (`studio/docfilm/`, bảng `docfilm_projects`, `docfilm_messages`, `docfilm_rules`). **＋ Dự án mới**: tên, chủ đề (dùng để tìm trong kho), yêu cầu riêng, định dạng 16:9/9:16, thời lượng, ngân sách credit Higgsfield.
+- Mỗi dự án là **một cuộc trò chuyện liên tục với Claude** (một phiên Claude Code, mọi lượt `--resume`), giống chat trong app. Ba nút bước:
+  1. **Tìm đoạn đắt giá**: Studio tìm trong kho (FTS theo cả chủ đề, từng cặp từ, từ khóa tiếng Anh, theme khớp tên) rồi xếp theo độ khớp × điểm chất lượng, ghi `research/pool.json` cùng transcript từng đoạn có timestamp chính xác. Claude đọc, tìm thêm bằng `hldb` nếu cần, chọn câu trích **nguyên văn** (kiểm chứng bằng python), ghi `research/selection.json` + `.md` và đề xuất dàn ý.
+  2. **Viết kịch bản**: `script/script.json` + `.md`, xương sống là các câu trích JRE, lời dẫn chỉ nối và đặt bối cảnh, kèm danh sách ảnh Higgsfield và ước tính credit. Claude dừng ở cổng duyệt: nhắn "duyệt" thì mới dựng.
+  3. **Dựng phim**: Studio dựng khung `film/` từ engine (`docfilm/engine`: Remotion + three.js multiplane, xem `docfilm/engine/ENGINE.md`), Claude tạo ảnh bằng Higgsfield trong ngân sách, cắt clip trích, viết cảnh, âm thanh, soát ảnh tĩnh, render `out/<slug>_v<N>.mp4` và chạy QA.
+  Nhắn bất cứ lúc nào để sửa ("cảnh 3 cánh đập mạnh hơn", "bỏ đoạn 87"…). Cột phải hiện kết quả: video, kịch bản, đoạn chọn, ứng viên, ảnh soát.
+- **Bộ quy tắc** (`RULEBOOK.md` trong thư mục dự án gốc, mặc định `D:\VideoLab\docfilms`; bản đầu ở `docfilm/RULEBOOK.seed.md`): viết ra từ mọi lần người dùng sửa phim (tính xác thực và nguồn, biểu tượng nhạy cảm, ảnh Higgsfield và chi phí, không gian 3D, chuyển động, neo vật thể, chữ, âm thanh, kiểm tra trước khi giao). Mọi lượt Claude nhận toàn văn; quy trình từng bước nằm ở mục 2 nên sửa quy tắc là sửa quy trình, không cần sửa code. Nhắn "cập nhật quy tắc: …" trong chat để Claude ghi thêm, hoặc sửa tay ở trang Bộ quy tắc. Mỗi lần đổi là một phiên bản (ai sửa, dự án nào), xem và khôi phục được.
+- Lượt Claude của tab này giữ các connector claude.ai để dùng **Higgsfield** (chỉ các tool tạo ảnh, tách nền, số dư, project được cho phép sẵn; TikTok, website, giọng nói… bị chặn), bỏ danh sách slash command và auto-memory. Model/effort, số lượt công cụ, ngân sách credit mặc định, thư mục dự án: Cài đặt → Phim tài liệu. Engine cài một lần (`npm install` trong `docfilm/engine`, Studio tự chạy nếu thiếu); mỗi phim có bản copy `src/` + `scripts/` và junction tới `node_modules` dùng chung.
+- Phim mẫu tham chiếu: `D:\VideoLab\watchers-v2` (The Watchers v2.1).
+
 ## Dịch khi bôi đen (Google Dịch)
 
 - Bôi đen chữ tiếng Anh ở bất kỳ trang nào, bấm nút **🌐 Dịch** hiện cạnh đoạn chọn. Khung bản dịch có nút Copy, nút mở Google Dịch và ô "Tự dịch ngay khi bôi đen" để bỏ bước bấm nút. Esc hoặc bấm ra ngoài để đóng.
