@@ -73,7 +73,7 @@ Cách chạy hiện nay:
 
 - Tab **Khách mời** xếp khách vào 20 nhóm theo kiểu JRE: UFO/UAP, lịch sử cổ đại, tôn giáo, chính trị, quân đội & tình báo, MMA, diễn viên hài, khoa học & vũ trụ, AI, sức khỏe, psychedelics, bí ẩn & mất tích, điều tra & tố giác, săn bắn, tâm lý & triết học, giải trí, kinh doanh, thể thao, tội phạm & nhà tù, khác (`studio/guests.py`, bảng `guest_groups` + `guests`).
 - Mỗi khách có một nhóm chính (lĩnh vực khán giả JRE tìm xem họ nhất; diễn viên hài luôn là hài, võ sĩ luôn là MMA) và tối đa 2 nhóm phụ, hiện mờ ở nhóm phụ. Khách xuất hiện nhiều tập được gộp theo tên; "A & B" là hai khách.
-- Claude xếp nhóm: khách của tập mới được xếp ngay trong bước chọn nội dung (khóa `guests` của `tags_<id>.json`); khách cũ bấm **Phân nhóm N khách bằng Claude** (một lượt sonnet, không công cụ, khoảng 10–20 giây, $0.04 cho 11 khách). **Sửa nhóm** để chọn tay; khách sửa tay không bị Claude đổi khi bấm "Phân nhóm lại tất cả".
+- Claude xếp nhóm: khách của tập mới được xếp ngay trong bước chọn nội dung (khóa `guests` của `tags_<id>.json`); khách cũ bấm **Phân nhóm N khách bằng Claude** (một lượt opus, không công cụ). **Sửa nhóm** để chọn tay; khách sửa tay không bị Claude đổi khi bấm "Phân nhóm lại tất cả".
 - "xem highlight →" mở trang Tìm kiếm lọc theo nhóm (bộ lọc "Nhóm khách" mới), trang tập hiện nhãn nhóm cạnh tên khách, `hldb guests [--group slug]` và `hldb search --group slug` cho skill kho-highlight.
 
 ## Dịch khi bôi đen (Google Dịch)
