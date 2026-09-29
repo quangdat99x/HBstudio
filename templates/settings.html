@@ -74,6 +74,7 @@
       <select class="input" name="claude_effort_docfilm">{% for e in ['', 'low', 'medium', 'high', 'xhigh', 'max'] %}<option value="{{ e }}" {{ 'selected' if s.claude_effort_docfilm == e }}>{{ e or 'mặc định' }}</option>{% endfor %}</select></label>
     <label>Số lượt công cụ tối đa mỗi bước dựng<input class="input" name="docfilm_max_turns" value="{{ s.docfilm_max_turns }}"></label>
     <label>Ngân sách credit Higgsfield mặc định / dự án<input class="input" name="docfilm_credit_budget" value="{{ s.docfilm_credit_budget }}"></label>
+    <label>Python tách nền trên máy (BiRefNet)<input class="input" name="docfilm_bgremove_python" value="{{ s.docfilm_bgremove_python }}"></label>
   </div></section>
 <section class="card" id="google-translate"><div class="card-header"><h2>Google Dịch khi bôi đen</h2>
     <span class="small {{ 'ok' if gt_configured else 'muted' }}">{{ 'đã có API key, dịch ngay trong Studio' if gt_configured else 'chưa có API key: nút Dịch sẽ mở trang Google Dịch trên trình duyệt' }}</span></div>

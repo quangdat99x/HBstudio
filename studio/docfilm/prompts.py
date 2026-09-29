@@ -27,8 +27,11 @@ def _paths(p: dict) -> list[str]:
         f"- Bộ quy tắc: {rules_path()}",
         f'- Kho highlight: "{py}" -X utf8 "{hldb}" search "<từ khóa>" --json  |  ... show <segment_id> --json  |  ... episode <EPISODE_ID> --json',
         "- ffmpeg/ffprobe: biến môi trường FFMPEG và FFPROBE (các script trong film/scripts đã tự dùng).",
-        "- Higgsfield: các tool mcp__claude_ai_HF__* (balance, generate_image, generate_image_batch, jobs_wait, remove_background, "
-        "models_explore, create_project...). Tìm schema bằng ToolSearch khi cần.",
+        '- Tách nền trên máy (0 credit): "$BGREMOVE_PY" scripts/cutout.py ... (mục 3 của bộ quy tắc, film/ENGINE.md).',
+        '- Lời dẫn: "$WHISPER_PY" scripts/voice-build.py (python có faster-whisper), xem film/ENGINE.md mục Narration.',
+        "- Higgsfield: các tool mcp__claude_ai_HF__* (balance, generate_image, generate_image_batch, jobs_wait, models_explore, "
+        "create_project, generate_audio + list_voices + show_generations cho lời dẫn ElevenLabs v4, transactions...). "
+        "Tìm schema bằng ToolSearch khi cần.",
     ]
 
 
@@ -51,7 +54,9 @@ _RUN_RULES = [
     "3. Lệnh dài trong film/ (render, stills) cứ chạy bình thường; mỗi lệnh một lần gọi công cụ.",
     "4. Cập nhật quy tắc theo mục 12 khi người dùng yêu cầu, hoặc khi một góp ý của họ là nguyên tắc chung cho mọi phim "
     "(nói rõ trong câu trả lời là đã thêm quy tắc gì). Studio tự lưu phiên bản mới.",
-    "5. Mỗi lần tạo hay tách nền ảnh Higgsfield: ghi vào notes/credits.json (số dư trước/sau, từng lần tạo).",
+    "5. Mỗi lần tạo ảnh hay giọng đọc trên Higgsfield: ghi vào notes/credits.json (số dư trước/sau, từng lần tạo).",
+    "6. Không tải file từ web (clip lửa, khói...) khi người dùng chưa duyệt trong chat: liệt kê tên, nguồn, dung lượng, "
+    "giấy phép rồi kết thúc lượt để hỏi (mục 1.9).",
 ]
 
 
@@ -115,7 +120,8 @@ def turn_prompt(kind: str, p: dict, user_text: str, *, pool: dict | None = None,
         lines += [
             STEP_LABELS["build"].upper(),
             f"Studio đã dựng khung film/ từ engine (node_modules dùng chung). Làm đúng mục 2.3 của bộ quy tắc theo "
-            f"script/script.json: tài sản Higgsfield trong ngân sách {p.get('credit_budget') or 0:g} credit, clip trích, cảnh, âm thanh, "
+            f"script/script.json: tài sản Higgsfield trong ngân sách {p.get('credit_budget') or 0:g} credit (tách nền trên máy), "
+            "lời dẫn ElevenLabs v4 (mục 8.4), clip trích, cảnh, hiệu ứng lửa/khói/ánh sáng (mục 5.8-5.12), âm thanh, "
             "soát ảnh tĩnh, render out/<slug>_v<N>.mp4, QA bằng scripts/qa.mjs. Nếu kịch bản chưa được người dùng duyệt trong chat "
             "thì dừng ở cổng duyệt và hỏi.",
         ]

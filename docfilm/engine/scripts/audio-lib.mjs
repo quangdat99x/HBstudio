@@ -4,9 +4,9 @@
 //   m.tone(55, 0.16, (t) => env(t, [[0, 0], [2, 0.7], [29, 0.7], [30, 0]]));
 //   m.boom(12.3, 0.9); m.thunder(21.2, 0.9);
 //   m.duck([[4.0, 9.5]], -12);           // keep the score under a JRE quote
-//   m.write('out/soundtrack_raw.wav', 'public/soundtrack.wav');   // mastered to -16 LUFS
+//   m.write('out/soundtrack_raw.wav', 'public/soundtrack.wav', {voice: 'src/voice.json'});  // narration ducked in, -15 LUFS
 import {spawnSync} from 'node:child_process';
-import {mkdirSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
 
 const TAU = Math.PI * 2;
@@ -257,9 +257,12 @@ export class Mixer {
     return out;
   }
 
-  // Reverb, gentle saturation, fade-out, 16-bit WAV, then ffmpeg loudnorm to `lufs`.
-  write(rawPath, masteredPath, {lufs = -16, tp = -1.5, wet = 0.7} = {}) {
+  // Reverb, gentle saturation and fade-out of the score; then the narration (if any) with ducking; then the
+  // master: measure, set the gain to `lufs`, catch the peaks with a limiter (two passes, no pumping).
+  //   voice: path of src/voice.json written by scripts/voice-build.py (lines + out/voice/<id>.wav)
+  write(rawPath, masteredPath, {lufs = -15, tp = -1.5, wet = 0.7, voice = null, duckHi = -8, duckLo = -3, voiceOver = 13, clear = 12} = {}) {
     const N = this.N;
+    const SR = this.SR;
     const wetL = this.freeverb(this.sendL, 0);
     const wetR = this.freeverb(this.sendR, 23);
     const outL = new Float32Array(N);
@@ -272,34 +275,187 @@ export class Mixer {
     }
     const drive = 1.6;
     for (let i = 0; i < N; i++) {
-      const fade = Math.min(1, (N - i) / (0.8 * this.SR));
+      const fade = Math.min(1, (N - i) / (0.8 * SR));
       outL[i] = (Math.tanh((outL[i] / peak) * drive) / Math.tanh(drive)) * 0.9 * fade;
       outR[i] = (Math.tanh((outR[i] / peak) * drive) / Math.tanh(drive)) * 0.9 * fade;
     }
-    const buf = Buffer.alloc(44 + N * 4);
-    buf.write('RIFF', 0);
-    buf.writeUInt32LE(36 + N * 4, 4);
-    buf.write('WAVE', 8);
-    buf.write('fmt ', 12);
-    buf.writeUInt32LE(16, 16);
-    buf.writeUInt16LE(1, 20);
-    buf.writeUInt16LE(2, 22);
-    buf.writeUInt32LE(this.SR, 24);
-    buf.writeUInt32LE(this.SR * 4, 28);
-    buf.writeUInt16LE(4, 32);
-    buf.writeUInt16LE(16, 34);
-    buf.write('data', 36);
-    buf.writeUInt32LE(N * 4, 40);
-    for (let i = 0; i < N; i++) {
-      buf.writeInt16LE(Math.round(Math.max(-1, Math.min(1, outL[i])) * 32767), 44 + i * 4);
-      buf.writeInt16LE(Math.round(Math.max(-1, Math.min(1, outR[i])) * 32767), 46 + i * 4);
-    }
     mkdirSync(path.dirname(rawPath), {recursive: true});
     mkdirSync(path.dirname(masteredPath), {recursive: true});
-    writeFileSync(rawPath, buf);
+    if (voice && existsSync(voice)) {
+      const v = JSON.parse(readFileSync(voice, 'utf8'));
+      if (v.lines?.length) this.narrate(outL, outR, v, {duckHi, duckLo, voiceOver, clear, stems: path.dirname(rawPath)});
+    }
+    let mix = 0;
+    for (let i = 0; i < N; i++) mix = Math.max(mix, Math.abs(outL[i]), Math.abs(outR[i]));
+    if (mix > 0.95) {
+      for (let i = 0; i < N; i++) {
+        outL[i] *= 0.95 / mix;
+        outR[i] *= 0.95 / mix;
+      }
+    }
+    writeWav(rawPath, outL, outR, SR);
     const ffmpeg = process.env.FFMPEG || 'ffmpeg';
-    const r = spawnSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', '-i', rawPath, '-af', `loudnorm=I=${lufs}:TP=${tp}:LRA=14`, '-ar', String(this.SR), masteredPath], {stdio: 'inherit'});
-    if (r.status !== 0) throw new Error('ffmpeg loudnorm failed');
-    console.log(`${masteredPath}  ${(N / this.SR).toFixed(2)}s  mastered to ${lufs} LUFS`);
+    const measure = (file) => {
+      const r = spawnSync(ffmpeg, ['-hide_banner', '-nostats', '-i', file, '-af', 'loudnorm=print_format=json', '-f', 'null', '-'], {encoding: 'utf8'});
+      return JSON.parse(r.stderr.match(/\{[^{}]*"input_i"[^{}]*\}/)[0]);
+    };
+    const gain = lufs - Number(measure(rawPath).input_i);
+    const limit = Math.pow(10, (tp - 0.4) / 20); // sample-peak limiter a little under the true-peak target
+    const r = spawnSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', '-i', rawPath, '-af', `volume=${gain.toFixed(2)}dB,alimiter=limit=${limit.toFixed(3)}:attack=4:release=80:level=disabled`, '-ar', String(SR), masteredPath], {stdio: 'inherit'});
+    if (r.status !== 0) throw new Error('ffmpeg master failed');
+    const m = measure(masteredPath);
+    console.log(`${masteredPath}  ${(N / SR).toFixed(2)}s  ${Number(m.input_i).toFixed(1)} LUFS, true peak ${Number(m.input_tp).toFixed(1)} dBTP`);
   }
+
+  // Narration over the score. While the voice speaks the score ducks duckHi dB above ~220 Hz, where speech
+  // lives, and only duckLo dB below, so drones and booms keep their weight; where the score is still loud
+  // (thunder under a line) it ducks up to 10 dB more until the voice stands `clear` dB above the score's upper
+  // band. Lines closer than 0.8 s share one duck. Hits in the gaps between lines keep their full force.
+  narrate(outL, outR, voice, {duckHi, duckLo, voiceOver, clear, stems}) {
+    const N = this.N;
+    const SR = this.SR;
+    const fps = voice.fps || 30;
+    const v = new Float32Array(N);
+    const windows = [];
+    for (const l of voice.lines) {
+      const x = readWav(l.file, SR);
+      const i0 = Math.round((l.start / fps) * SR);
+      for (let k = 0; k < x.length && i0 + k < N; k++) v[i0 + k] += x[k];
+      windows.push([l.start / fps, l.end / fps]);
+    }
+    const merged = [];
+    for (const [a, b] of windows.sort((p, q) => p[0] - q[0])) {
+      const last = merged[merged.length - 1];
+      if (last && a - last[1] < 0.8) last[1] = Math.max(last[1], b);
+      else merged.push([a, b]);
+    }
+    const ease = (u) => (u <= 0 ? 0 : u >= 1 ? 1 : 0.5 - 0.5 * Math.cos(Math.PI * u));
+    const duck = (t) => {
+      let d = 0;
+      for (const [a, b] of merged) d = Math.max(d, Math.min(ease((t - a + 0.3) / 0.25), 1 - ease((t - b - 0.1) / 0.7)));
+      return d;
+    };
+    const fl = this.svf();
+    const fr = this.svf();
+    const loL = new Float32Array(N);
+    const loR = new Float32Array(N);
+    const hiL = new Float32Array(N);
+    const hiR = new Float32Array(N);
+    const D = new Float32Array(N);
+    let eS = 0;
+    let eV = 0;
+    const gHi = Math.pow(10, duckHi / 20);
+    for (let i = 0; i < N; i++) {
+      loL[i] = fl(outL[i], 220).lp;
+      loR[i] = fr(outR[i], 220).lp;
+      hiL[i] = outL[i] - loL[i];
+      hiR[i] = outR[i] - loR[i];
+      D[i] = duck(i / SR);
+      if (D[i] > 0.99) {
+        eS += ((hiL[i] * gHi) ** 2 + (hiR[i] * gHi) ** 2) / 2;
+        eV += v[i] ** 2;
+      }
+    }
+    const gV = eV > 0 ? Math.pow(10, voiceOver / 20) * Math.sqrt(eS / eV) : 1;
+    for (let i = 0; i < N; i++) v[i] *= gV;
+    // extra duck from 400 ms envelopes on a 10 ms grid
+    const HOP = SR / 100;
+    const H = Math.ceil(N / HOP);
+    const vE = new Float64Array(H);
+    const sE = new Float64Array(H);
+    for (let i = 0; i < N; i++) {
+      const h = Math.floor(i / HOP);
+      vE[h] += v[i] ** 2;
+      sE[h] += ((hiL[i] ** 2 + hiR[i] ** 2) / 2) * Math.pow(10, (duckHi * D[i]) / 10);
+    }
+    const avg = (E, h, r) => {
+      let s = 0;
+      let n = 0;
+      for (let k = Math.max(0, h - r); k <= Math.min(H - 1, h + r); k++) {
+        s += E[k];
+        n += HOP;
+      }
+      return 10 * Math.log10(s / n + 1e-12);
+    };
+    const extra = new Float32Array(H);
+    for (let h = 0; h < H; h++) {
+      const d = D[Math.min(N - 1, h * HOP)];
+      if (d < 0.5) continue;
+      const lv = avg(vE, h, 20);
+      if (lv < -50) continue;
+      extra[h] = Math.max(-10, Math.min(0, lv - avg(sE, h, 20) - clear)) * d;
+    }
+    // hold the deepest reduction 200 ms each way, then smooth, so the duck leads the loud events
+    const held = extra.map((_, h) => Math.min(...extra.slice(Math.max(0, h - 20), h + 21)));
+    const ex = held.map((_, h) => {
+      const a = held.slice(Math.max(0, h - 12), h + 13);
+      return a.reduce((s, x) => s + x, 0) / a.length;
+    });
+    let deepest = 0;
+    for (let i = 0; i < N; i++) {
+      const h = i / HOP;
+      const k = Math.min(H - 2, Math.floor(h));
+      const e = ex[k] + (ex[k + 1] - ex[k]) * (h - k);
+      deepest = Math.min(deepest, e);
+      const gh = Math.pow(10, (duckHi * D[i] + e) / 20);
+      const gl = Math.pow(10, (duckLo * D[i] + e * 0.6) / 20);
+      outL[i] = loL[i] * gl + hiL[i] * gh;
+      outR[i] = loR[i] * gl + hiR[i] * gh;
+    }
+    writeWav(path.join(stems, 'stem_score.wav'), outL, outR, SR);
+    writeWav(path.join(stems, 'stem_voice.wav'), v, v, SR);
+    for (let i = 0; i < N; i++) {
+      outL[i] += v[i];
+      outR[i] += v[i];
+    }
+    console.log(`narration: ${voice.lines.length} lines (${voice.voice ?? '?'}), voice gain ${(20 * Math.log10(gV)).toFixed(1)} dB, deepest extra duck ${deepest.toFixed(1)} dB`);
+  }
+}
+
+export function writeWav(file, L, R, sr = 48000) {
+  const N = L.length;
+  const buf = Buffer.alloc(44 + N * 4);
+  buf.write('RIFF', 0);
+  buf.writeUInt32LE(36 + N * 4, 4);
+  buf.write('WAVE', 8);
+  buf.write('fmt ', 12);
+  buf.writeUInt32LE(16, 16);
+  buf.writeUInt16LE(1, 20);
+  buf.writeUInt16LE(2, 22);
+  buf.writeUInt32LE(sr, 24);
+  buf.writeUInt32LE(sr * 4, 28);
+  buf.writeUInt16LE(4, 32);
+  buf.writeUInt16LE(16, 34);
+  buf.write('data', 36);
+  buf.writeUInt32LE(N * 4, 40);
+  for (let i = 0; i < N; i++) {
+    buf.writeInt16LE(Math.round(Math.max(-1, Math.min(1, L[i])) * 32767), 44 + i * 4);
+    buf.writeInt16LE(Math.round(Math.max(-1, Math.min(1, R[i])) * 32767), 46 + i * 4);
+  }
+  mkdirSync(path.dirname(file), {recursive: true});
+  writeFileSync(file, buf);
+}
+
+// 16-bit PCM WAV (mono or stereo) as mono float samples.
+export function readWav(file, sr = 48000) {
+  const b = readFileSync(file);
+  let p = 12;
+  let fmt = null;
+  let data = null;
+  while (p + 8 <= b.length) {
+    const id = b.toString('ascii', p, p + 4);
+    const size = b.readUInt32LE(p + 4);
+    if (id === 'fmt ') fmt = {ch: b.readUInt16LE(p + 10), sr: b.readUInt32LE(p + 12), bits: b.readUInt16LE(p + 22)};
+    if (id === 'data') data = b.subarray(p + 8, p + 8 + size);
+    p += 8 + size + (size & 1);
+  }
+  if (!fmt || !data || fmt.bits !== 16 || fmt.sr !== sr) throw new Error(`${file}: expected 16-bit PCM at ${sr} Hz`);
+  const n = data.length / 2 / fmt.ch;
+  const x = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let s = 0;
+    for (let c = 0; c < fmt.ch; c++) s += data.readInt16LE((i * fmt.ch + c) * 2);
+    x[i] = s / fmt.ch / 32768;
+  }
+  return x;
 }

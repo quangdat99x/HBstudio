@@ -102,4 +102,6 @@ DEFAULT_SETTINGS.update({
     "claude_effort_docfilm": "high",
     "docfilm_max_turns": "400",
     "docfilm_credit_budget": "40",      # Higgsfield credits a project may spend without asking
+    # venv with torch + BiRefNet for scripts/cutout.py (local background removal, 0 credits); models in <venv>/../hf
+    "docfilm_bgremove_python": r"E:\Tool\bgremove\.venv\Scripts\python.exe",
 })

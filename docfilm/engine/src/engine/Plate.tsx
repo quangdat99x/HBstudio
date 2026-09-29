@@ -20,6 +20,7 @@ uniform float uTime;
 uniform float uBreath;
 varying vec2 vUv;
 varying float vWorldY;
+varying vec3 vWorldPos;
 
 vec2 rot2(vec2 p, vec2 c, float a) {
   vec2 d = p - c;
@@ -55,7 +56,8 @@ void main() {
     q = vec2(r.x / uAspect, r.y);
   }
   vec3 pos = vec3((q - 0.5) * uSize, 0.0);
-  vWorldY = (modelMatrix * vec4(pos, 1.0)).y;
+  vWorldPos = (modelMatrix * vec4(pos, 1.0)).xyz;
+  vWorldY = vWorldPos.y;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
 }
 `;
@@ -74,8 +76,13 @@ uniform float uReveal;
 uniform float uRevealMode;
 uniform float uRevealSoft;
 uniform float uClipY;
+uniform vec4 uLight;
+uniform vec3 uLightCol;
+uniform vec3 uWrapCol;
+uniform float uWrap;
 varying vec2 vUv;
 varying float vWorldY;
+varying vec3 vWorldPos;
 
 const vec2 P[12] = vec2[12](
   vec2(-0.326, -0.406), vec2(-0.840, -0.074), vec2(-0.696, 0.457), vec2(-0.203, 0.621),
@@ -103,7 +110,18 @@ void main() {
   }
   float a = acc.a;
   vec3 col = a > 0.0001 ? acc.rgb / a : vec3(0.0);
-  col = mix(col * uTint * uExposure, uFogColor, uFog);
+  col *= uTint * uExposure;
+  // A point light (a fire) multiplies the surface colour: dark iron stays dark, lit wood and skin warm up.
+  if (uLight.w > 0.0) {
+    float d = distance(vWorldPos, uLight.xyz) / uLight.w;
+    col *= 1.0 + uLightCol / (1.0 + d * d);
+  }
+  // Light wrap: the scene's light bleeds a little over the edges of a cut-out, so it sits in the air it is in.
+  if (uWrap > 0.0) {
+    float edge = clamp((1.0 - texture2D(map, vUv, 5.0).a) * 1.8, 0.0, 1.0);
+    col += uWrapCol * uWrap * edge;
+  }
+  col = mix(col, uFogColor, uFog);
   if (uRevealMode > 0.5) {
     vec2 d = vUv - 0.5;
     float m;
@@ -155,6 +173,8 @@ export type PlateProps = {
   order?: number;
   segments?: number;
   clipBelow?: number; // world y under which the plate is cut away (sinking into the pit)
+  light?: {pos: V3; color: string; intensity: number; radius: number};
+  wrap?: {color: string; amount: number};
 };
 
 // World position of an image-space point (x from left, y from top) on a plate.
@@ -239,6 +259,10 @@ export const Plate: React.FC<PlateProps> = (props) => {
           uRevealMode: {value: 0},
           uRevealSoft: {value: 0.02},
           uClipY: {value: -1e6},
+          uLight: {value: new THREE.Vector4(0, 0, 0, 0)},
+          uLightCol: {value: new THREE.Color(0, 0, 0)},
+          uWrapCol: {value: new THREE.Color(0, 0, 0)},
+          uWrap: {value: 0},
         },
       }),
     [blend],
@@ -293,6 +317,11 @@ export const Plate: React.FC<PlateProps> = (props) => {
   u.uRevealMode.value = revealMode;
   u.uRevealSoft.value = revealSoft;
   u.uClipY.value = props.clipBelow ?? -1e6;
+  const L = props.light;
+  u.uLight.value.set(L?.pos[0] ?? 0, L?.pos[1] ?? 0, L?.pos[2] ?? 0, L ? L.radius : 0);
+  u.uLightCol.value.set(L?.color ?? '#000000').multiplyScalar(L?.intensity ?? 0);
+  u.uWrapCol.value.set(props.wrap?.color ?? '#000000');
+  u.uWrap.value = props.wrap?.amount ?? 0;
   if (opacity <= 0.001) return null;
   const ro = order ?? Math.round(center[2] * 100);
   return (

@@ -10,13 +10,21 @@ export const {fontFamily: cormorant} = loadCormorant('italic', {weights: ['500']
 
 const PER_WORD = 2.4;
 
-// Subtitle that reveals word by word (fade + rise + unblur), with an optional citation.
-export const Caption: React.FC<{text: string; from: number; to: number; cite?: string}> = ({text, from, to, cite}) => {
+// Subtitle that reveals word by word (fade + rise + unblur), with an optional citation. With `words` (the frame
+// each word is spoken, from src/voice.json) every word appears as the narrator says it.
+export const Caption: React.FC<{text: string; from: number; to: number; cite?: string; words?: number[]}> = ({
+  text,
+  from,
+  to,
+  cite,
+  words: spoken,
+}) => {
   const frame = useCurrentFrame();
   if (frame < from - 1 || frame > to + 1) return null;
   const words = text.split(' ');
+  const at = (i: number) => (spoken ? spoken[Math.min(i, spoken.length - 1)] - 3 : from + i * PER_WORD);
   const out = interpolate(frame, [to - 14, to], [1, 0], clamp);
-  const done = from + words.length * PER_WORD + 8;
+  const done = at(words.length - 1) + 10;
   const citeIn = interpolate(frame, [done, done + 16], [0, 1], clamp);
   return (
     <AbsoluteFill
@@ -37,7 +45,7 @@ export const Caption: React.FC<{text: string; from: number; to: number; cite?: s
         }}
       >
         {words.map((w, i) => {
-          const p = interpolate(frame, [from + i * PER_WORD, from + i * PER_WORD + 16], [0, 1], {
+          const p = interpolate(frame, [at(i), at(i) + 16], [0, 1], {
             ...clamp,
             easing: Easing.out(Easing.cubic),
           });

@@ -14,6 +14,7 @@ import sys
 import threading
 import time
 from collections import deque
+from pathlib import Path
 
 from .. import config, db
 from ..pipeline import claude_runner
@@ -22,11 +23,13 @@ from . import prompts, research, scaffold, store
 
 log = logging.getLogger("studio.docfilm")
 
-# Pre-approved tools. MCP tools of other claude.ai connectors (TikTok publishing, websites, voices...) are
+# Pre-approved tools. MCP tools of other claude.ai connectors (TikTok publishing, websites...) are
 # not in the list, so a headless turn cannot call them.
 HF_TOOLS = ("balance", "generate_image", "generate_image_batch", "jobs_wait", "remove_background", "models_explore",
             "create_project", "list_workspaces", "list_projects", "list_folders", "create_folder", "generate_video",
-            "upscale_image")
+            "upscale_image",
+            # narration (ElevenLabs v4): a batch of takes returns one URL, the others are found in the history
+            "generate_audio", "generate_audio_batch", "list_voices", "show_generations", "transactions")
 ALLOWED_TOOLS = ",".join(["Read", "Write", "Edit", "Glob", "Grep", "WebSearch", "WebFetch", "Bash", "ToolSearch", "TodoWrite"]
                          + [f"mcp__claude_ai_HF__{n}" for n in HF_TOOLS])
 KINDS = ("chat", "research", "script", "build")
@@ -35,8 +38,12 @@ KINDS = ("chat", "research", "script", "build")
 def _env() -> dict:
     ff = shutil.which("ffmpeg") or str(config.FFMPEG)
     fp = shutil.which("ffprobe") or str(config.FFPROBE)
+    bg = Path(db.get_setting("docfilm_bgremove_python") or config.DEFAULT_SETTINGS["docfilm_bgremove_python"])
     return {"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1", "FFMPEG": ff, "FFPROBE": fp, "PYTHONUTF8": "1",
-            "STUDIO_PYTHON": sys.executable}
+            "STUDIO_PYTHON": sys.executable,
+            # local background removal (BiRefNet on the GPU) and whisper for the narration timing
+            "BGREMOVE_PY": str(bg), "BGREMOVE_HF": str(bg.parents[2] / "hf") if len(bg.parents) > 2 else "",
+            "WHISPER_PY": str(config.PY_CUTTER)}
 
 
 class TurnProgress:

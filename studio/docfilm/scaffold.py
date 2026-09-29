@@ -99,7 +99,7 @@ def scaffold_film(p: dict, update=None) -> Path:
         pkg["name"] = f"film-{p['slug']}"[:200]
         pkg["description"] = f"{p['title']} (JRE Studio documentary)"
         (film / "package.json").write_text(json.dumps(pkg, ensure_ascii=False, indent=2), encoding="utf-8")
-        for sub in ("public/img", "public/clips", "out/stills"):
+        for sub in ("public/img", "public/clips", "public/fx", "assets/raw", "assets/fx", "audio/voice", "out/stills"):
             (film / sub).mkdir(parents=True, exist_ok=True)
     _junction(film / "node_modules", engine_dir() / "node_modules")
     return film

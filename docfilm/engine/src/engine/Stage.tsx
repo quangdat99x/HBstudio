@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import {useThree} from '@react-three/fiber';
 import {ThreeCanvas} from '@remotion/three';
 import {useVideoConfig} from 'remotion';
+import {Post, PostFx} from './PostFx';
 
 export type V3 = [number, number, number];
 
@@ -33,7 +34,7 @@ const CameraRig: React.FC<{shot: Shot}> = ({shot}) => {
 };
 
 // A 3D multiplane stage: every layer is a plane at a real depth in front of a moving camera.
-export const Stage: React.FC<{shot: Shot; children: React.ReactNode}> = ({shot, children}) => {
+export const Stage: React.FC<{shot: Shot; post?: Post; children: React.ReactNode}> = ({shot, post, children}) => {
   const {width, height} = useVideoConfig();
   const fov = shot.fov ?? 35;
   const lens: Lens = {
@@ -55,6 +56,7 @@ export const Stage: React.FC<{shot: Shot; children: React.ReactNode}> = ({shot, 
       <color attach="background" args={['#000000']} />
       <CameraRig shot={shot} />
       <LensContext.Provider value={lens}>{children}</LensContext.Provider>
+      {post && <PostFx post={post} />}
     </ThreeCanvas>
   );
 };

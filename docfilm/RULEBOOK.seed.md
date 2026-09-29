@@ -12,7 +12,7 @@
 - Phim tài liệu cho kênh YouTube khán giả Mỹ (chữ trên phim bằng tiếng Anh). Ghi chú nội bộ và trả lời người dùng bằng tiếng Việt.
 - **Xương sống luận điểm = các đoạn trích đắt giá từ kho highlight JRE** về chủ đề đó. Lời dẫn chỉ nối và đặt bối cảnh.
 - Hình ảnh: nhân vật và bối cảnh do Higgsfield vẽ (ảnh AI tách lớp). Claude dựng chuyển động, không gian 3D nhiều lớp, hiệu ứng, chữ và âm thanh bằng code (engine trong `film/`, cẩm nang `film/ENGINE.md`).
-- Phim mẫu tham chiếu: `D:\VideoLab\watchers-v2` (The Watchers v2.1, Book of Enoch 6–10, 30 s).
+- Phim mẫu tham chiếu: `D:\VideoLab\watchers-v2` (The Watchers v2.2 có lời dẫn, Book of Enoch 6–10, 32 s). Cảnh lò rèn `src/scenes/Azazel.tsx` là mẫu hiệu ứng lửa, khói, tia lửa, ánh sáng.
 
 ## 1. Tính xác thực (phim tài liệu)
 
@@ -33,6 +33,9 @@
     Sức hút đến từ bí ẩn và lời chứng, không phải từ việc phim tự đứng ra khẳng định.
 1.7 **Biểu tượng nhạy cảm:** không gắn biểu tượng của tôn giáo, dân tộc hay cộng đồng có thật (Ngôi sao David, thánh giá, trăng lưỡi liềm, chữ Vạn...) cho phe ác hay ma quỷ. Tránh cả ký hiệu sáo mòn kiểu phim kinh dị (ngôi sao năm cánh ngược). Khi cần một ký hiệu huyền bí, dùng hình học trung tính hoặc chữ viết lấy từ chính nguồn (vòng rune, vòng chữ, sao 7 cánh {7/3}).
 1.8 Bản quyền: bản dịch cổ văn dùng bản công cộng hoặc trích rất ngắn. Nhạc và hiệu ứng âm thanh tự tổng hợp (không tải nhạc về). Chỉ dùng footage JRE từ kho của chính kênh, dạng trích đoạn ngắn có bình luận và dựng lại.
+1.9 **Cảnh quay hiệu ứng thật** (lửa, khói, tia lửa, bụi quay trên nền đen): chỉ lấy từ nguồn có giấy phép cho dùng thương mại (Pexels, Pixabay, Mixkit; trả phí: ActionVFX).
+  - **Chưa tải gì khi người dùng chưa duyệt.** Liệt kê trong chat từng file: tên, nguồn (link trang), độ dài, độ phân giải, dung lượng, giấy phép. Kết thúc lượt, chờ người dùng trả lời.
+  - Đã duyệt thì tải vào `film/assets/fx/`, ghi nguồn vào `notes/sources.md`.
 
 ## 2. Quy trình một dự án (workflow)
 
@@ -81,10 +84,11 @@ Bốn bước dưới đây nối tiếp nhau. Người dùng có thể nhắn c
 
 1. Đọc `film/ENGINE.md`, xem các cảnh mẫu trong `D:\VideoLab\watchers-v2\src\scenes\`. `film/node_modules` là liên kết tới engine dùng chung: không `npm install`, **không bao giờ xóa** nó hay thứ gì bên trong.
 2. Kiểm tra số dư Higgsfield (`balance`), ghi `notes/credits.json` trước và sau.
-3. Tạo tài sản theo mục 3, lưu vào `film/public/img/`. Đo landmark theo mục 6.
+3. Tạo ảnh theo mục 3: ảnh gốc lưu `film/assets/raw/`, tách nền bằng `scripts/cutout.py` (0 credit) ra `film/public/img/`, **xem bảng soát** `out/stills/cutouts.jpg`. Đo landmark theo mục 6.
+   Cảnh cần lửa hay khói thật: đề xuất clip theo mục 1.9, chờ duyệt, rồi `scripts/fx-prep.mjs`.
 4. Cắt clip trích bằng `node scripts/clip.mjs`, đặt vào `film/public/clips/`. Viết phụ đề nguyên văn theo từng dòng transcript.
 5. Viết `src/timeline.js`, `src/assets.ts`, các cảnh và `Film.tsx`.
-6. Soát ảnh tĩnh (mục 9), sửa, rồi làm âm thanh (mục 8).
+6. Soát ảnh tĩnh (mục 9), sửa, rồi làm lời dẫn và âm thanh (mục 8).
 7. Render `out/<slug>_v<N>.mp4`. **Không ghi đè bản cũ**, mỗi lần render tăng N.
 8. Chạy QA (mục 9) và báo cáo.
 
@@ -95,15 +99,19 @@ Mỗi góp ý: sửa, soát lại đúng chỗ đã sửa (ảnh tĩnh hoặc c�
 ## 3. Ảnh AI với Higgsfield
 
 - **Công cụ (headless):**
-  - `mcp__claude_ai_HF__balance`, `generate_image`, `generate_image_batch`, `jobs_wait`, `remove_background`, `models_explore`, `create_project`.
-  - Mỗi phim một project Higgsfield. Mọi lần tạo ảnh dùng `folder_id` của project đó.
+  - `mcp__claude_ai_HF__balance`, `generate_image`, `generate_image_batch`, `jobs_wait`, `models_explore`, `create_project`;
+  - lời dẫn: `generate_audio`, `list_voices`, `show_generations`;
+  - `remove_background` chỉ dự phòng: tách nền làm trên máy (dưới đây).
+  - Mỗi phim một project Higgsfield. Mọi lần tạo **ảnh** dùng `folder_id` của project đó. Riêng `elevenlabs_v4` **không** truyền `folder_id` (bị lỗi 422).
 - **Chi phí đo thực tế (2026-09):**
 
   | Việc | Model | Credit |
   |---|---|---|
   | Ảnh 2k | `soul_cinematic` | 0,12 |
   | Ảnh | `nano_banana_pro` | 2 |
-  | Tách nền | `remove_background` | ≈ 1 |
+  | Tách nền trên máy | `scripts/cutout.py` | **0** |
+  | Tách nền (dự phòng) | `remove_background` | ≈ 1 |
+  | Lời dẫn | `elevenlabs_v4` | 0,46 / 100 ký tự ≈ 2,3 / bản đọc 30 s ≈ 4,3 / phút |
   | Video 5 s | `kling3_0` | 8,75 |
   | Video 5 s | `seedance_2_5` | 35 |
 
@@ -112,8 +120,14 @@ Mỗi góp ý: sửa, soát lại đúng chỗ đã sửa (ảnh tĩnh hoặc c�
   - Cảnh nền, đạo cụ, nhân vật gốc: `soul_cinematic` (2k; cảnh nền 21:9, nhân vật 1:1).
   - **Biến thể nhân vật** (đổi tư thế, trang phục, nhân vật cùng phong cách): `nano_banana_pro`, sửa từ ảnh gốc: "Edit this image. Keep the same ... Only change ...". Soul Cinema kèm ảnh tham chiếu sẽ chép gần như y nguyên ảnh gốc, nên không dùng cho việc này.
 - **Cách tạo từng loại:**
-  - Nhân vật/đạo cụ cần tách: toàn thân, ở giữa, chừa lề, **nền xám trơn phẳng**, không mặt đất, không chữ. Sau đó `remove_background`.
-  - Sương, lửa, ánh sáng, lông vũ: vẽ **trên nền đen tuyền** rồi dùng `blend="add"`, không tách nền. Tách nền để lại viền đen trên vật trắng mềm.
+  - Nhân vật/đạo cụ cần tách: toàn thân, ở giữa, chừa lề, **nền xám trơn phẳng**, không mặt đất, không chữ. Sau đó tách trên máy:
+    - `"$BGREMOVE_PY" scripts/cutout.py assets/raw/<ảnh>.png --out public/img`;
+    - `cutout.py` khử viền xám mà Higgsfield để lại, và lấy lại chi tiết mảnh tách rời (vòng hào quang);
+    - `--mode matting` **chỉ** cho vật trong mờ (lửa, khói, quầng sáng), không bao giờ cho cảnh vật (làm đá thành bán trong suốt);
+    - luôn xem bảng soát `out/stills/cutouts.jpg` (nền đỏ tối và nền xám).
+    *(Nguồn gốc: so sánh 12 ảnh Watchers, 2026-09-30: trên máy khớp HF 97–99%, sạch viền hơn, 0 credit.)*
+  - **Không vẽ lửa hay khói vào ảnh tĩnh.** Lửa đứng im trông giả, tách nền còn kẹt mảng xám giữa các lưỡi lửa. Ảnh lỡ có lửa vẽ sẵn thì xoá đi (mặt nạ màu + inpaint) và thay bằng cảnh quay thật (mục 5.8). Nêu rõ trong prompt: "no fire, no flames, no smoke" cho đạo cụ sẽ có lửa thật.
+  - Sương, ánh sáng, lông vũ: vẽ **trên nền đen tuyền** rồi dùng `blend="add"`, không tách nền. Tách nền để lại viền đen trên vật trắng mềm.
   - Cảnh nền (plate): không nhân vật, không chữ. Chừa khoảng cho chủ thể đứng.
 - **Một chuỗi phong cách cho cả phim**, gắn vào cuối mọi prompt. Ví dụ: *dark biblical fantasy concept art, painterly oil painting with visible brushwork, cinematic lighting, ... in the spirit of Gustave Dore and modern film concept art*.
 - **Tính đồng nhất:** mỗi nhân vật có một ảnh gốc. Mọi biến thể đều sửa từ ảnh gốc đó.
@@ -137,7 +151,7 @@ Mỗi góp ý: sửa, soát lại đúng chỗ đã sửa (ảnh tĩnh hoặc c�
   - phải kiểm tra khung ở **đầu, giữa, cuối** mỗi đường máy quay, vì máy quay tiến vào làm chủ thể to dần.
 4.5 Khi máy quay đi vòng, nhân vật quay mặt theo máy (billboard). Không để lộ nhân vật là tấm bìa phẳng nhìn nghiêng.
 
-## 5. Chuyển động
+## 5. Chuyển động và hiệu ứng
 
 5.1 **Không dùng nội suy tuyến tính** cho vật sống. Dùng lò xo (spring) hoặc easing vào/ra, có quán tính.
 5.2 **Cánh:**
@@ -151,6 +165,11 @@ Mỗi góp ý: sửa, soát lại đúng chỗ đã sửa (ảnh tĩnh hoặc c�
 5.5 **Vật thể từ trời xuống** (sao, ánh sáng): đường cong, nhanh lúc đầu, chậm dần rồi chạm nhẹ. Vệt đuôi liền mạch. Khi chạm có loé sáng rồi đốm sáng nằm lại **đúng trên bề mặt**.
 5.6 **Sợi sáng, xích:** đung đưa nhẹ, có luồng năng lượng chạy dọc. Xích có độ võng tự nhiên.
 5.7 **Máy quay:** có quán tính (easing sin), rung nhẹ khi va chạm lớn rồi tắt dần. Không giật cục.
+5.8 **Lửa và khói phải là chuyển động thật:** cảnh quay thật trên nền đen (mục 1.9) qua `<VideoFx>`, thu thành dáng ngọn lửa (`taper`), gốc lửa khuất sau miệng vật chứa (`mouth`). Code chỉ làm lửa ma thuật (lửa trên tay, lửa của ấn). *(Nguồn gốc: người dùng hỏi phương án "chân thực, sắc nét, hấp dẫn nhất"; bản thử lò rèn 2026-09-30 được duyệt.)*
+5.9 **Lửa phải thắp sáng cảnh:** mọi tấm ảnh gần đám lửa nhận `light` (ánh sáng điểm, nhân vào màu bề mặt), cường độ chập chờn theo đúng độ sáng của clip lửa (`fx-prep --flicker`). Va chạm (búa, sét) làm loé thêm.
+5.10 **Tia lửa, tàn lửa:** `blowSparks` ở mỗi cue va chạm (vệt nhòe theo vận tốc, nguội dần trắng → cam → đỏ, nảy trên mặt đất), `risingEmbers` bốc lên từ đám lửa. Không dùng chấm tròn đứng yên.
+5.11 **Hậu kỳ máy quay:** cảnh có lửa hay nguồn sáng mạnh bật `post={{bloom, haze}}` (quầng sáng quanh vùng sáng, không khí méo phía trên lửa). Nhân vật tách nền đặt trong không khí có màu thì thêm `wrap` 0,1–0,2 (ánh nền tràn qua viền).
+5.12 **Hiệu ứng phải nằm trong khung nhìn:** kiểm tra mép dưới khung (letterbox, tiền cảnh). Bản thử đầu tiên đặt chậu than dưới mép khung, lửa thật không ai thấy.
 
 ## 6. Neo vật thể và tính nhất quán không gian
 
@@ -177,8 +196,17 @@ Mỗi góp ý: sửa, soát lại đúng chỗ đã sửa (ảnh tĩnh hoặc c�
 
 8.1 Nhạc và hiệu ứng tự tổng hợp bằng `scripts/audio-lib.mjs` (drone, gió, boom, sấm, kim loại, xích, whoosh...). Mọi cue lấy từ `src/timeline.js`, nên hình và tiếng luôn khớp.
 8.2 Clip JRE giữ tiếng gốc. Nhạc nền **hạ ~12 dB** dưới mọi trích đoạn (danh sách `QUOTES`).
-8.3 **Master:** loudnorm về −16 LUFS ở soundtrack. File cuối phải ở khoảng −14,5 LUFS, true peak ≤ −1,5 dBFS. *(Bản đầu tiên ở −20,6 LUFS, nghe nhỏ hơn video khác trên YouTube.)*
-8.4 Giọng đọc (ElevenLabs) tiêu credit của người dùng, nên phải hỏi trước. Mặc định dùng lời dẫn bằng chữ.
+8.3 **Master:** `m.write(...)` master 2 lượt (đo → chỉnh gain → limiter) về −15 LUFS. File cuối ≈ −15 LUFS, true peak ≤ −1,5 dBTP. *(Bản đầu tiên ở −20,6 LUFS, nghe nhỏ hơn video khác trên YouTube.)*
+8.4 **Lời dẫn bằng giọng đọc** (ElevenLabs v4 qua Higgsfield). Làm theo `film/ENGINE.md` mục Narration:
+  - Giọng mặc định của kênh: **Alistair** (`d9d5c263-f84e-4752-97b5-3750fcc6fd2f`, trầm, lớn tuổi, giọng Anh). Đổi giọng thì hỏi người dùng.
+  - Chi phí nằm trong ước tính của kịch bản. Người dùng duyệt kịch bản là duyệt luôn chi phí giọng. Tối đa 3 bản đọc cho mỗi lượt viết lại lời dẫn; nhiều hơn thì hỏi.
+  - **Viết cả kịch bản thành một lần đọc** (một `dialogue`, mỗi câu một lượt, cùng giọng): như một buổi thu, giọng liền mạch giữa các câu.
+  - Tag cảm xúc ngắn, mỗi câu một tag (`[reverent]`, `[ominous]`, `[low, intense]`, `[grave]`, `[sorrowful]`, `[solemn, firm]`, `[quietly]`), một hơi thở mở đầu `[inhales softly]`. Ngắt nhịp bằng "…" và "—". Không nhồi tag.
+  - Chữ trên màn hình = đúng chữ được đọc (phụ đề hiện theo từng chữ được đọc).
+  - Chọn bản đọc bằng whisper: đủ chữ, không đọc lọt tag, nhịp vừa cảnh. Đặt câu bằng `audio/voice/plan.json` + `scripts/voice-build.py`; tăng tốc tối đa 3%; từ khoá rơi đúng cue hình (ví dụ "hand and foot" đúng tiếng xích).
+  - Cảnh không đủ chỗ cho câu đọc tự nhiên thì kéo dài cảnh (đuôi cảnh giữ hình), không đọc nhanh hơn.
+  *(Nguồn gốc: người dùng yêu cầu lời dẫn giống người thật cho The Watchers, 2026-09-29.)*
+8.5 **Trộn giọng:** `make-audio` tự hạ nhạc dưới giọng (dải trên −8 dB, dải trầm −3 dB, hạ thêm tới −10 dB chỗ nhạc lấn giọng). Hiệu ứng mạnh (sấm, nổ) đặt vào khoảng lặng giữa hai câu thì giữ nguyên lực.
 
 ## 9. Kiểm tra trước khi giao (bắt buộc)
 
@@ -201,7 +229,11 @@ Mỗi góp ý: sửa, soát lại đúng chỗ đã sửa (ảnh tĩnh hoặc c�
    - LUFS và peak đạt;
    - bảng ghép lấy từ **chính file MP4**.
 5. So từng phụ đề trích với transcript (python).
-6. Báo cáo đúng sự thật. Chưa kiểm được thì nói là chưa kiểm.
+6. Có lời dẫn:
+   - cho whisper nghe lại file cuối: đủ mọi câu, không sai chữ;
+   - giọng hơn nhạc ≥ 10 LU khi đang nói, trong dải 300–5000 Hz (đo `out/stem_voice.wav` với `out/stem_score.wav`).
+7. Có hiệu ứng lửa/khói: trích 5–6 khung rải đều từ **chính file MP4** để chắc hiệu ứng có mặt ở mọi khung và nằm trong khung nhìn.
+8. Báo cáo đúng sự thật. Chưa kiểm được thì nói là chưa kiểm (ví dụ: Claude không nghe được giọng, chỉ đo được).
 
 ## 10. Giao tiếp với người dùng
 
@@ -236,7 +268,8 @@ Mỗi góp ý: sửa, soát lại đúng chỗ đã sửa (ảnh tĩnh hoặc c�
    "quote": {"segment_id": 122, "episode_id": "JRE-2530", "speaker": "...", "start_sec": 1234.5, "end_sec": 1250.2, "text": "nguyên văn"},
    "visual": {"layers": ["sky: ...", "mid: ...", "character: ...", "fg: ..."], "camera": "dolly in", "reconstruction": true},
    "sources": ["1 Enoch 6:6 (R.H. Charles 1917)"], "sfx": ["boom ở 3.2s"]}],
- "assets": [{"key": "sky_hermon", "kind": "plate|cutout|additive", "model": "soul_cinematic", "aspect": "21:9", "prompt": "...", "est_credits": 0.12}],
+ "voice": {"name": "Alistair", "voice_id": "d9d5c263-f84e-4752-97b5-3750fcc6fd2f", "chars": 480, "takes": 3, "est_credits": 6.9},
+ "assets": [{"key": "sky_hermon", "kind": "plate|cutout|additive|fx_clip", "model": "soul_cinematic|stock", "aspect": "21:9", "prompt": "... (fx_clip: mô tả cảnh quay cần tìm)", "est_credits": 0.12}],
  "sources": [{"ref": "...", "url": "..."}], "risks": ["..."]}
 ```
 
@@ -250,3 +283,5 @@ Cách cập nhật: sửa đúng mục liên quan ở trên (ngắn gọn, có l
   - tranh luận sao 6 cánh và sao 7 cánh → mục 1.2–1.5, 1.7;
   - độ to âm thanh −20,6 LUFS → mục 8.3;
   - các lỗi tự soát (chữ lẻ rớt dòng, quầng sáng lộ viền, xích vàng biến mất trên cánh trắng, letterbox cắt đầu) → mục 4.4, 6.4, 7.2.
+- 2026-09-29 · The Watchers v2.2 · Lời dẫn ElevenLabs v4 (giọng Alistair), một lần đọc cả kịch bản, phụ đề theo từng chữ, ducking 2 dải, master −15 LUFS → mục 3, 8.3–8.5, 9.6, 11.2.
+- 2026-09-30 · thử nghiệm · Tách nền trên máy thay Higgsfield (0 credit, sạch viền hơn); lửa, khói là cảnh quay thật, lửa thắp sáng cảnh, tia lửa, bloom, không khí méo; clip tải về phải được duyệt trước → mục 1.9, 2.3, 3, 5.8–5.12, 9.7.

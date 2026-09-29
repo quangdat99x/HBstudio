@@ -1,6 +1,6 @@
 // Soundtrack of this film: score + effects from scripts/audio-lib.mjs, timed from src/timeline.js.
-// Run: node scripts/make-audio.mjs  -> public/soundtrack.wav (mastered to -16 LUFS), then set AUDIO = true
-// in src/timeline.js. JRE quote clips keep their own audio (Remotion mixes them); the score ducks
+// Run: node scripts/make-audio.mjs  -> public/soundtrack.wav (mastered to -15 LUFS), then set AUDIO = true
+// in src/timeline.js. Narration (src/voice.json from scripts/voice-build.py) is mixed in with ducking. JRE quote clips keep their own audio (Remotion mixes them); the score ducks
 // under every window listed in QUOTES.
 import {DURATION, FPS, QUOTES, SCENES} from '../src/timeline.js';
 import {env, Mixer} from './audio-lib.mjs';
@@ -21,4 +21,4 @@ m.wind((t) => env(t, [[0, 0], [2, 0.4], [seconds - 1, 0.4], [seconds, 0]]));
 m.thump(at('title', 6), 0.45, 0, 62, 30, 1.8, 0.8);
 
 m.duck(QUOTES.map((q) => [q.from / FPS, (q.from + q.duration) / FPS]), -12);
-m.write('out/soundtrack_raw.wav', 'public/soundtrack.wav');
+m.write('out/soundtrack_raw.wav', 'public/soundtrack.wav', {voice: 'src/voice.json'});
