@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <div class="card-header">
+    <h2>🎥 Dự án phim tài liệu{% if archived %} · đã lưu trữ{% endif %}</h2>
+    <div class="row gap">
+      {% if archived %}<a class="btn btn-small btn-ghost" href="/">← dự án đang làm</a>
+      {% elif archived_count %}<a class="btn btn-small btn-ghost" href="/?archived=1">Đã lưu trữ ({{ archived_count }})</a>{% endif %}
+      <button class="btn btn-small btn-ghost" onclick="openFolder('{{ root|replace('\\', '\\\\') }}')">📂 {{ root }}</button>
+      <button class="btn btn-small btn-primary" onclick="toggleNew()">＋ Dự án mới</button>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="stepper">
+      {% for st in STEPS %}
+      <div class="step-chip" title="{{ st.goal }}">
+        <span class="n">Bước {{ st.num }}</span>
+        <span class="name">{{ st.icon }} {{ st.name }}</span>
+        <span class="small muted">{{ st.spends }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="small muted">Mỗi dự án đi qua 6 bước. Claude làm từng bước khi bạn bấm chạy, bạn xem kết quả và bấm <b>Duyệt</b> rồi mới sang bước sau. Nhắn Claude bất cứ lúc nào để sửa.</div>
+  </div>
+</section>
+
+<section class="card" id="new-card" hidden>
+  <div class="card-header"><h2>＋ Dự án mới</h2><span class="small muted">Mặc định lấy từ trang Cài đặt</span></div>
+  <div class="card-body">
+    <div class="grid2">
+      <label>Chủ đề phim *<input class="input" id="n-topic" placeholder="VD: Book of Enoch, những Watchers và Nephilim"></label>
+      <label>Tên phim (để trống = dùng chủ đề)<input class="input" id="n-title" placeholder="VD: The Watchers"></label>
+    </div>
+    <label>Yêu cầu riêng: góc nhìn, điểm bắt buộc có, điều cần tránh, nguồn ưu tiên
+      <textarea class="input" id="n-brief" rows="3" placeholder="VD: bám sát 1 Enoch 6–10 bản R.H. Charles; giọng kể điềm tĩnh, bí ẩn; không dùng biểu tượng tôn giáo có thật cho phe ác…"></textarea></label>
+    <div class="grid4">
+      <label>Ngôn ngữ trên phim<select class="input" id="n-language">
+        {% for code, name in [('en', 'Tiếng Anh'), ('vi', 'Tiếng Việt'), ('es', 'Tiếng Tây Ban Nha'), ('fr', 'Tiếng Pháp')] %}
+        <option value="{{ code }}" {{ 'selected' if s.language == code }}>{{ name }}</option>{% endfor %}</select></label>
+      <label>Định dạng<select class="input" id="n-format">
+        <option value="16:9" {{ 'selected' if s.format == '16:9' }}>16:9 (YouTube)</option>
+        <option value="9:16" {{ 'selected' if s.format == '9:16' }}>9:16 (Shorts/TikTok)</option></select></label>
+      <label>Thời lượng mục tiêu (giây)<input class="input" id="n-target" type="number" min="10" value="{{ s.target_sec }}"></label>
+      <label>Ngân sách credit Higgsfield<input class="input" id="n-budget" type="number" min="0" step="1" value="{{ s.credit_budget }}"></label>
+    </div>
+    <div class="grid2">
+      <label>Khán giả<input class="input" id="n-audience" value="{{ s.audience }}"></label>
+      <label>Phong cách hình ảnh (để trống = Claude đề xuất ở bước 1)<input class="input" id="n-style" value="{{ s.style }}"
+        placeholder="VD: dark biblical fantasy concept art, painterly oil painting, Gustave Doré"></label>
+    </div>
+    <div class="row gap wrap">
+      <label class="check"><input type="checkbox" id="n-jre"> Dùng kho highlight JRE làm nguồn trích</label>
+      <label class="check"><input type="checkbox" id="n-auto" {{ 'checked' if s.auto_advance == '1' }}> Tự chạy hết 6 bước, không chờ duyệt</label>
+      <label class="check" title="Bỏ chọn nếu muốn thêm tư liệu (PDF, transcript, link) trước khi Claude nghiên cứu"><input type="checkbox" id="n-start"> Chạy bước 1 ngay (không chờ thêm tư liệu)</label>
+      <span class="grow"></span>
+      <button class="btn btn-small btn-ghost" onclick="toggleNew()">Huỷ</button>
+      <button class="btn btn-small btn-primary" id="n-create" onclick="createProject()">Tạo dự án</button>
+    </div>
+    <div class="small muted">Tư liệu (PDF, transcript, ghi chú, link) thêm ở trang dự án, trong bước 1, trước khi chạy.</div>
+  </div>
+</section>
+
+{% if projects %}
+<div class="proj-grid">
+  {% for p in projects %}
+  <a class="card proj-card" href="/p/{{ p.id }}">
+    <div class="row gap">
+      <h3 class="grow">{{ p.title }}</h3>
+      {% if p.busy %}<span class="badge st-running"><span class="spin"></span>{{ 'đang chạy' if p.busy.status == 'running' else 'đang chờ' }}</span>{% endif %}
+    </div>
+    <div class="topic">{{ p.topic }}</div>
+    <div class="dots" title="{% for r in p.steps %}{{ r.meta.num }}. {{ r.meta.name }}: {{ r.label }}&#10;{% endfor %}">
+      {% for r in p.steps %}<span class="dot st-{{ r.status }}"></span>{% endfor %}
+    </div>
+    <div class="proj-meta">
+      {% set c = p.current %}
+      <span class="st-{{ c.status }}">{% if c.status == 'approved' %}✓ Hoàn thành{% else %}Bước {{ c.meta.num }} · {{ c.meta.name }}: {{ c.label }}{% endif %}</span>
+      <span>{{ p.format }}{% if p.target_sec %} · {{ (p.target_sec // 60) }}:{{ '%02d'|format(p.target_sec % 60) }}{% endif %}
+        · {{ '%g'|format(p.credits or 0) }}/{{ '%g'|format(p.credit_budget or 0) }} cr · ${{ '%.2f'|format(p.cost_usd or 0) }}</span>
+    </div>
+    <div class="small muted">Cập nhật {{ p.updated_at.replace('T', ' ')[:16] }}</div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<section class="card"><div class="card-body"><div class="muted">{% if archived %}Không có dự án lưu trữ.{% else %}Chưa có dự án nào. Bấm <b>＋ Dự án mới</b> để bắt đầu.{% endif %}</div></div></section>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+function toggleNew(){ const c = document.getElementById('new-card'); c.hidden = !c.hidden; if(!c.hidden) document.getElementById('n-topic').focus(); }
+async function createProject(){
+  const v = id => document.getElementById(id).value.trim(), ck = id => document.getElementById(id).checked;
+  if(!v('n-topic')){ toast('Cần nhập chủ đề'); return; }
+  const btn = document.getElementById('n-create'); btn.disabled = true;
+  const r = await api('/api/projects', {topic: v('n-topic'), title: v('n-title'), brief: v('n-brief'), language: v('n-language'),
+    format: v('n-format'), target_sec: v('n-target'), credit_budget: v('n-budget'), audience: v('n-audience'), style: v('n-style'),
+    use_jre: ck('n-jre'), auto_advance: ck('n-auto'), start: ck('n-start')});
+  btn.disabled = false;
+  if(r.error){ toast(r.error); return; }
+  if(r.queued && r.queued.error) toast(r.queued.error);
+  location.href = r.url;
+}
+{% if not projects and not archived %}toggleNew();{% endif %}
+</script>
+{% endblock %}

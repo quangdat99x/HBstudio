@@ -1,0 +1,11 @@
+*.pyc
+__pycache__/
+.venv/
+creater.db
+creater.db-*
+logs/
+work/
+npm-install.log
+engine/node_modules/
+engine/out/
+engine/.remotion/

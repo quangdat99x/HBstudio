@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% set title = 'Cài đặt' %}
+{% set icons = {'ok': '✓', 'warn': '!', 'error': '✕', 'info': 'i'} %}
+{% set step_names = {'script': '1 · Kịch bản', 'cast': '2 · Tuyển nhân vật', 'scenes': '3 · Phân cảnh & bối cảnh', 'images': '4 · Render hình ảnh',
+                     'footage': '5 · Footage & âm thanh', 'render': '6 · Dựng & render', 'chat': 'Chat (sửa theo góp ý)'} %}
+{% block content %}
+{% if saved %}<div class="notice">Đã lưu cài đặt.</div>{% endif %}
+<section class="card">
+  <div class="card-header">
+    <h2>🧰 Kiểm tra hệ thống {% if health.ok %}<span class="pill ok">sẵn sàng</span>{% else %}<span class="pill err">{{ health.errors }} lỗi</span>{% endif %}
+      {% if health.warns %}<span class="pill warn">{{ health.warns }} cảnh báo</span>{% endif %}</h2>
+    <button class="btn btn-small btn-ghost" onclick="location.reload()">↻ Kiểm tra lại</button>
+  </div>
+  <div class="card-body" style="padding:0">
+    <table class="table"><tbody>
+    {% for c in checks %}
+    <tr class="check-row">
+      <td class="check-{{ c.state }}"><b>{{ icons[c.state] }}</b></td>
+      <td class="nowrap"><b>{{ c.name }}</b></td>
+      <td class="small">{{ c.detail }}{% if c.hint %}<div class="warn">{{ c.hint }}</div>{% endif %}<div class="small muted" id="job-{{ c.action }}"></div></td>
+      <td class="nowrap">
+        {% if c.action == 'install_engine' %}<button class="btn btn-tiny btn-primary" onclick="startJob('install_engine')">Cài engine</button>
+        {% elif c.action == 'ensure_browser' %}<button class="btn btn-tiny btn-primary" onclick="startJob('ensure_browser')">Tải Chrome</button>
+        {% elif c.action == 'probe' %}<button class="btn btn-tiny" onclick="probe()" id="probe-btn">Chạy thử Claude</button>
+        {% elif c.action == 'hf_probe' %}<button class="btn btn-tiny" onclick="hfProbe()" id="hf-btn">Kiểm tra số dư</button>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody></table>
+    <div class="card-body small muted" id="probe-out">Chạy thử Claude: một lượt nhỏ với model mặc định bên dưới, báo đăng nhập và model thực tế trả lời.
+      Kiểm tra số dư Higgsfield: Claude (haiku) gọi tool balance qua connector claude.ai, tốn khoảng vài cent.</div>
+  </div>
+</section>
+
+<form method="post" id="settings-form">
+<input type="hidden" name="_changed" id="changed">
+<section class="card">
+  <div class="card-header"><h2>🎥 Mặc định cho dự án mới</h2></div>
+  <div class="card-body">
+    <label>Thư mục chứa dự án (ảnh, footage, render: nên đặt ở ổ còn trống nhiều)<input class="input" name="projects_root" value="{{ s.projects_root }}"></label>
+    <div class="grid4">
+      <label>Ngân sách credit Higgsfield / dự án<input class="input" name="credit_budget" type="number" value="{{ s.credit_budget }}"></label>
+      <label>Ngôn ngữ trên phim<input class="input" name="language" value="{{ s.language }}"></label>
+      <label>Định dạng<select class="input" name="format"><option {{ 'selected' if s.format == '16:9' }}>16:9</option><option {{ 'selected' if s.format == '9:16' }}>9:16</option></select></label>
+      <label>Thời lượng mục tiêu (giây)<input class="input" name="target_sec" type="number" value="{{ s.target_sec }}"></label>
+    </div>
+    <div class="grid2">
+      <label>Khán giả<input class="input" name="audience" value="{{ s.audience }}"></label>
+      <label>Phong cách hình ảnh mặc định (để trống = Claude đề xuất)<input class="input" name="style" value="{{ s.style }}"></label>
+    </div>
+    <div class="grid2">
+      <label>Giọng đọc (tên)<input class="input" name="voice_name" value="{{ s.voice_name }}"></label>
+      <label>Voice id (ElevenLabs preset trên Higgsfield)<input class="input mono" name="voice_id" value="{{ s.voice_id }}"></label>
+    </div>
+    <label class="check"><input type="checkbox" name="auto_advance" {{ 'checked' if s.auto_advance == '1' }}> Dự án mới tự chạy hết các bước, không chờ duyệt</label>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-header"><h2>🤖 Claude Code (chạy headless)</h2></div>
+  <div class="card-body">
+    <div class="grid4">
+      <label>Model mặc định (fable, opus, sonnet, haiku hoặc id đầy đủ)<input class="input" name="claude_model" value="{{ s.claude_model }}"></label>
+      <label>Effort mặc định<select class="input" name="claude_effort">{% for e in ['', 'low', 'medium', 'high', 'xhigh', 'max'] %}<option value="{{ e }}" {{ 'selected' if s.claude_effort == e }}>{{ e or '(mặc định CLI)' }}</option>{% endfor %}</select></label>
+      <label>Model dự phòng khi quá tải<input class="input" name="claude_fallback_model" value="{{ s.claude_fallback_model }}"></label>
+      <label>Số lượt công cụ tối đa / lượt dài<input class="input" name="claude_max_turns" type="number" value="{{ s.claude_max_turns }}"></label>
+    </div>
+    <table class="table">
+      <thead><tr><th>Bước</th><th>Model (trống = mặc định)</th><th>Effort (trống = mặc định)</th></tr></thead><tbody>
+      {% for k in step_keys %}<tr><td class="small">{{ step_names[k] }}</td>
+        <td><input class="input" style="width:100%" name="model_{{ k }}" value="{{ s['model_' ~ k] }}"></td>
+        <td><select class="input" name="effort_{{ k }}">{% for e in ['', 'low', 'medium', 'high', 'xhigh', 'max'] %}<option value="{{ e }}" {{ 'selected' if s['effort_' ~ k] == e }}>{{ e or '(mặc định)' }}</option>{% endfor %}</select></td></tr>{% endfor %}
+    </tbody></table>
+    <label>Lệnh Claude CLI (để "claude" = tự tìm, ưu tiên E:\Tool\claude-cli)<input class="input mono" name="claude_cli" value="{{ s.claude_cli }}"></label>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-header"><h2>🔧 Công cụ trên máy</h2></div>
+  <div class="card-body">
+    <div class="grid2">
+      <label>Python tách nền (torch + BiRefNet)<input class="input mono" name="bgremove_python" value="{{ s.bgremove_python }}"></label>
+      <label>Python có faster-whisper<input class="input mono" name="whisper_python" value="{{ s.whisper_python }}"></label>
+      <label>ffmpeg.exe (trống = PATH, rồi E:\Tool\video-cutter-portable)<input class="input mono" name="ffmpeg" value="{{ s.ffmpeg }}"></label>
+    </div>
+    <div class="section-title">Nguồn tùy chọn: kho highlight JRE (chỉ đọc)</div>
+    <div class="grid2">
+      <label>Python của JRE Studio<input class="input mono" name="jre_python" value="{{ s.jre_python }}"></label>
+      <label>hldb.py<input class="input mono" name="jre_hldb" value="{{ s.jre_hldb }}"></label>
+    </div>
+    <div class="row gap end"><button class="btn btn-primary" type="submit">Lưu cài đặt</button></div>
+  </div>
+</section>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+const changed = new Set();
+document.querySelectorAll('#settings-form [name]').forEach(el => {
+  if(el.name === '_changed') return;
+  el.addEventListener('change', () => { changed.add(el.name); document.getElementById('changed').value = [...changed].join(','); });
+});
+async function startJob(name){
+  const r = await api('/api/setup/' + name, {}); toast(r.error || r.message);
+  const el = document.getElementById('job-' + name);
+  const t = setInterval(async () => {
+    const j = (await (await fetch('/api/setup/jobs')).json())[name]; if(!j) return;
+    el.textContent = j.error ? ('Lỗi: ' + j.error) : j.progress;
+    if(!j.running){ clearInterval(t); if(!j.error) setTimeout(() => location.reload(), 800); }
+  }, 2000);
+}
+async function probe(){
+  const b = document.getElementById('probe-btn'), out = document.getElementById('probe-out');
+  b.disabled = true; out.innerHTML = '<span class="spin"></span> đang chạy một lượt nhỏ…';
+  const r = await api('/api/claude/probe', {model: document.querySelector('[name=claude_model]').value, effort: document.querySelector('[name=claude_effort]').value});
+  b.disabled = false;
+  out.innerHTML = r.ok ? `<span class="ok">✓ Claude trả lời "${esc((r.result || '').trim())}"</span> · ${esc(r.summary || '')}`
+                       : `<span class="error">✕ ${esc(r.error || 'lỗi')}</span>` + (r.logged_in === false ? ' · chưa đăng nhập' : '');
+}
+async function hfProbe(){
+  const b = document.getElementById('hf-btn'), out = document.getElementById('probe-out');
+  b.disabled = true; out.innerHTML = '<span class="spin"></span> Claude đang hỏi số dư Higgsfield…';
+  const r = await api('/api/hf/probe', {});
+  b.disabled = false;
+  if(r.ok){ out.innerHTML = `<span class="ok">✓ Higgsfield: ${esc(r.credits)} credit · gói ${esc(r.plan || '?')}</span> · ${esc(r.summary || '')}`; setTimeout(() => location.reload(), 1500); }
+  else out.innerHTML = `<span class="error">✕ ${esc(r.error || 'lỗi')}</span> · ${esc(r.summary || '')}`;
+}
+</script>
+{% endblock %}

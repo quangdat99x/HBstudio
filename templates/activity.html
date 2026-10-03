@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% set title = 'Hoạt động' %}
+{% block content %}
+<section class="card">
+  <div class="card-header"><h2>📊 Hoạt động</h2><span class="small muted">Claude làm một lượt mỗi lúc cho mọi dự án (render và GPU dùng chung)</span></div>
+  <div class="card-body">
+    <div class="stat-tiles">
+      <div class="tile"><div class="v">{% if status and status.current %}<span class="spin"></span>1{% else %}0{% endif %}</div><div class="l">lượt đang chạy</div></div>
+      <div class="tile"><div class="v">{{ status.queue|length if status else 0 }}</div><div class="l">lượt đang chờ</div></div>
+      <div class="tile"><div class="v">${{ '%.2f'|format(sum_usd) }}</div><div class="l">chi phí Claude mọi dự án</div></div>
+      <div class="tile"><div class="v">{{ '%g'|format(sum_credits) }}</div><div class="l">credit Higgsfield đã tiêu (theo notes/credits.json)</div></div>
+    </div>
+    {% if status and status.current %}
+    <div class="box"><span class="spin"></span><b><a href="/p/{{ status.current.project_id }}{% if status.current.step %}?step={{ status.current.step }}{% endif %}">{{ status.current.project_title }}</a></b>
+      {% if status.current.step %} · {{ STEP_NAMES[status.current.step] }}{% else %} · chat{% endif %}
+      <div class="small muted">{{ status.current.progress_msg or '' }}</div></div>
+    {% endif %}
+    {% for q in status.queue if status %}
+    <div class="small muted">⏳ {{ q.project_title }} · {{ STEP_NAMES[q.step] if q.step and q.kind == 'step' else 'chat' }}</div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-header"><h2>Các lượt Claude gần đây</h2></div>
+  <div class="card-body" style="padding:0">
+    <table class="table"><thead><tr><th>Lúc</th><th>Dự án</th><th>Việc</th><th>Trạng thái</th><th>Model</th><th class="num">Thời gian</th><th class="num">Chi phí</th></tr></thead><tbody>
+    {% for t in turns %}<tr>
+      <td class="small muted nowrap">{{ t.created_at.replace('T', ' ')[5:16] }}</td>
+      <td><a href="/p/{{ t.project_id }}{% if t.step %}?step={{ t.step }}{% endif %}">{{ t.project_title }}</a></td>
+      <td class="small">{{ ('▶ ' + STEP_NAMES[t.step]) if t.kind == 'step' and t.step else 'chat' }}</td>
+      <td class="small"><span class="pill {{ 'ok' if t.status == 'done' else ('err' if t.status == 'failed' else 'warn') }}">{{ t.status }}</span>
+        {% if t.error %}<div class="muted">{{ t.error|truncate(90) }}</div>{% endif %}</td>
+      <td class="small muted">{{ t.models_used or t.model or '' }}{% if t.effort %} · {{ t.effort }}{% endif %}</td>
+      <td class="num small">{% if t.duration_sec %}{{ (t.duration_sec / 60)|round(1) }} ph{% endif %}</td>
+      <td class="num small">{% if t.cost_usd %}${{ '%.2f'|format(t.cost_usd) }}{% endif %}</td>
+    </tr>{% else %}<tr><td colspan="7" class="muted small">Chưa có lượt nào.</td></tr>{% endfor %}
+    </tbody></table>
+  </div>
+</section>
+
+<div class="grid2">
+  <section class="card">
+    <div class="card-header"><h2>Chi phí theo dự án</h2></div>
+    <div class="card-body" style="padding:0">
+      <table class="table"><thead><tr><th>Dự án</th><th class="num">Lượt</th><th class="num">Claude</th><th class="num">Credit HF</th></tr></thead><tbody>
+      {% for t in totals %}<tr><td><a href="/p/{{ t.id }}">{{ t.title }}</a>{% if t.archived %} <span class="pill gray">lưu trữ</span>{% endif %}</td>
+        <td class="num">{{ t.turns }}</td><td class="num">${{ '%.2f'|format(t.cost_usd or 0) }}</td><td class="num">{{ '%g'|format(t.credits) }}</td></tr>
+      {% else %}<tr><td colspan="4" class="muted small">Chưa có dự án.</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+  </section>
+  <section class="card">
+    <div class="card-header"><h2>Nhật ký</h2></div>
+    <div class="card-body" style="padding:0">
+      <table class="table"><tbody>
+      {% for e in events %}<tr><td class="small muted nowrap">{{ e.created_at.replace('T', ' ')[5:16] }}</td>
+        <td class="small">{% if e.project_id %}<a href="/p/{{ e.project_id }}">{{ e.project_title }}</a>: {% endif %}{{ e.text }}</td></tr>
+      {% else %}<tr><td class="muted small">Chưa có.</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>{% if status and (status.current or status.queue) %}setTimeout(() => location.reload(), 15000);{% endif %}</script>
+{% endblock %}

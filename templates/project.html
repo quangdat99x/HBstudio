@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% set title = p.title %}
+{% block content %}
+<section class="card">
+  <div class="card-header">
+    <div class="col" style="gap:2px">
+      <h2>🎥 {{ p.title }} <a class="small muted" style="font-weight:400" href="/">← mọi dự án</a>{% if p.archived %} <span class="pill gray">đã lưu trữ</span>{% endif %}</h2>
+      <div class="small muted">{{ p.topic }} · {{ p.format }}{% if p.target_sec %} · {{ (p.target_sec // 60) }}:{{ '%02d'|format(p.target_sec % 60) }}{% endif %}
+        · {{ p.language }} · credit <b>{{ '%g'|format(credits.total) }}</b>/{{ '%g'|format(p.credit_budget or 0) }}
+        · Claude <span id="cost">${{ '%.2f'|format(p.cost_usd or 0) }}</span>
+        {% if p.use_jre %}· nguồn JRE{% endif %}{% if p.auto_advance %} · <span class="warn">tự chạy</span>{% endif %}</div>
+    </div>
+    <div class="row gap wrap">
+      <button class="btn btn-small btn-ghost" onclick="openSub('')">📂 Thư mục</button>
+      <a class="btn btn-small btn-ghost" href="/rules">📘 Quy tắc v{{ rules.version }}</a>
+      <button class="btn btn-small btn-ghost" onclick="document.getElementById('edit-dialog').showModal()">✏️ Thông tin</button>
+      <button class="btn btn-small btn-ghost" onclick="archive({{ 0 if p.archived else 1 }})">{{ 'Bỏ lưu trữ' if p.archived else 'Lưu trữ' }}</button>
+      <button class="btn btn-small btn-ghost btn-danger" onclick="document.getElementById('del-dialog').showModal()">Xóa</button>
+    </div>
+  </div>
+  <div class="card-body">
+    <div id="stepper">{% include "_stepper.html" %}</div>
+    {% if p.brief %}<div class="small"><span class="muted">Yêu cầu:</span> {{ p.brief }}</div>{% endif %}
+  </div>
+</section>
+
+<div class="proj-grid-main">
+  <section class="card" id="panel">{% include "_step_panel.html" %}</section>
+  <div class="col" style="gap:16px">
+    <section class="card">
+      <div class="card-header"><h2>💬 Claude</h2>
+        <div class="row gap"><span class="small muted">Ctrl+Enter để gửi</span>
+          <button class="btn btn-small btn-ghost" id="stop-btn" onclick="stopTurn()" {{ 'hidden' if not busy }}>■ Dừng</button></div></div>
+      <div class="card-body">
+        <div class="chat-thread" id="chat">{% include "_chat.html" %}</div>
+        <div class="chat-input">
+          <textarea class="input" id="msg" rows="3" {{ 'disabled' if busy }}
+            placeholder="Nhắn để sửa bước đang xem. VD: thêm một hồi về Dead Sea Scrolls · Azazel trông già hơn, áo đỏ sẫm · cảnh 4 máy quay chậm lại · cập nhật quy tắc: …"
+            onkeydown="if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();sendMsg()}"></textarea>
+          <button class="btn btn-small btn-primary" id="send-btn" onclick="sendMsg()" {{ 'disabled' if busy }}>Gửi</button>
+        </div>
+        <div class="small muted" id="chat-hint">Tin nhắn gửi kèm bước bạn đang xem (<span id="chat-step">{{ step.num }} · {{ step.name }}</span>).</div>
+      </div>
+    </section>
+    <section class="card">
+      <details>
+        <summary class="card-header" style="border:none"><h2>🕘 Nhật ký dự án</h2></summary>
+        <div class="card-body" style="padding-top:0">
+          <table class="table"><tbody>
+          {% for e in events %}<tr><td class="small muted nowrap">{{ e.created_at.replace('T', ' ')[5:16] }}</td><td class="small">{{ e.text }}</td></tr>
+          {% else %}<tr><td class="small muted">Chưa có.</td></tr>{% endfor %}
+          </tbody></table>
+        </div>
+      </details>
+    </section>
+  </div>
+</div>
+
+<dialog id="edit-dialog" class="modal wide">
+  <h3>Thông tin dự án</h3>
+  <div class="grid2">
+    <label>Tên phim<input class="input" id="ed-title" value="{{ p.title }}"></label>
+    <label>Chủ đề<input class="input" id="ed-topic" value="{{ p.topic }}"></label>
+  </div>
+  <label style="margin-top:10px">Yêu cầu riêng<textarea class="input" id="ed-brief" rows="4">{{ p.brief or '' }}</textarea></label>
+  <div class="grid4" style="margin-top:10px">
+    <label>Ngôn ngữ<input class="input" id="ed-language" value="{{ p.language or 'en' }}"></label>
+    <label>Định dạng<select class="input" id="ed-format">
+      <option value="16:9" {{ 'selected' if p.format == '16:9' }}>16:9</option><option value="9:16" {{ 'selected' if p.format == '9:16' }}>9:16</option></select></label>
+    <label>Thời lượng (giây)<input class="input" id="ed-target" type="number" value="{{ p.target_sec or '' }}"></label>
+    <label>Ngân sách credit<input class="input" id="ed-budget" type="number" value="{{ '%g'|format(p.credit_budget or 0) }}"></label>
+  </div>
+  <div class="grid2" style="margin-top:10px">
+    <label>Khán giả<input class="input" id="ed-audience" value="{{ p.audience or '' }}"></label>
+    <label>Phong cách hình ảnh<input class="input" id="ed-style" value="{{ p.style or '' }}"></label>
+  </div>
+  <div class="row gap" style="margin-top:10px">
+    <label class="check"><input type="checkbox" id="ed-jre" {{ 'checked' if p.use_jre }}> Dùng kho highlight JRE</label>
+    <label class="check"><input type="checkbox" id="ed-auto" {{ 'checked' if p.auto_advance }}> Tự chạy các bước, không chờ duyệt</label>
+  </div>
+  <p class="small muted">Claude đọc project.json ở lượt kế tiếp, nên thay đổi áp dụng từ lượt sau.</p>
+  <div class="row gap end">
+    <button class="btn btn-small btn-ghost" onclick="document.getElementById('edit-dialog').close()">Huỷ</button>
+    <button class="btn btn-small btn-primary" onclick="saveInfo()">Lưu</button>
+  </div>
+</dialog>
+
+<dialog id="redo-dialog" class="modal">
+  <h3>Làm lại ảnh <span class="mono" id="redo-key"></span></h3>
+  <label>Muốn sửa gì? (Claude sẽ tạo lại ảnh này và cập nhật manifest)
+    <textarea class="input" id="redo-note" rows="3" placeholder="VD: mặt trông già hơn, cánh xòe rộng hơn, bỏ hoa văn trên áo"></textarea></label>
+  <div class="row gap end">
+    <button class="btn btn-small btn-ghost" onclick="document.getElementById('redo-dialog').close()">Huỷ</button>
+    <button class="btn btn-small btn-primary" onclick="sendRedo()">Gửi cho Claude</button>
+  </div>
+</dialog>
+
+<dialog id="del-dialog" class="modal">
+  <h3>Xóa dự án "{{ p.title }}"?</h3>
+  <p class="small">Xóa dự án và toàn bộ cuộc trò chuyện khỏi app. Bộ quy tắc giữ nguyên.</p>
+  <label class="check small"><input type="checkbox" id="del-folder"> Chuyển cả thư mục dự án vào Thùng rác ({{ p.dir }})</label>
+  <label style="margin-top:10px">Gõ XOA để xác nhận<input class="input" id="del-confirm"></label>
+  <div class="row gap end">
+    <button class="btn btn-small btn-ghost" onclick="document.getElementById('del-dialog').close()">Huỷ</button>
+    <button class="btn btn-small btn-danger-solid" onclick="deleteProject()">Xóa</button>
+  </div>
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script>
+const PID = {{ p.id }};
+const STEP_NAMES = {{ STEP_NAMES|tojson }};
+let step = '{{ step.key }}', polling = null, lastSig = null, currentTab = null;
+
+function setBusy(b){
+  document.getElementById('msg').disabled = b; document.getElementById('send-btn').disabled = b;
+  document.getElementById('stop-btn').hidden = !b;
+}
+function scrollChat(){ const c = document.getElementById('chat'); c.scrollTop = c.scrollHeight; }
+function showTab(id){
+  const panes = document.querySelectorAll('#panel .tab-pane'); if(!panes.length) return;
+  if(!id || !document.getElementById(id)) id = panes[0].id;
+  panes.forEach(el => el.hidden = el.id !== id);
+  document.querySelectorAll('#panel .tab-btn').forEach(b => b.classList.toggle('btn-primary', b.dataset.tab === id));
+  currentTab = id;
+}
+async function refreshPanel(){
+  const note = document.getElementById('step-note'); const keep = note ? note.value : '';
+  const html = await (await fetch(`/p/${PID}/panel/${step}`)).text();
+  document.getElementById('panel').innerHTML = html; showTab(currentTab);
+  const n2 = document.getElementById('step-note'); if(n2 && keep) n2.value = keep;
+}
+async function refreshStepper(){
+  document.getElementById('stepper').innerHTML = await (await fetch(`/p/${PID}/stepper?step=${step}`)).text();
+}
+async function refreshChat(){ document.getElementById('chat').innerHTML = await (await fetch(`/p/${PID}/chat`)).text(); scrollChat(); }
+async function selectStep(key){
+  if(key === step) return;
+  step = key; currentTab = null;
+  history.replaceState(null, '', `?step=${key}`);
+  document.getElementById('chat-step').textContent = STEP_NAMES[key];
+  await Promise.all([refreshPanel(), refreshStepper()]);
+}
+async function poll(){
+  let s; try { s = await (await fetch(`/api/p/${PID}/state`)).json(); } catch (e) { return; }
+  const sig = [s.last_id, s.done, s.progress, s.steps].join('|');
+  if(sig !== lastSig){
+    const prev = lastSig; lastSig = sig;
+    await refreshChat();
+    if(prev === null || prev.split('|')[1] !== String(s.done) || prev.split('|')[3] !== s.steps){
+      await Promise.all([refreshStepper(), refreshPanel()]);
+      document.getElementById('cost').textContent = '$' + (s.cost_usd || 0).toFixed(2);
+    }
+  }
+  setBusy(s.busy);
+  if(!s.busy && polling){ clearInterval(polling); polling = null; await Promise.all([refreshStepper(), refreshPanel()]); }
+}
+function startPolling(){ if(!polling){ polling = setInterval(poll, 3000); } poll(); }
+
+async function runStep(key){
+  if(['images', 'footage'].includes(key) && !confirm('Bước này sẽ tiêu credit Higgsfield trong ngân sách của dự án. Chạy?')) return;
+  const note = (document.getElementById('step-note') || {}).value || '';
+  const r = await api(`/api/p/${PID}/run`, {step: key, note: note.trim()});
+  if(r.error){ toast(r.error); return; }
+  toast(r.message || 'đã gửi'); setBusy(true); startPolling();
+}
+async function approveStep(key){
+  const r = await api(`/api/p/${PID}/approve`, {step: key});
+  if(r.error){ toast(r.error); return; }
+  toast('Đã duyệt' + (r.next ? ': sang bước ' + STEP_NAMES[r.next] : ', phim hoàn thành'));
+  if(r.next){ await selectStep(r.next); } await Promise.all([refreshStepper(), refreshPanel()]);
+}
+async function reopenStep(key){ const r = await api(`/api/p/${PID}/reopen`, {step: key}); if(r.error){ toast(r.error); return; } await Promise.all([refreshStepper(), refreshPanel()]); }
+async function sendMsg(){
+  const t = document.getElementById('msg').value.trim(); if(!t){ toast('Chưa nhập nội dung'); return; }
+  const r = await api(`/api/p/${PID}/message`, {text: t, step});
+  if(r.error){ toast(r.error); return; }
+  document.getElementById('msg').value = ''; toast(r.message || 'đã gửi'); setBusy(true); startPolling();
+}
+async function stopTurn(){ const r = await api(`/api/p/${PID}/cancel`, {}); toast(r.message || r.error); startPolling(); }
+async function openSub(sub){ const r = await api(`/api/p/${PID}/open`, {sub}); if(r.error) toast(r.error); }
+
+// sources (step 1)
+async function uploadSources(files){
+  if(!files || !files.length) return;
+  const fd = new FormData(); for(const f of files) fd.append('files', f);
+  toast('Đang tải lên ' + files.length + ' file…');
+  const r = await (await fetch(`/api/p/${PID}/sources`, {method: 'POST', body: fd})).json().catch(() => ({error: 'tải lên lỗi'}));
+  if(r.error){ toast(r.error); return; } toast('Đã thêm: ' + r.names.join(', ')); refreshPanel();
+}
+async function saveLinks(){ const r = await api(`/api/p/${PID}/links`, {text: document.getElementById('links').value}); toast(r.error || 'Đã lưu link'); }
+async function deleteSource(name){ if(!confirm('Chuyển ' + name + ' vào Thùng rác?')) return; const r = await api(`/api/p/${PID}/sources/delete`, {name}); if(r.error) toast(r.error); refreshPanel(); }
+document.addEventListener('dragover', e => { const d = e.target.closest && e.target.closest('#drop'); if(d){ e.preventDefault(); d.classList.add('over'); } });
+document.addEventListener('dragleave', e => { const d = e.target.closest && e.target.closest('#drop'); if(d) d.classList.remove('over'); });
+document.addEventListener('drop', e => { const d = e.target.closest && e.target.closest('#drop'); if(d){ e.preventDefault(); d.classList.remove('over'); uploadSources(e.dataTransfer.files); } });
+
+// cast (step 2), footage (step 5), images (step 4)
+async function chooseCand(ch, file, chosen){ const r = await api(`/api/p/${PID}/cast/choose`, {character: ch, file: chosen ? '' : file}); if(r.error) toast(r.error); refreshPanel(); }
+async function decide(item, decision){ const r = await api(`/api/p/${PID}/footage/decide`, {item, decision: decision || null}); if(r.error) toast(r.error); refreshPanel(); }
+let redoKey = null;
+function redoAsset(key){ redoKey = key; document.getElementById('redo-key').textContent = key; document.getElementById('redo-note').value = ''; document.getElementById('redo-dialog').showModal(); }
+async function sendRedo(){
+  const r = await api(`/api/p/${PID}/redo`, {key: redoKey, note: document.getElementById('redo-note').value});
+  document.getElementById('redo-dialog').close();
+  if(r.error){ toast(r.error); return; } toast(r.message || 'đã gửi'); setBusy(true); startPolling();
+}
+
+// project info
+async function saveInfo(){
+  const v = id => document.getElementById(id).value, ck = id => document.getElementById(id).checked;
+  const r = await api(`/api/p/${PID}/update`, {title: v('ed-title'), topic: v('ed-topic'), brief: v('ed-brief'), language: v('ed-language'),
+    format: v('ed-format'), target_sec: v('ed-target'), credit_budget: v('ed-budget'), audience: v('ed-audience'), style: v('ed-style'),
+    use_jre: ck('ed-jre'), auto_advance: ck('ed-auto')});
+  if(r.error){ toast(r.error); return; } location.reload();
+}
+async function archive(on){ const r = await api(`/api/p/${PID}/update`, {archived: on}); if(r.error){ toast(r.error); return; } location.reload(); }
+async function deleteProject(){
+  const r = await api(`/api/p/${PID}/delete`, {confirm: document.getElementById('del-confirm').value, trash_folder: document.getElementById('del-folder').checked});
+  if(r.error){ toast(r.error); return; } if(r.warning) alert(r.warning); location.href = '/';
+}
+showTab(null); scrollChat();
+{% if busy %}setBusy(true); startPolling();{% endif %}
+</script>
+{% endblock %}
