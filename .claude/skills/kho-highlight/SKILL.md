@@ -38,7 +38,7 @@ Mỗi đoạn có `id` số (dùng cho `--ids`) và tham chiếu `JRE-2530#3` (=
 1. Dịch câu hỏi thành 1 đến 3 lệnh `search` (thử cả từ khoá tiếng Anh, vì summary/topics viết tiếng Anh; ví dụ "người khổng lồ" → thử thêm `giants`, `Nephilim`).
 2. Đọc JSON, lọc lại theo ý người hỏi, cần chi tiết thì `show` vài đoạn.
 3. Trả lời ngắn bằng tiếng Việt: bảng gồm `id`, tập, khách mời, timestamp, tiêu đề, intensity/score, trạng thái, một dòng lý do khớp. Không bịa đoạn không có trong kết quả. Không tự chế timestamp.
-4. Người hỏi muốn cắt hoặc dựng tổng hợp → chốt danh sách `id` rồi chạy `export` (ghi file vào `E:\Dowload New\YouTube\` trừ khi được chỉ nơi khác) và báo đường dẫn file. Muốn dựng tập tổng hợp có narration thì đưa file pool cho skill `tong-hop-rabbit-hole`.
+4. Người hỏi muốn cắt hoặc dựng tổng hợp → chốt danh sách `id` rồi chạy `export` (ghi file vào `D:\YouTube\` trừ khi được chỉ nơi khác) và báo đường dẫn file. Muốn dựng tập tổng hợp có narration thì đưa file pool cho skill `tong-hop-rabbit-hole`.
 5. Sau khi một compilation được dựng, ghi nhận bằng API hoặc bảo người dùng bấm "Ghi nhận manifest" trên UI để đoạn được đánh dấu đã dùng.
 
 ## Gán theme và entity (khi được yêu cầu "gán theme", "phân loại", hoặc thấy đoạn chưa có theme)

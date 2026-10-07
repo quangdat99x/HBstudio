@@ -19,7 +19,7 @@ Không thao tác tay ở giữa. Hai việc cần AI (chọn nội dung, hỏi �
 
 | # | Bước | Hiện tại (tay) | Mục tiêu (tự động) | Cách nối kỹ thuật |
 |---|---|---|---|---|
-| 1 | Tải video | Mở YouTube Downloader, dán URL, chọn thư mục | Dán URL trong UI Studio, hoặc thả file vào watch folder | Gọi API `/api/download` của Downloader (port 5001), hoặc watchdog trên `E:/Dowload New/YouTube/` |
+| 1 | Tải video | Mở YouTube Downloader, dán URL, chọn thư mục | Dán URL trong UI Studio, hoặc thả file vào watch folder | Gọi API `/api/download` của Downloader (port 5001), hoặc watchdog trên `D:/YouTube/` |
 | 2 | Transcript | Mở Cutter, chọn video, bấm Whisper, lưu transcript | Tự chạy khi file ổn định | Subprocess `whisper_worker.py` (large-v3, CUDA) của Cutter; orchestrator ghi `.transcript.json` + `.txt` đúng format hiện tại |
 | 3 | Chọn nội dung | Dán transcript vào Claude, chạy skill, tải cutlist về | Tự chạy | `claude -p "/chon-noi-dung-jre-v2 ..."` headless, validate JSON, retry |
 | 4 | Cắt | Import cutlist vào Cutter, chọn nơi lưu, bấm cắt | Tự chạy | Thêm 1 endpoint headless vào Cutter (nhận `video_path` + `cutlist_path` + `output_folder`, không mở hộp thoại) |
@@ -110,7 +110,7 @@ Giới hạn cần biết: bước này dùng quota của gói subscription; m�
 
 ## 6. Cắt và zoom
 
-- Cắt: endpoint headless của Cutter, output `E:/Dowload New/YouTube/<tên video>/NN_title.mp4` + `.txt` + `.json` + `.manifest.json`, giữ nguyên convention hiện nay.
+- Cắt: endpoint headless của Cutter, output `D:/YouTube/<tên video>/NN_title.mp4` + `.txt` + `.json` + `.manifest.json`, giữ nguyên convention hiện nay.
 - Zoom: gọi `/api/set-output-dir` = thư mục tập; upload lần lượt từng clip với tham số từ settings (`zoom_factor`, `smoothing_speed`, `analysis_fps`, `max_faces`, `min_switch_duration`, `mar_threshold`); poll `/api/status/<job_id>`; kết quả `<name>_zoomed.mp4` + `<name>_zoomed_thumbnail.jpg`.
 - Hook có zoom hay không: setting, mặc định có (hiện tại đang zoom lẫn lộn, có hook zoom có hook không).
 - Dung lượng: bản zoom xấp xỉ bản gốc, tức 5 đến 6 GB mỗi tập. UI cảnh báo khi ổ E còn dưới ngưỡng cấu hình.

@@ -16,7 +16,7 @@ LOG_DIR = BASE_DIR / "logs"
 SKILLS_DIR = BASE_DIR / ".claude" / "skills"
 
 # Media root: where episodes, transcripts, cutlists and clip folders live.
-MEDIA_ROOT = Path(os.environ.get("STUDIO_MEDIA_ROOT", r"E:\Dowload New\YouTube"))
+MEDIA_ROOT = Path(os.environ.get("STUDIO_MEDIA_ROOT", r"D:\YouTube"))
 
 # Existing tools (kept as they are, driven over HTTP / subprocess)
 TOOLS_ROOT = Path(r"E:\Tool")
