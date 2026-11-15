@@ -440,6 +440,53 @@ class Api:
         except Exception:
             return {'tasks': {}}
 
+    # ------------------------------------------------------------ đồng bộ code giữa các máy (_sync.py)
+    def sync_status(self, fetch=True):
+        import _sync
+        try:
+            return _sync.status(fetch=bool(fetch))
+        except Exception as e:
+            return {'ok': False, 'error': str(e)}
+
+    def sync_startup(self):
+        """Lúc mở Tool Manager: máy này sạch mà máy kia có bản mới thì kéo về luôn."""
+        import _sync
+        try:
+            res = _sync.startup_pull()
+        except Exception as e:
+            return {'ok': False, 'error': str(e)}
+        res['restart_manager'] = self._manager_changed(res.get('pulled') or [])
+        return res
+
+    def sync_now(self):
+        """Commit → kéo bản mới → đẩy lên, rồi khởi động lại các tool đang chạy có code vừa đổi."""
+        import _sync
+        try:
+            res = _sync.sync()
+        except Exception as e:
+            return {'ok': False, 'error': str(e)}
+        pulled = res.get('pulled') or []
+        if res.get('ok') and pulled:
+            dirs = _sync.tool_dirs_changed(pulled)
+            restarted = []
+            for tid, tool in TOOLS.items():
+                if os.path.basename(tool['dir']) not in dirs:
+                    continue
+                if not (_port_open(tool['port']) or (tid in self.processes and self.processes[tid].poll() is None)):
+                    continue
+                self.stop_tool(tid)
+                time.sleep(1)
+                if self.start_tool(tid).get('success'):
+                    restarted.append(tool['name'])
+            res['restarted'] = restarted
+            res['restart_manager'] = self._manager_changed(pulled)
+        res['status'] = self.sync_status(fetch=False)
+        return res
+
+    @staticmethod
+    def _manager_changed(files):
+        return any(f in ('run.pyw', '_sync.py', '_tool_server.py') for f in files)
+
     def cleanup(self):
         """Stop all tools on exit."""
         for tid in list(self.processes.keys()):
@@ -492,6 +539,20 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     font-size: 13px;
     margin-top: 4px;
   }
+  .sync-bar { display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 8px; }
+  .sync-btn {
+    display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 8px;
+    border: 1px solid #2a2a40; background: #16162a; color: #c7d2fe; font: 500 12px 'Inter', sans-serif; cursor: pointer;
+  }
+  .sync-btn:hover { background: #20203a; color: #fff; }
+  .sync-btn:disabled { opacity: .6; cursor: wait; }
+  .sync-btn .spinner { display: none; width: 11px; height: 11px; border: 2px solid #555; border-top-color: #a5b4fc;
+                       border-radius: 50%; animation: spin .8s linear infinite; }
+  .sync-btn.loading .spinner { display: inline-block; }
+  .sync-info { font-size: 12px; color: #777; max-width: 760px; text-align: left; user-select: text; -webkit-user-select: text; }
+  .sync-info.warn { color: #fbbf24; }
+  .sync-info.err { color: #f87171; }
+  .sync-info.ok { color: #4ade80; }
 
   /* Cards Grid */
   .cards {
@@ -859,6 +920,11 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   <div class="header">
     <h1>🎬 Tool Manager</h1>
     <p>Quản lý YouTube Downloader · Video Cutter · Podcast Zoom · Hổ Báo Studio · Creater Vid · Video Watcher</p>
+    <div class="sync-bar">
+      <button class="sync-btn" id="sync-btn" onclick="syncNow()" title="Đẩy code sửa trên máy này lên GitHub và kéo bản mới của máy kia về">
+        <span class="spinner"></span><span class="label">🔄 Đồng bộ code</span></button>
+      <span class="sync-info" id="sync-info">đang kiểm tra bản mới…</span>
+    </div>
   </div>
 
   <div class="cards">
@@ -1037,7 +1103,54 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     setInterval(refreshQuickTasks, 1200);
     refreshStatus();
     initQuickFolder();
+    syncStartup();
+    setInterval(() => syncCheck(true), 15 * 60 * 1000);   // 15 phút xem máy kia có bản mới không
   });
+
+  // ---------------------------------------------------------------- đồng bộ code giữa các máy
+  function setSyncInfo(text, cls) {
+    const el = document.getElementById('sync-info');
+    el.textContent = text; el.className = 'sync-info' + (cls ? ' ' + cls : '');
+  }
+  function describeSync(st) {
+    if (!st || !st.ok) return [(st && st.error) || 'không đọc được trạng thái Git', 'err'];
+    const bits = [];
+    if (st.behind) bits.push('⬇ máy khác có ' + st.behind + ' cập nhật mới');
+    if (st.changes && st.changes.length) bits.push('✏ ' + st.changes.length + ' file sửa trên máy này chưa đẩy');
+    else if (st.ahead) bits.push('⬆ ' + st.ahead + ' commit chưa đẩy');
+    if (st.fetch_error) bits.push('không kết nối được GitHub: ' + st.fetch_error);
+    if (!bits.length) return ['✓ code đã khớp GitHub' + (st.last_remote ? ' (bản mới nhất ' + st.last_remote + ')' : ''), 'ok'];
+    return [bits.join(' · ') + ' → bấm Đồng bộ', st.fetch_error ? 'err' : 'warn'];
+  }
+  async function syncCheck(fetch) {
+    try { const st = await window.pywebview.api.sync_status(fetch); const [t, c] = describeSync(st); setSyncInfo(t, c); }
+    catch (e) { setSyncInfo('lỗi kiểm tra: ' + e, 'err'); }
+  }
+  async function syncStartup() {
+    try {
+      const r = await window.pywebview.api.sync_startup();
+      if (r.pulled && r.pulled.length) {
+        setSyncInfo('⬇ đã tự cập nhật ' + r.pulled.length + ' file từ máy khác' +
+          (r.restart_manager ? ' · đóng và mở lại Tool Manager để dùng bản mới' : ''), 'ok');
+      } else { const [t, c] = describeSync(r.status || r); setSyncInfo(t, c); }
+    } catch (e) { setSyncInfo('lỗi kiểm tra: ' + e, 'err'); }
+  }
+  async function syncNow() {
+    const btn = document.getElementById('sync-btn');
+    btn.disabled = true; btn.classList.add('loading');
+    setSyncInfo('đang đồng bộ (lần đầu có thể mở trình duyệt để đăng nhập GitHub)…');
+    try {
+      const r = await window.pywebview.api.sync_now();
+      if (!r.ok) { setSyncInfo('✗ ' + r.error, 'err'); return; }
+      let t = '✓ ' + r.message;
+      if (r.restarted && r.restarted.length) t += ' · đã khởi động lại: ' + r.restarted.join(', ');
+      const badReq = (r.requirements || []).filter(x => !x.ok);
+      if (badReq.length) t += ' · cài package lỗi: ' + badReq.map(x => x.file).join(', ');
+      if (r.restart_manager) t += ' · Tool Manager có bản mới: đóng và mở lại';
+      setSyncInfo(t, badReq.length ? 'warn' : 'ok');
+    } catch (e) { setSyncInfo('✗ ' + e, 'err'); }
+    finally { btn.disabled = false; btn.classList.remove('loading'); }
+  }
 
   async function initQuickFolder() {
     try {
