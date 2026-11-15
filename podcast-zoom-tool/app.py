@@ -86,12 +86,15 @@ CORES_PER_JOB = 2.5
 
 
 def _cpu_budget() -> dict:
-    path = os.path.join(os.path.dirname(BASE_DIR), 'cpu_budget.json')
-    try:
-        with open(path, encoding='utf-8') as fh:
-            return json.load(fh)
-    except Exception:
-        return {}
+    """<Tool>/cpu_budget.json (shared through Git) overlaid by cpu_budget.local.json (this machine only)."""
+    budget = {}
+    for name in ('cpu_budget.json', 'cpu_budget.local.json'):
+        try:
+            with open(os.path.join(os.path.dirname(BASE_DIR), name), encoding='utf-8') as fh:
+                budget.update(json.load(fh))
+        except Exception:
+            pass
+    return budget
 
 
 def _physical_cores() -> int:

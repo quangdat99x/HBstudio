@@ -8,7 +8,7 @@ Usage: python depth.py <image> <work_dir>
 import os
 import sys
 
-os.environ.setdefault("HF_HOME", r"E:\Tool\bgremove\hf")
+os.environ.setdefault("HF_HOME", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bgremove", "hf"))   # <Tool>/bgremove/hf
 
 import numpy as np
 import torch

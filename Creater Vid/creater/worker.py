@@ -103,10 +103,12 @@ def render_concurrency() -> int:
     renders frames on the CPU, so more tabs than cores only makes them fight over the same cores."""
     global _render_conc
     if _render_conc is None:
-        try:
-            budget = json.loads((config.TOOLS_ROOT / "cpu_budget.json").read_text(encoding="utf-8"))
-        except Exception:  # noqa: BLE001
-            budget = {}
+        budget = {}
+        for name in ("cpu_budget.json", "cpu_budget.local.json"):   # shared through Git, then this machine only
+            try:
+                budget.update(json.loads((config.TOOLS_ROOT / name).read_text(encoding="utf-8")))
+            except Exception:  # noqa: BLE001
+                pass
         measured = budget.get("render_concurrency")
         _render_conc = int(measured) if measured else max(2, int(_physical_cores() - float(budget.get("reserve_cores", 2))))
     return _render_conc

@@ -51,7 +51,17 @@ def local_changes() -> list[str]:
     code, out = _git("status", "--porcelain", "-uall")
     if code != 0:
         return []
-    return [ln[3:].strip().strip('"') for ln in out.splitlines() if ln.strip()]
+    files = []
+    for ln in out.splitlines():
+        if not ln.strip():
+            continue
+        f = ln[2:].strip().strip('"')   # not ln[3:]: _git() strips the output, so line 1 may have lost its leading space
+        p = os.path.join(BASE_DIR, f)
+        # a new file too big for Git is data: it never counts as a change (else startup_pull would never run)
+        if ln.startswith("??") and os.path.isfile(p) and os.path.getsize(p) > MAX_FILE_MB * 1024 * 1024:
+            continue
+        files.append(f)
+    return files
 
 
 def _count(rng: str) -> int:
@@ -92,14 +102,35 @@ def _changed_between(old: str, new: str) -> list[str]:
     return [ln.strip() for ln in out.splitlines() if ln.strip()] if code == 0 else []
 
 
-def _commit_local(changes: list[str]) -> tuple[bool, str]:
+MAX_FILE_MB = 50   # GitHub refuses files over 100 MB; anything this big is data, not code
+
+
+def _unstage_big() -> list[str]:
+    """Take files over MAX_FILE_MB back out of the commit (they stay on disk, untouched)."""
+    code, out = _git("diff", "--cached", "--name-only", "--diff-filter=AM")
+    big = []
+    for f in (out.splitlines() if code == 0 else []):
+        f = f.strip().strip('"')
+        p = os.path.join(BASE_DIR, f)
+        if f and os.path.isfile(p) and os.path.getsize(p) > MAX_FILE_MB * 1024 * 1024:
+            big.append(f)
+    for f in big:
+        _git("reset", "-q", "--", f)
+    return big
+
+
+def _commit_local(changes: list[str]) -> tuple[bool, str, list[str]]:
     code, out = _git("add", "-A")
     if code != 0:
-        return False, out
+        return False, out, []
+    big = _unstage_big()
+    changes = [c for c in changes if c not in big]
+    if _git("diff", "--cached", "--quiet")[0] == 0:   # nothing left to commit
+        return True, "", big
     names = ", ".join(os.path.basename(c.rstrip("/")) for c in changes[:4]) + (f" +{len(changes) - 4} file" if len(changes) > 4 else "")
     msg = f"[{machine()}] {time.strftime('%d/%m/%Y %H:%M')}: {names}"
     code, out = _git("commit", "-q", "-m", msg)
-    return code == 0, out
+    return code == 0, out, big
 
 
 def _conflicts() -> list[str]:
@@ -113,11 +144,12 @@ def sync() -> dict:
     if not st.get("ok"):
         return st
     committed = 0
+    skipped_big: list[str] = []
     if st["changes"]:
-        ok, out = _commit_local(st["changes"])
+        ok, out, skipped_big = _commit_local(st["changes"])
         if not ok:
             return {"ok": False, "error": f"không commit được thay đổi của máy này: {out[-400:]}"}
-        committed = len(st["changes"])
+        committed = len([c for c in st["changes"] if c not in skipped_big])
     code, out = _git("fetch", "origin", timeout=120)
     if code != 0:
         return {"ok": False, "error": "không kết nối được GitHub: " + (out.splitlines()[-1] if out else str(code)),
@@ -150,8 +182,11 @@ def sync() -> dict:
         parts.append(f"đã kéo về {len(pulled)} file từ máy khác")
     if pushed:
         parts.append(f"đã đẩy {pushed} commit lên GitHub")
+    if skipped_big:
+        parts.append(f"bỏ qua {len(skipped_big)} file trên {MAX_FILE_MB} MB (dữ liệu, không đẩy lên): "
+                     + ", ".join(os.path.basename(f) for f in skipped_big[:3]))
     return {"ok": True, "message": "; ".join(parts) or "đã đồng bộ, không có gì mới", "pulled": pulled,
-            "pushed": pushed, "committed": committed, "requirements": reqs}
+            "pushed": pushed, "committed": committed, "requirements": reqs, "skipped_big": skipped_big}
 
 
 def startup_pull() -> dict:

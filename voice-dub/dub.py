@@ -26,6 +26,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TOOL_ROOT = os.path.dirname(BASE_DIR)
 OUTPUT_DIR = os.path.join(BASE_DIR, 'output')
 SETTINGS_PATH = os.path.join(BASE_DIR, 'settings.json')
+LOCAL_SETTINGS_PATH = os.path.join(BASE_DIR, 'settings.local.json')
 CUTTER_DIR = os.path.join(TOOL_ROOT, 'video-cutter-portable')
 WHISPER_WORKER = os.path.join(CUTTER_DIR, 'whisper_worker.py')   # model dùng chung với Video Cutter
 CREATER_DB = os.path.join(TOOL_ROOT, 'Creater Vid', 'creater.db')  # API key ElevenLabs dùng chung với Creater Vid
@@ -81,20 +82,25 @@ class ApiError(Exception):
 
 
 # ---------------------------------------------------------------- settings, key
-def load_settings():
+def _read_json(path):
     try:
-        with open(SETTINGS_PATH, encoding='utf-8') as f:
+        with open(path, encoding='utf-8') as f:
             return json.load(f)
     except (OSError, ValueError):
         return {}
 
 
+def load_settings():
+    """settings.json = shared default (Git); settings.local.json = this machine's choices (not synced), wins."""
+    return {**_read_json(SETTINGS_PATH), **_read_json(LOCAL_SETTINGS_PATH)}
+
+
 def save_settings(**changes):
-    s = load_settings()
-    s.update(changes)
-    with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
-        json.dump(s, f, ensure_ascii=False, indent=1)
-    return s
+    local = _read_json(LOCAL_SETTINGS_PATH)
+    local.update(changes)
+    with open(LOCAL_SETTINGS_PATH, 'w', encoding='utf-8') as f:
+        json.dump(local, f, ensure_ascii=False, indent=1)
+    return load_settings()
 
 
 def _creater_setting(name):

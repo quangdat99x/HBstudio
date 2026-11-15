@@ -1,6 +1,6 @@
 """Remove the painted flames from the forge image (keep the glowing blade), inpaint, re-cut with BiRefNet."""
 import os
-os.environ.setdefault("HF_HOME", r"E:\Tool\bgremove\hf")
+os.environ.setdefault("HF_HOME", os.path.join(os.path.dirname(os.path.abspath(__file__)), "hf"))   # <Tool>/bgremove/hf
 import cv2, numpy as np, torch
 from PIL import Image
 from pymatting import estimate_foreground_ml

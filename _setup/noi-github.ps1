@@ -37,6 +37,9 @@ if (-not (Test-Path (Join-Path $Root ".git"))) {
     Invoke-Git init -q -b main
 }
 Invoke-Git config user.name $env:COMPUTERNAME
+# commit can khi co email; may chua tung dung Git thi chua co, dat mot dia chi theo ten may cho rieng repo nay
+& git config user.email *> $null
+if ($LASTEXITCODE -ne 0) { Invoke-Git config user.email "$($env:COMPUTERNAME.ToLower())@tool.local" }
 Invoke-Git config core.autocrlf false
 Invoke-Git config core.quotepath false
 $hasOrigin = (& git remote) -contains "origin"

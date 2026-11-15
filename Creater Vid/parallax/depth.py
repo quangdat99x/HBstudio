@@ -1,9 +1,9 @@
 """Monocular depth of one image with Depth Anything V2 Large (Hugging Face, cached under
-E:\\Tool\\bgremove\\hf). estimate(src, work) writes work/depth.npy (float32, 0..1, larger =
+<Tool>/bgremove/hf). estimate(src, work) writes work/depth.npy (float32, 0..1, larger =
 nearer) and depth.png. The model stays loaded between calls (batch renders)."""
 import os
 
-os.environ.setdefault("HF_HOME", r"E:\Tool\bgremove\hf")
+os.environ.setdefault("HF_HOME", os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "bgremove", "hf"))
 
 import numpy as np
 import torch

@@ -29,6 +29,25 @@ tmp/
 Youtube Dowloader/history.csv
 Youtube Dowloader/.ytdlp_update_check
 Creater Vid/engine/out/
+news-digest/state.json
+
+# ---- cài đặt riêng từng máy: <tên>.local.json đè lên file chung cùng tên (cpu_budget, voice-dub/settings,
+#      news-digest/config). File chung trên GitHub chỉ là mặc định; muốn máy này khác thì sửa bản .local.json
+*.local.json
+
+# ---- video / âm thanh: nằm ở ổ dữ liệu (media_root, projects_root), không bao giờ đi qua Git.
+#      File mẫu thật sự cần thì: git add -f <file>
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.avi
+*.m4a
+*.wav
+*.flac
+*.aac
+*.mp3
+!DataBase/assets/sfx/*.mp3
 
 # ---- bí mật (key, cookie, proxy): không bao giờ lên GitHub
 .env

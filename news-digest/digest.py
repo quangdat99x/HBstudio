@@ -355,6 +355,8 @@ def main() -> int:
     args = ap.parse_args()
 
     cfg = load_json(CONFIG_PATH, None)
+    if cfg is not None:   # config.local.json: this machine's GPM address / profiles, not synced through Git
+        cfg.update(load_json(CONFIG_PATH.with_name("config.local.json"), {}))
     if cfg is None:
         print(f"Thiếu {CONFIG_PATH}")
         return 2

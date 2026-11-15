@@ -18,9 +18,11 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-FFMPEG = shutil.which("ffmpeg") or r"E:\Tool\video-cutter-portable\ffmpeg\ffmpeg.exe"
-if os.path.exists(r"E:\Tool\video-cutter-portable\ffmpeg\ffmpeg.exe"):
-    FFMPEG = r"E:\Tool\video-cutter-portable\ffmpeg\ffmpeg.exe"   # this build has NVENC
+_TOOL_FFMPEG = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                            "video-cutter-portable", "ffmpeg", "ffmpeg.exe")   # <Tool>/video-cutter-portable/ffmpeg
+FFMPEG = shutil.which("ffmpeg") or _TOOL_FFMPEG
+if os.path.exists(_TOOL_FFMPEG):
+    FFMPEG = _TOOL_FFMPEG   # this build has NVENC
 ZFAR = 60.0
 FOV_SRC = 1.1            # source focal length in image widths
 ITERS = 14

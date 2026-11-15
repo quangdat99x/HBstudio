@@ -26,9 +26,10 @@ import os
 import subprocess
 import sys
 
-GEN = os.environ.get("GEN_PY") or r"E:\Tool\Creater Vid\gen.py"
+_CREATER = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))          # <Tool>/Creater Vid
+GEN = os.environ.get("GEN_PY") or os.path.join(_CREATER, "gen.py")
 PY = os.environ.get("CREATER_PYTHON") or sys.executable
-BG = os.environ.get("BGREMOVE_PY") or r"E:\Tool\bgremove\.venv\Scripts\python.exe"
+BG = os.environ.get("BGREMOVE_PY") or os.path.join(os.path.dirname(_CREATER), "bgremove", ".venv", "Scripts", "python.exe")
 
 GREY = ("Paint ONLY what is described, on a perfectly flat plain mid-grey (#808080) studio backdrop: no sky, no "
         "distant landscape, no horizon, no floor beyond the described ground. Keep the same camera, horizon height, "

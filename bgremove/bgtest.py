@@ -9,7 +9,7 @@ Higgsfield cutout. Writes K:\\VideoLab\\bgtest\\<model>\\<name>.png and metrics.
 import json, os, sys, time
 from pathlib import Path
 
-os.environ.setdefault("HF_HOME", r"E:\Tool\bgremove\hf")
+os.environ.setdefault("HF_HOME", os.path.join(os.path.dirname(os.path.abspath(__file__)), "hf"))   # <Tool>/bgremove/hf
 import numpy as np
 import torch
 from PIL import Image

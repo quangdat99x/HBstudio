@@ -20,7 +20,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-FFMPEG = r"E:\Tool\video-cutter-portable\ffmpeg\ffmpeg.exe"
+FFMPEG = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "video-cutter-portable", "ffmpeg", "ffmpeg.exe")   # <Tool>/video-cutter-portable/ffmpeg
 OUT_W, OUT_H, FPS, SECONDS = 1920, 1080, 30, 10
 ZFAR = 60.0
 FOV_SRC = 1.1            # source focal length in image widths

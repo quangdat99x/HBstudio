@@ -99,11 +99,12 @@ def _cut_workers() -> int:
     One libx264 'medium' 1080p encode uses ~6 cores well; with NVENC the GPU encodes and
     each cut only needs ~3 cores for decoding (consumer NVENC allows 8 sessions)."""
     budget = {}
-    try:
-        with open(BASE_DIR.parent / "cpu_budget.json", encoding="utf-8") as fh:
-            budget = json.load(fh)
-    except Exception:
-        pass
+    for name in ("cpu_budget.json", "cpu_budget.local.json"):   # shared through Git, then this machine only
+        try:
+            with open(BASE_DIR.parent / name, encoding="utf-8") as fh:
+                budget.update(json.load(fh))
+        except Exception:
+            pass
     if budget.get("cut_workers"):
         try:
             return max(1, min(8, int(budget["cut_workers"])))

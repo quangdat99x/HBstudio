@@ -5,6 +5,14 @@ database (`studio.db`, `creater.db`), `.venv`, model Whisper/AI, ffmpeg, log, `w
 (`.env`, `cookies.txt`, `proxies.txt`) ở lại từng máy (xem `.gitignore`). Vì vậy mỗi máy có dữ liệu, kho highlight và
 cài đặt (vd `media_root`) riêng.
 
+## Cài đặt riêng từng máy
+- Đường dẫn dữ liệu (`media_root` của DataBase, `projects_root` của Creater Vid) lưu trong database của từng máy:
+  sửa ở trang Cài đặt của tool. Mặc định trong code chỉ dùng khi máy đó chưa từng lưu.
+- File cài đặt chung (`cpu_budget.json`, `voice-dub/settings.json`, `news-digest/config.json`) chỉ là mặc định.
+  Máy nào cần khác thì tạo `<tên>.local.json` cạnh nó, chỉ ghi các khoá muốn đổi (vd `cpu_budget.local.json`:
+  `{"render_concurrency": 6}`). File `.local.json` không lên GitHub. voice-dub tự ghi giọng đã chọn vào đó.
+- Video / âm thanh (`*.mp4`, `*.wav`, `*.mp3`...) không bao giờ đi qua Git; file mới trên 50 MB bị nút Đồng bộ bỏ qua.
+
 ## Dùng hằng ngày
 - Sửa code ở máy nào (tự sửa, hoặc nhờ Claude sửa) thì mở Tool Manager trên máy đó, bấm **🔄 Đồng bộ code**: commit
   thay đổi của máy này → kéo bản mới của máy kia → đẩy lên GitHub. Tool đang chạy mà có code mới thì tự khởi động lại.
