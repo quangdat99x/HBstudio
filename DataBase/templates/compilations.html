@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% set title = "Compilation" %}
+{% block content %}
+<section class="card">
+  <div class="card-header"><h2>Tổng hợp theo chủ đề (quét tập full)</h2>
+    <span class="small muted">Lọc từ khoá trên máy trước (miễn phí), Claude chỉ đọc vùng quanh chỗ khớp</span></div>
+  <div class="card-body">
+    <div class="grid2">
+      <label>Chủ đề<input id="ts-topic" class="input" placeholder="vd: người ngoài hành tinh, UFO, bắt cóc"></label>
+      <label>Show<select id="ts-show" class="input">
+        {% set sup = podcasts|selectattr('role', 'equalto', 'support')|map(attribute='id')|list %}
+        {% for p in podcasts if p.role != 'support' %}
+          <option value="{{ p.id }}" {{ 'selected' if loop.first }}>{{ p.name }} ({{ p.episodes }} tập)</option>
+          {% if sup %}<option value="{{ ([p.id] + sup)|join(',') }}">{{ p.name }} + podcast bổ trợ</option>{% endif %}
+        {% endfor %}
+        <option value="">Mọi show (tổng hợp xuyên show)</option></select></label>
+      <label>Vùng đệm quanh mỗi chỗ khớp (± giây)<input id="ts-pad" class="input" type="number" value="120" min="30" max="600"></label>
+    </div>
+    <label>Từ khoá lọc (tiếng Anh, cách nhau bằng dấu phẩy; abduct* = mọi đuôi từ như abducted, abduction)
+      <textarea id="ts-kw" class="input" rows="2" placeholder="ufo, uap, alien*, extraterrestrial, abduct*, roswell, grusch"></textarea></label>
+    <div class="row gap" style="flex-wrap:wrap;margin-top:8px">
+      <button class="btn btn-small btn-ghost" onclick="suggestKw()" title="Một lượt Claude Haiku rất nhỏ">Gợi ý từ khoá</button>
+      <button class="btn btn-small" onclick="estimate()">Ước tính token</button>
+      <label class="small">Model <select id="ts-model" class="input" style="width:auto">
+        {% for m in ['sonnet','opus','haiku','fable'] %}<option value="{{ m }}" {{ 'selected' if m==topic_model }}>{{ m }}</option>{% endfor %}</select></label>
+      <label class="small">Effort <select id="ts-effort" class="input" style="width:auto">
+        {% for e in ['low','medium','high','xhigh'] %}<option value="{{ e }}" {{ 'selected' if e==topic_effort }}>{{ e }}</option>{% endfor %}</select></label>
+      <button class="btn btn-small btn-primary" onclick="runScan()">Chạy quét</button>
+    </div>
+    <div id="ts-est" class="small" style="margin-top:8px"></div>
+  </div>
+</section>
+
+{% for s in scans %}
+<section class="card">
+  <details class="ts-scan" {{ 'open' if loop.first }}><summary><span class="title">{{ s.topic }}</span><span class="meta">
+    <span class="pill">{{ s.podcast_id or 'mọi show' }}</span>
+    <span class="badge job-{{ {'done':'done','failed':'failed','queued':'running','running':'running','cutting':'running'}[s.status] or 'done' }}">{{ s.status }}</span>
+    <span class="pill">{{ s['items']|length }} đoạn</span>
+    <span class="muted small">{{ s.n_episodes }} tập · {{ s.n_windows }} vùng · ước ~{{ '{:,}'.format(s.est_tokens or 0) }} token · {{ s.created_at[:16] }}</span></span></summary>
+    <div class="segment-body">
+      {% if s.summary %}<div class="small">{{ s.summary }}</div>{% endif %}
+      {% if s.error %}<div class="small error">{{ s.error }}</div>{% endif %}
+      <div class="small muted">Từ khoá: {{ s.keywords }} · ±{{ s.pad_sec|int }}s · {{ s.model or 'mặc định' }} {{ s.effort or '' }}
+        {% if s.cutlist_path %} · cutlist: {{ s.cutlist_path }}{% endif %}{% if s.out_dir %} · clip: {{ s.out_dir }}{% endif %}</div>
+      <div class="row gap" style="margin:8px 0">
+        {% if s.status in ('queued','running','cutting') %}
+          <button class="btn btn-small btn-ghost" onclick="tsPost({{ s.id }},'stop')">Dừng</button>
+        {% elif s['items'] %}
+          <button class="btn btn-small" onclick="tsPost({{ s.id }},'export')" title="cut_multi_*.json cho Video Cutter, chế độ Đa Tập, thư mục nguồn = thư mục media">Xuất cutlist</button>
+          <button class="btn btn-small btn-primary" onclick="tsPost({{ s.id }},'cut')" title="Cắt qua Video Cutter: từ video gốc, hoặc từ clip highlight nếu video gốc đã xoá">Cắt trong Studio</button>
+        {% endif %}
+      </div>
+      {% if s['items'] %}
+      <table class="table"><thead><tr><th></th><th>#</th><th>Tập</th><th>Mốc</th><th>Điểm</th><th>Đoạn</th><th>Nguồn</th></tr></thead><tbody>
+      {% for it in s['items'] %}
+        <tr style="{{ 'opacity:.45' if not it.included }}">
+          <td><input type="checkbox" {{ 'checked' if it.included }} onchange="tsItem({{ s.id }},{{ it.id }},this.checked)"></td>
+          <td>{{ it.ord }}</td>
+          <td><a href="/episodes/{{ it.episode_id }}">{{ it.episode_id }}</a><div class="small muted">{{ it.guest or '' }}</div></td>
+          <td class="small">{{ it.start_hms }} → {{ it.end_hms }}<div class="muted">{{ (it.dur // 60)|int }}:{{ '%02d' % (it.dur % 60) }}</div></td>
+          <td>{{ it.score|int }}</td>
+          <td><b>{{ it.title }}</b><div class="small">{{ it.summary_vi or '' }}</div>{% if it.reason_vi %}<div class="small muted">{{ it.reason_vi }}</div>{% endif %}
+            {% if it.clip_path %}<div class="small"><a href="/media?path={{ it.clip_path|urlencode }}" target="_blank">▶ clip đã cắt</a></div>{% endif %}</td>
+          <td class="small">
+            {% if it.source_kind == 'full' %}<span class="pill">tập gốc</span>
+              <a href="/media?path={{ it.source_path|urlencode }}#t={{ it.start_sec|int }},{{ it.end_sec|int }}" target="_blank">xem</a>
+            {% elif it.source_kind == 'clip' %}<span class="pill">trong clip highlight</span>
+              <a href="/media?path={{ it.source_path|urlencode }}#t={{ (it.start_sec - it.source_offset)|int }},{{ (it.end_sec - it.source_offset)|int }}" target="_blank">xem</a>
+            {% else %}<span class="pill error" title="Video gốc đã xoá và không clip highlight nào chứa đoạn này: tải lại video gốc rồi bấm Cắt">thiếu video</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody></table>
+      {% endif %}
+    </div></details>
+</section>
+{% endfor %}
+
+<section class="card">
+  <div class="card-header"><h2>Compilation đã ghi nhận ({{ comps|length }})</h2>
+    <div class="row gap"><input id="manifest-path" class="input" placeholder="Đường dẫn compilation_<slug>.json của tong-hop-rabbit-hole">
+      <button class="btn btn-small" onclick="recordManifest()">Ghi nhận manifest</button></div></div>
+  {% for c in comps %}
+  <details class="segment"><summary><span class="title">{{ c.theme }}</span><span class="meta"><span class="pill">{{ c.n }} clip</span><span class="muted small">{{ c.created_at }}</span></span></summary>
+    <div class="segment-body">
+      {% if c.manifest_path %}<div class="small muted">manifest: {{ c.manifest_path }}</div>{% endif %}
+      <table class="table"><tbody>{% for it in c.items %}<tr><td>{{ it.ord }}</td><td>{{ it.role or '' }}</td><td><a href="/episodes/{{ it.episode_id }}#seg-{{ it.id }}">{{ it.episode_id }}</a></td><td>{{ it.start_hms }} → {{ it.end_hms }}</td><td>{{ it.title }}</td></tr>{% endfor %}</tbody></table>
+    </div></details>
+  {% else %}
+  <div class="card-body muted">Chưa có compilation nào. Chọn đoạn ở trang Tìm kiếm rồi bấm "Đánh dấu đã dùng", hoặc ghi nhận manifest của skill tong-hop-rabbit-hole.</div>
+  {% endfor %}
+</section>
+{% endblock %}
+{% block scripts %}
+<style>
+details.ts-scan > summary { list-style: none; display: flex; gap: 12px; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; padding: 12px 16px; cursor: pointer; }
+details.ts-scan > summary::-webkit-details-marker { display: none; }
+details.ts-scan > summary:hover { background: var(--bg-card-hover); }
+details.ts-scan > summary .title { font-weight: 600; }
+details.ts-scan > summary .meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+details.ts-scan .segment-body { padding: 0 16px 14px; }
+details.ts-scan .table td { vertical-align: top; }
+</style>
+<script>
+const $ = id => document.getElementById(id);
+const fmt = n => Number(n||0).toLocaleString('vi-VN');
+function form(){ return {topic:$('ts-topic').value.trim(), keywords:$('ts-kw').value, pad_sec:$('ts-pad').value,
+                         model:$('ts-model').value, effort:$('ts-effort').value, podcast_id:$('ts-show').value}; }
+async function suggestKw(){ const f=form(); if(!f.topic) return toast('Nhập chủ đề trước');
+  toast('Đang hỏi Claude Haiku…'); const r=await api('/api/topic/keywords',{topic:f.topic});
+  if(r.error && !r.keywords?.length) return toast(r.error);
+  $('ts-kw').value=r.keywords.join(', '); toast('Đã gợi ý '+r.keywords.length+' từ khoá · '+(r.summary||'')); estimate(); }
+let lastEst=null;
+async function estimate(){ const f=form(); if(!f.keywords.trim()) return toast('Chưa có từ khoá');
+  const r=await api('/api/topic/estimate',f); if(r.error) return toast(r.error); lastEst=r;
+  const pct=r.full_tokens? Math.round(r.tokens*100/r.full_tokens):0;
+  $('ts-est').innerHTML=`<b>${r.episodes} tập · ${r.windows} vùng · ${r.hits} dòng khớp · ${r.minutes} phút transcript</b><br>`+
+    `Claude sẽ đọc ~<b>${fmt(r.tokens)} token</b> (${r.batches} lô) = ${pct}% so với đọc hết ${fmt(r.full_tokens)} token của mọi tập.<br>`+
+    `<span class="muted">`+r.per_episode.map(([e,n])=>`${esc(e)}: ${n}`).join(' · ')+`</span>`; }
+async function runScan(){ const f=form(); if(!f.topic||!f.keywords.trim()) return toast('Cần chủ đề và từ khoá');
+  if(!lastEst) await estimate(); if(!lastEst) return;
+  if(!confirm(`Chạy quét "${f.topic}" bằng ${f.model}: Claude đọc khoảng ${fmt(lastEst.tokens)} token. Tiếp tục?`)) return;
+  const r=await api('/api/topic/scan',f); toast(r.error||'Đã bắt đầu quét #'+r.id); if(!r.error) setTimeout(()=>location.reload(),1200); }
+async function tsPost(id,act){ const r=await api(`/api/topic/${id}/${act}`,{});
+  toast(r.error||[r.message,r.path&&('Đã ghi '+r.path),r.note].filter(Boolean).join(' · ')||'OK'); setTimeout(()=>location.reload(),1500); }
+async function tsItem(sid,iid,on){ await api(`/api/topic/${sid}/items/${iid}`,{included:on}); }
+async function recordManifest(){ const p=document.getElementById('manifest-path').value.trim(); if(!p) return toast('Chưa có đường dẫn');
+  const r=await api('/api/compilations/record',{manifest_path:p}); toast(r.error||('Đã ghi compilation #'+r.id)); setTimeout(()=>location.reload(),1200); }
+{% if scans|selectattr('status','in',['queued','running','cutting'])|list %}setTimeout(()=>location.reload(), 8000);{% endif %}
+</script>
+{% endblock %}

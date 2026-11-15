@@ -1,0 +1,9 @@
+flask>=3.1
+flask-socketio>=5.5
+yt-dlp[default]>=2026.8.19
+yt-dlp-ejs>=0.8.0
+pywebview>=5.0
+
+# Ngoài Python, tool còn cần một JavaScript runtime để yt-dlp giải mã bảo vệ
+# của YouTube ("n" challenge). Không có nó, mọi link tải đều trả về HTTP 403.
+# Cài Node.js (https://nodejs.org) hoặc Deno (https://deno.com) là đủ.

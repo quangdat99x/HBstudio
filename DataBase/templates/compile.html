@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% set title = "Video tổng hợp" %}
+{% block content %}
+<section class="card">
+  <div class="card-header"><h2>Tạo video tổng hợp từ một đoạn highlight</h2>
+    <span class="small muted">Đoạn bạn chọn mở đầu video · Claude quét các tập của show đó và podcast bổ trợ tìm đoạn cùng chủ đề · lời dẫn ElevenLabs nối các đoạn</span></div>
+  <div class="card-body">
+    {% if seed %}
+      <div class="cv-seed">
+        <div class="small muted">Đoạn mở đầu</div>
+        <div><b>{{ seed.title }}</b> <a class="pill ep" href="/episodes/{{ seed.episode_id }}#seg-{{ seed.id }}">{{ seed.episode_id }}</a>
+          <span class="muted small">{{ seed.guest or '' }} · {{ seed.start_hms }} → {{ seed.end_hms }} · {{ ((seed.duration_sec or 0) // 60)|int }} phút</span></div>
+        {% if seed.summary_vi %}<div class="small">{{ seed.summary_vi }}</div>{% endif %}
+      </div>
+      <div class="row gap wrap">
+        <span class="small">Thời lượng:</span>
+        {% for m in [30, 60, 90, 120] %}<button type="button" class="btn btn-small cv-dur {{ 'btn-primary' if m == 60 }}" data-min="{{ m }}" onclick="pickDur({{ m }})">{{ m }} phút</button>{% endfor %}
+        <label class="small row gap">khác <input id="cv-min" class="input narrow" type="number" min="5" max="600" value="60"> phút</label>
+      </div>
+      <div class="row gap wrap small" id="cv-sources">
+        <span>Nguồn quét:</span>
+        {% for p in sources %}
+          <label class="check" title="{{ 'show của đoạn mở đầu, luôn có' if p.own else ('podcast bổ trợ' if p.role == 'support' else 'show chính khác') }}">
+            <input type="checkbox" value="{{ p.id }}" {{ 'checked' if p.checked }} {{ 'disabled' if p.own }}>
+            {{ p.name }} <span class="muted">({{ p.episodes }} tập{{ ', bổ trợ' if p.role == 'support' }})</span></label>
+        {% endfor %}
+      </div>
+      <label class="small">Ghi chú cho Claude (không bắt buộc)
+        <textarea id="cv-note" class="input" rows="2" placeholder="vd: tập trung vào Nephilim và người khổng lồ, bỏ phần chính trị; ưu tiên khách là nhà khảo cổ"></textarea></label>
+      <div class="row gap"><button class="btn btn-primary" onclick="createJob({{ seed.id }})">Bắt đầu</button>
+        <a class="btn btn-ghost" href="/compile">Chọn đoạn khác</a></div>
+      <div class="small muted">Các bước: Claude xác định chủ đề và từ khoá → lọc từ khoá trên toàn bộ transcript (miễn phí, trên máy) → Claude đọc
+        các vùng khớp và chọn đoạn → Claude dựng mạch + viết lời dẫn tiếng Anh. Tới đó dừng để bạn duyệt; bấm <b>Dựng video</b> thì mới đọc
+        lời dẫn bằng ElevenLabs (key và giọng tiếng Anh của Creater Vid) và render.</div>
+    {% else %}
+      <form class="row gap" method="get" action="/compile">
+        <input class="input grow" name="q" value="{{ q }}" placeholder="Tìm đoạn highlight để làm mở đầu: book of enoch, nephilim, ufo…">
+        <button class="btn">Tìm</button>
+      </form>
+      <div class="small muted">Hoặc bấm <b>🧩 Tạo video tổng hợp</b> trên một đoạn ở trang Tập / trang Tìm kiếm.</div>
+      {% if q %}
+      <table class="table"><tbody>
+        {% for r in results %}<tr>
+          <td><a href="/episodes/{{ r.episode_id }}#seg-{{ r.id }}">{{ r.episode_id }}</a><div class="muted small">{{ r.guest }}</div></td>
+          <td class="nowrap small">{{ r.start_hms }}<br><span class="muted">{{ r.end_hms }}</span></td>
+          <td><b>{{ r.title }}</b>{% set pv = r.summary_vi or r.summary_en %}{% if pv %}<div class="muted small">{{ pv[:220] }}</div>{% endif %}</td>
+          <td><a class="btn btn-small btn-primary" href="/compile?seed={{ r.id }}">Chọn</a></td>
+        </tr>{% else %}<tr><td class="muted">Không thấy đoạn nào.</td></tr>{% endfor %}
+      </tbody></table>
+      {% endif %}
+    {% endif %}
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-header"><h2>Video đã tạo ({{ jobs|length }})</h2></div>
+  <table class="table">
+    <thead><tr><th>#</th><th>Chủ đề</th><th>Mở đầu</th><th>Thời lượng</th><th>Trạng thái</th><th>Claude</th></tr></thead>
+    <tbody>
+    {% for j in jobs %}<tr>
+      <td><a href="/compile/{{ j.id }}">{{ j.id }}</a></td>
+      <td><a href="/compile/{{ j.id }}"><b>{{ j.title_en or j.topic_en or '…' }}</b></a><div class="small muted">{{ j.topic_vi or '' }}</div></td>
+      <td class="small">{{ j.seed_title or '' }}</td>
+      <td class="small nowrap">yêu cầu {{ j.target_min }}′<br><span class="muted">{% if j.final_sec %}video {{ (j.final_sec // 60)|int }}′{% elif j.totals.clips %}mạch ~{{ (j.totals.total_sec // 60)|int }}′ · {{ j.totals.clips }} clip{% endif %}</span></td>
+      <td><span class="badge cv-st-{{ j.status }}">{{ j.status }}</span><div class="small muted">{{ (j.progress_msg or '')[:90] }}</div>
+        {% if j.error %}<div class="small error">{{ j.error[:140] }}</div>{% endif %}</td>
+      <td class="small">${{ '%.2f' % (j.cost_usd or 0) }}</td>
+    </tr>{% else %}<tr><td class="muted" colspan="6">Chưa có video nào.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+function pickDur(m){ document.getElementById('cv-min').value=m;
+  document.querySelectorAll('.cv-dur').forEach(b=>b.classList.toggle('btn-primary', +b.dataset.min===m)); }
+async function createJob(seed){
+  const pods=[...document.querySelectorAll('#cv-sources input')].filter(x=>x.checked).map(x=>x.value);
+  const r=await api('/api/compile',{seed, target_min:+document.getElementById('cv-min').value, note:document.getElementById('cv-note').value, podcast_ids:pods});
+  if(r.error) return toast(r.error); location.href=r.url; }
+</script>
+{% endblock %}

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎬 Hổ Báo Studio{% if title %} · {{ title }}{% endif %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/notify.css">
+</head>
+<body>
+<header>
+  <div class="header-left">
+    <span class="logo">🎬</span>
+    <h1>Hổ Báo Studio</h1>
+    <nav>
+      {% for key, label in nav %}
+      <a href="/{{ key }}" class="{{ 'active' if page == key else '' }}">{{ label }}</a>
+      {% endfor %}
+    </nav>
+  </div>
+  <div class="header-right-wrap">
+    <div class="header-right" id="header-stats"></div>
+    <div id="notif-bell" data-app="Hổ Báo Studio" data-peers='[{"name":"Creater Vid","port":5010}]'></div>
+  </div>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+<div id="toast"></div>
+<script src="/static/app.js"></script>
+<script src="/static/notify.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

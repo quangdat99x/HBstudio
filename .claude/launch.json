@@ -1,0 +1,60 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "video-cutter",
+      "runtimeExecutable": "py",
+      "runtimeArgs": [
+        "-3.12",
+        "-X",
+        "utf8",
+        "video-cutter-portable/app.py"
+      ],
+      "port": 5555
+    },
+    {
+      "name": "video-watcher",
+      "runtimeExecutable": "py",
+      "runtimeArgs": [
+        "-3.14",
+        "-X",
+        "utf8",
+        "video-watcher/app.py"
+      ],
+      "port": 5011
+    },
+    {
+      "name": "voice-dub",
+      "runtimeExecutable": "py",
+      "runtimeArgs": [
+        "-3.14",
+        "-X",
+        "utf8",
+        "voice-dub/app.py"
+      ],
+      "port": 5013
+    },
+    {
+      "name": "creater-vid-ui",
+      "runtimeExecutable": "C:\\Tool\\Creater Vid\\.venv\\Scripts\\python.exe",
+      "runtimeArgs": [
+        "-X",
+        "utf8",
+        "-c",
+        "import os, runpy; os.chdir(r'C:\\Tool\\Creater Vid'); os.environ.update(PORT='5012', CREATER_NO_WORKER='1', CREATER_NO_NEWS='1'); import sys; sys.path.insert(0, os.getcwd()); runpy.run_path('app.py', run_name='__main__')"
+      ],
+      "port": 5012
+    },
+    {
+      "name": "jre-studio-ui",
+      "runtimeExecutable": "C:\\Tool\\DataBase\\.venv\\Scripts\\python.exe",
+      "runtimeArgs": [
+        "-X",
+        "utf8",
+        "-c",
+        "import os, runpy; os.chdir(r'C:\\Tool\\DataBase'); os.environ.update(PORT='5014', STUDIO_NO_WORKER='1'); import sys; sys.path.insert(0, os.getcwd()); runpy.run_path('app.py', run_name='__main__')"
+      ],
+      "port": 5014
+    }
+  ]
+}

@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% set title = "Hàng đợi" %}
+{% block content %}
+{% set pipe = pipe or {'current': None, 'queue': []} %}
+{% set running = pipe.running or ([pipe.current] if pipe.current else []) %}
+<section class="card">
+  <div class="card-header"><h2>Nạp tập mới</h2><span class="muted">Thư mục media: {{ media_root }}</span></div>
+  <div class="card-body row gap">
+    <label class="small">Show <select id="intake-show" class="input" style="width:auto" title="Video của podcast khác (kho bổ trợ) phải chọn show ở đây: tên file của chúng không theo mẫu nào">
+      <option value="">Tự nhận theo tên file</option>
+      {% for p in podcasts %}<option value="{{ p.id }}">{{ p.name }}{{ (' (bổ trợ, skill ' ~ p.select_skill ~ ')' if p.select_skill else ' (bổ trợ, chỉ transcript)') if p.role == 'support' }}</option>{% endfor %}
+    </select></label>
+    <input id="intake-url" class="input grow" placeholder="Dán link YouTube của một tập podcast (show đã khai ở Cài đặt → Show podcast)…">
+    <button class="btn btn-primary" onclick="intakeUrl()">Tải và chạy</button>
+    <span class="muted">hoặc</span>
+    <input id="intake-path" class="input grow" placeholder="Đường dẫn file video đã có trên máy">
+    <button class="btn" onclick="pickFile()">Duyệt…</button>
+    <button class="btn btn-primary" onclick="intakePath()">Chạy pipeline</button>
+    <button class="btn btn-ghost" onclick="rescan()" title="Quét lại thư mục media">Quét lại</button>
+  </div>
+</section>
+
+{% if pipe.lanes %}
+<section class="card">
+  <div class="card-header"><h2>Làn xử lý</h2><span class="muted">mỗi làn chạy một việc, các làn chạy song song</span></div>
+  <div class="card-body row gap">
+    {% for ln, v in pipe.lanes.items() %}
+      <div class="grow">
+        <strong>{{ v.label }}</strong>:
+        {% if v.running %}<span class="badge job-running">{{ v.running }} · {{ v.step }}</span>{% else %}<span class="muted">rảnh</span>{% endif %}
+        {% if v.waiting %}<div class="muted small">chờ: {{ v.waiting|join(', ') }}</div>{% endif %}
+      </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="card">
+  <div class="card-header"><h2>Tập và trạng thái</h2></div>
+  <table class="table">
+    <thead><tr><th>Tập</th><th>Khách mời</th><th>Stage</th><th>Đoạn</th><th>Zoom</th><th>Cập nhật</th><th></th></tr></thead>
+    <tbody>
+    {% if not episodes %}
+      <tr><td colspan="7" class="muted">Database đang trống. Dán link YouTube của một tập podcast hoặc chọn file video ở trên để chạy từ đầu tới cuối.</td></tr>
+    {% endif %}
+    {% for e in episodes %}
+      <tr>
+        <td><a href="/episodes/{{ e.id }}">{{ e.id }}</a></td>
+        <td>{{ e.guest or '' }}</td>
+        <td><span class="badge stage-{{ (e.stage or 'new').split(':')[0] }}">{{ e.stage }}</span>
+            {% if e.stage_error %}<div class="error small">{{ e.stage_error[:160] }}</div>{% endif %}</td>
+        <td>{{ e.highlights }}</td>
+        <td>{{ e.zoomed }}</td>
+        <td class="muted small">{{ e.updated_at }}</td>
+        <td class="actions">
+          {% set active = e.id in running or e.id in pipe.queue %}
+          {% if e.stage == 'reviewing' %}
+            <button class="btn btn-small btn-primary" onclick="approve('{{ e.id }}')">Duyệt cutlist</button>
+          {% endif %}
+          {% if active %}
+            <span class="badge job-running">{{ 'đang chạy' if e.id in running else 'đang chờ' }}</span>
+            <button class="btn btn-small btn-ghost" onclick="stopEpisode('{{ e.id }}')">Dừng</button>
+          {% else %}
+            {% if e.pending_zoom %}
+              <button class="btn btn-small" onclick="runEpisode('{{ e.id }}')" title="Zoom nốt các clip chưa xong, không gọi Claude">Zoom tiếp</button>
+            {% elif e.stage not in ('ready',) %}
+              <button class="btn btn-small" onclick="runEpisode('{{ e.id }}')">Chạy tiếp</button>
+            {% endif %}
+            <button class="btn btn-small btn-ghost" onclick="if(confirm('Chọn lại nội dung bằng Claude từ đầu cho {{ e.id }}? Việc này tốn token và thay cutlist hiện tại.')) runEpisode('{{ e.id }}', true)" title="Chọn nội dung lại bằng Claude rồi chạy tiếp">Chọn lại</button>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <div class="card-header"><h2>Job gần đây</h2><span class="muted" id="jobs-refresh">tự làm mới 5 giây</span></div>
+  <table class="table" id="jobs-table">
+    <thead><tr><th>#</th><th>Tập</th><th>Bước</th><th>Trạng thái</th><th>Tiến độ</th><th>Thông báo</th><th>Bắt đầu</th></tr></thead>
+    <tbody>
+    {% for j in jobs %}
+      <tr><td>{{ j.id }}</td><td>{{ j.episode_id }}</td><td>{{ j.stage }}</td>
+          <td><span class="badge job-{{ j.status }}">{{ j.status }}</span></td>
+          <td>{{ (j.progress or 0)|round|int }}%</td><td class="small">{{ (j.error or j.message or '')[:200] }}</td>
+          <td class="muted small">{{ j.started_at or '' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+async function intakeUrl(){ const url=document.getElementById('intake-url').value.trim(); if(!url) return toast('Chưa có link');
+  const r=await api('/api/intake',{url, podcast_id:document.getElementById('intake-show').value}); toast(r.error||('Đã nhận: '+(r.episode_id||r.message||'ok'))); setTimeout(()=>location.reload(),1500); }
+async function intakePath(){ const path=document.getElementById('intake-path').value.trim(); if(!path) return toast('Chưa có đường dẫn');
+  const r=await api('/api/intake',{path, podcast_id:document.getElementById('intake-show').value}); toast(r.error||('Đã nhận: '+(r.episode_id||'ok'))); setTimeout(()=>location.reload(),1500); }
+async function pickFile(){ const r=await api('/api/pick-file',{}); if(r.path) document.getElementById('intake-path').value=r.path; }
+async function runEpisode(id, force){ const r=await api('/api/episodes/'+id+'/run',{force:!!force}); toast(r.error||r.message||'Đã đưa vào hàng đợi'); setTimeout(()=>location.reload(),1200); }
+async function approve(id){ const r=await api('/api/episodes/'+id+'/approve',{}); toast(r.error||r.message||'Đã duyệt'); setTimeout(()=>location.reload(),1200); }
+async function stopEpisode(id){ const r=await api('/api/episodes/'+id+'/stop',{}); toast(r.error||r.message||'Đã gửi lệnh dừng'); setTimeout(()=>location.reload(),1500); }
+async function rescan(){ toast('Đang quét…'); const r=await api('/api/scan',{}); toast('Quét xong: '+(r.cutlists||[]).length+' cutlist, '+(r.folders||[]).length+' thư mục'); setTimeout(()=>location.reload(),1500); }
+setInterval(async()=>{ try{ const jobs=await (await fetch('/api/jobs')).json(); const tb=document.querySelector('#jobs-table tbody');
+  tb.innerHTML=jobs.slice(0,60).map(j=>`<tr><td>${j.id}</td><td>${j.episode_id}</td><td>${j.stage}</td><td><span class="badge job-${j.status}">${j.status}</span></td><td>${Math.round(j.progress||0)}%</td><td class="small">${esc((j.error||j.message||'').slice(0,200))}</td><td class="muted small">${j.started_at||''}</td></tr>`).join(''); }catch(e){} }, 5000);
+</script>
+{% endblock %}

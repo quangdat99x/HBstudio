@@ -1,0 +1,43 @@
+{
+ "src": "dossier-demo/wiki_bilderberg.png",
+ "aspect": 0.7857,
+ "url": "https://en.wikipedia.org/wiki/Bilderberg_meeting",
+ "title": "Bilderberg Meeting - Wikipedia",
+ "captured": "2026-11-03T16:11:03.493Z",
+ "marks": [
+  {
+   "text": "Prince Bernhard of the Netherlands",
+   "boxes": [
+    [
+     0.1952,
+     0.2731,
+     0.228,
+     0.0121
+    ]
+   ]
+  },
+  {
+   "text": "Attendees are entitled to use information gained at meetings, but not attribute it to a named speaker",
+   "boxes": [
+    [
+     0.0255,
+     0.1874,
+     0.6412,
+     0.0121
+    ]
+   ]
+  },
+  {
+   "text": "Chatham House Rule",
+   "boxes": [
+    [
+     0.2171,
+     0.206,
+     0.1391,
+     0.0121
+    ]
+   ]
+  }
+ ],
+ "missing": []
+}

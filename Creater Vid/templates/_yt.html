@@ -1,0 +1,27 @@
+{# Channel picker shared by the new-project forms, the news "Làm video" dialog and the project info dialog.
+   value of the select: "<GPM profile id>|<channel id>" (empty = do not upload) #}
+{% macro yt_picker(prefix, current='', auto=0, vis='') %}
+{% set chans = yt_channels() %}
+<div class="grid2 yt-pick">
+  <label>Kênh YouTube để đăng (qua profile GPM Login)
+    <select class="input" id="{{ prefix }}-yt">
+      <option value="">— không đăng tự động —</option>
+      {% for c in chans %}{% set val = c.profile_id ~ '|' ~ c.channel_id %}
+      <option value="{{ val }}" {{ 'selected' if current == val }}>{{ c.name }}{% if c.handle %} · {{ c.handle }}{% endif %} — profile {{ c.profile_name }}</option>
+      {% endfor %}
+    </select>
+    <span class="small muted">{% if not chans %}Chưa quét kênh nào: mở <a href="/channels" target="_blank">Kênh YouTube</a> để quét các profile GPM.{% else %}{{ chans|length }} kênh đã quét · <a href="/channels" target="_blank">quét thêm</a>{% endif %}</span></label>
+  <label>Đăng YouTube khi xong
+    <select class="input" id="{{ prefix }}-ytauto">
+      <option value="0" {{ 'selected' if not auto }}>Tao duyệt metadata rồi bấm ▶ Đăng</option>
+      <option value="1" {{ 'selected' if auto }}>Tự đăng khi metadata được duyệt</option>
+    </select></label>
+  <label>Chế độ đăng
+    <select class="input" id="{{ prefix }}-ytvis">
+      {% for k, label in [('', 'Lên lịch theo giờ trong metadata'), ('public', 'Đăng ngay · Public'),
+                          ('unlisted', 'Đăng ngay · Unlisted'), ('private', 'Đăng ngay · Private')] %}
+      <option value="{{ k }}" {{ 'selected' if (vis or '') == k or (vis == 'schedule' and k == '') }}>{{ label }}</option>{% endfor %}
+    </select>
+    <span class="small muted">Áp dụng cả khi tự đăng. Đổi được ở khung 📺 Đăng YouTube của bước Metadata.</span></label>
+</div>
+{% endmacro %}

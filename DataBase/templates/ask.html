@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% set title = "Hỏi AI" %}
+{% block content %}
+<section class="card">
+  <div class="card-header"><h2>Hỏi AI về kho highlight</h2>
+    <span class="muted small">chạy Claude Code headless với skill kho-highlight, cần Claude CLI đã đăng nhập</span></div>
+  <div class="card-body">
+    <textarea id="ask-q" class="input" rows="3" placeholder="Ví dụ: gom mọi đoạn về government cover-up có intensity từ 8 trở lên, chưa dùng trong compilation nào, rồi xuất cut_multi theo chủ đề 'cover-up'"></textarea>
+    <div class="row gap"><button class="btn btn-primary" id="ask-btn" onclick="ask()">Hỏi</button><span id="ask-status" class="muted small"></span></div>
+    <div id="ask-answer" class="md answer"></div>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+async function ask(){ const q=document.getElementById('ask-q').value.trim(); if(!q) return toast('Chưa nhập câu hỏi');
+  const btn=document.getElementById('ask-btn'); btn.disabled=true; document.getElementById('ask-status').textContent='Đang hỏi Claude… (có thể mất 1 đến 3 phút)';
+  try{ const r=await api('/api/ask',{q}); document.getElementById('ask-status').textContent=r.error?('Lỗi: '+r.error):('Xong · '+(r.summary||((r.duration_sec||'?')+'s')));
+    document.getElementById('ask-answer').innerHTML=r.html||esc(r.text||r.error||''); }
+  catch(e){ document.getElementById('ask-status').textContent='Lỗi: '+e; }
+  finally{ btn.disabled=false; } }
+</script>
+{% endblock %}

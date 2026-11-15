@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% set title = p.title ~ ' · Sơ đồ dự án' %}
+{% block content %}
+<link rel="stylesheet" href="/static/overview.css">
+<link rel="stylesheet" href="/static/blueprint.css">
+<div class="ov-top row gap wrap">
+  <a class="btn btn-small btn-ghost" href="/p/{{ p.id }}?step=script">← Về dự án</a>
+  <a class="btn btn-small btn-ghost" href="/p/{{ p.id }}/overview">🗺 Tổng quan (sau khi dựng)</a>
+  <span class="small muted">🧭 Sơ đồ dự án: Claude định làm phim này thế nào. Bấm vào một hồi, nhân vật hay bằng chứng để xem chi tiết; muốn đổi gì thì gửi Claude ngay trong ngăn chi tiết.</span>
+</div>
+<div id="bp-banner"></div>
+
+<section class="card"><div class="card-header"><h2>① Ý đồ</h2><div class="small muted" id="bp-meta"></div></div>
+  <div class="card-body" id="bp-intent"></div></section>
+
+<section class="card" id="tree"><div class="card-header"><h2>② 🌳 Cây nội dung kịch bản</h2>
+    <div class="row gap wrap"><span class="small muted" id="tr-note"></span>
+      <button class="btn btn-tiny btn-ghost tr-lv" data-lv="1">Chỉ hồi</button>
+      <button class="btn btn-tiny btn-ghost tr-lv" data-lv="2">Hồi + beat</button>
+      <button class="btn btn-tiny btn-ghost tr-lv" data-lv="3">Mở hết ý con</button>
+      <label class="check small"><input type="checkbox" id="tr-why"> Hiện lý do trên cây</label></div></div>
+  <div class="card-body"><div class="tr-scroll"><div class="tr" id="tr"></div></div></div></section>
+
+<section class="card"><div class="card-header"><h2>③ Khung xương: các hồi nối nhau thế nào</h2><div class="small muted" id="bp-len"></div></div>
+  <div class="card-body"><div class="bp-spine-bar" id="bp-bar"></div><div class="bp-flow" id="bp-flow"></div></div></section>
+
+<section class="card"><div class="card-header"><h2>④ Nguyên liệu cần, nằm ở hồi nào</h2><div class="small muted">ô sáng = có mặt trong hồi đó</div></div>
+  <div class="card-body"><div id="bp-mix"></div><div class="bp-matrix-wrap" id="bp-matrix"></div></div></section>
+
+<section class="card"><div class="card-header"><h2>⑤ Kế hoạch dựng các bước sau</h2><div class="small muted" id="bp-budget"></div></div>
+  <div class="card-body"><div class="bp-pipe" id="bp-pipe"></div></div></section>
+
+<section class="card"><div class="card-header"><h2>⑥ Cần bạn quyết ở cổng duyệt</h2></div>
+  <div class="card-body"><div class="ov-checks" id="bp-decide"></div></div></section>
+
+<aside class="ov-drawer" id="ov-drawer" hidden>
+  <div class="ov-drawer-head"><div id="ov-dr-title" class="grow"></div>
+    <button class="btn btn-tiny btn-ghost" onclick="BP.close()">✕</button></div>
+  <div class="ov-drawer-body" id="ov-dr-body"></div>
+  <div class="ov-drawer-foot">
+    <div class="small muted">Gửi vào chat dự án, chạy ở bước Kịch bản. Claude sửa kịch bản và sơ đồ cho khớp.</div>
+    <textarea class="input" id="ov-ask" rows="3"></textarea>
+    <div class="row gap end"><button class="btn btn-small btn-primary" onclick="BP.ask()">✍️ Gửi Claude sửa</button></div>
+  </div>
+</aside>
+{% endblock %}
+{% block scripts %}
+<script id="bp-data" type="application/json">{{ data|tojson }}</script>
+<script>window.OV_PID = {{ p.id }};</script>
+<script src="/static/blueprint.js"></script>
+{% endblock %}

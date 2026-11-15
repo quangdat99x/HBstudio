@@ -1,0 +1,6 @@
+{
+  "reserve_cores": 2,
+  "_note": "Tính theo CORE THẬT (i9-10900: 10 core / 20 luồng; luồng thứ 2 của một core chỉ thêm ~15-30%). Chừa reserve_cores core cho người dùng (Chrome, Claude desktop). Podcast Zoom: số clip song song = (core - reserve_cores) / 2.5. Creater: số tab Chrome khi render = core - reserve_cores (hoặc con số đo được bằng benchmark, render_concurrency). Mọi tiến trình nặng chạy ở độ ưu tiên Below normal.",
+  "render_concurrency": 8,
+  "_render_note": "Đo 2026-10-15 bằng npx remotion benchmark (Điểm tin 14.10, 600 khung, 2 lần mỗi mức): 4 tab 18,9 s · 6 tab 18,5 s · 8 tab 16,5 s; lần đầu 10 tab (mặc định Remotion) 34,1 s, 12 tab 29,6 s. Đo lại 2026-11-04 trên i7-14700 (20 core / 28 luồng) + RTX 4060 8 GB (Điểm tin 03.11, khung 3000-4199, npx remotion render): 6 tab 56 s · 8 tab 43-47 s · 10 tab 55 s · 12 tab 52 s · 16 tab 65 s · 20 tab 102 s. Vẫn giữ 8: giới hạn là VRAM (8 tab ~5 GB, từ 12 tab chạm trần 8 GB và tràn sang RAM chung), không phải CPU (CPU chỉ ~36%, GPU ~24% khi render)."
+}

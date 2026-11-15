@@ -1,0 +1,11 @@
+{
+  "gpm_api": "http://127.0.0.1:9495",
+  "hl": "vi",
+  "gl": "VN",
+  "articles_per_topic": 3,
+  "max_chars_per_article": 6000,
+  "inbox_items": 10,
+  "seen_limit": 500,
+  "claude_model": "sonnet",
+  "profiles": {}
+}

@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lồng Tiếng</title>
+<style>
+  :root {
+    --bg: #0d0e12; --panel: #15171d; --panel2: #1c1f27; --line: #2a2e38;
+    --text: #e7e9ee; --muted: #8b91a0; --accent: #f472b6; --accent2: #ec4899;
+    --ok: #34d399; --err: #f87171; --warn: #fbbf24;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 "Segoe UI", Inter, system-ui, sans-serif; }
+  .app { display: grid; grid-template-columns: 360px 1fr; min-height: 100vh; }
+  aside { background: var(--panel); border-right: 1px solid var(--line); padding: 18px;
+          display: flex; flex-direction: column; gap: 14px; height: 100vh; position: sticky; top: 0; overflow: auto; }
+  main { padding: 22px 28px; min-width: 0; }
+  h1 { font-size: 18px; margin: 0; }
+  h1 small { color: var(--muted); font-weight: 400; font-size: 12px; }
+  h2 { font-size: 15px; margin: 22px 0 10px; color: var(--accent); }
+  label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+  input, select, textarea { width: 100%; background: var(--panel2); border: 1px solid var(--line); color: var(--text);
+                  padding: 8px 10px; border-radius: 8px; font: inherit; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  input[type=range] { padding: 0; accent-color: var(--accent); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); padding: 8px 12px;
+           border-radius: 8px; cursor: pointer; font: inherit; }
+  button:hover { border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: var(--accent2); border-color: var(--accent2); color: #1a0010; font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: var(--accent); }
+  .drop { border: 1.5px dashed var(--line); border-radius: 10px; padding: 12px; text-align: center;
+          color: var(--muted); font-size: 13px; cursor: pointer; }
+  .drop.over { border-color: var(--accent); color: var(--accent); }
+  .chk { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--text); margin: 0; }
+  .chk input { width: auto; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; }
+  .hist { display: flex; flex-direction: column; gap: 4px; }
+  .hist .it { padding: 7px 9px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
+  .hist .it:hover { background: var(--panel2); }
+  .hist .it.active { border-color: var(--accent); background: var(--panel2); }
+  .hist .t { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hist .s { font-size: 11px; color: var(--muted); }
+  .empty { color: var(--muted); text-align: center; margin-top: 18vh; font-size: 15px; }
+  .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .toolbar h1 { flex: 1; font-size: 20px; min-width: 200px; overflow-wrap: anywhere; }
+  .pill { font-size: 11.5px; padding: 2px 8px; border-radius: 99px; background: var(--panel2); border: 1px solid var(--line); }
+  .log { margin: 8px 0 0; max-height: 170px; overflow: auto; color: var(--muted); font: 11.5px/1.5 Consolas, monospace; white-space: pre-wrap; }
+  .error { color: var(--err); overflow-wrap: anywhere; }
+  .muted { color: var(--muted); }
+  .grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; align-items: end; }
+  .tbl { overflow: auto; max-height: 70vh; border: 1px solid var(--line); border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { position: sticky; top: 0; background: var(--panel2); color: var(--muted); font-weight: 500; z-index: 1; }
+  td.time { font-family: Consolas, monospace; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  td.src { color: var(--muted); width: 38%; }
+  td textarea { resize: vertical; min-height: 44px; padding: 5px 8px; }
+  .len { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .len.long { color: var(--warn); }
+  .tag { font-size: 11px; color: var(--warn); }
+  .tag.bad { color: var(--err); }
+  video { width: 100%; max-height: 62vh; background: #000; border-radius: 10px; display: block; }
+  .stats { display: flex; gap: 22px; flex-wrap: wrap; margin: 12px 0; }
+  .stats b { font-size: 18px; display: block; font-weight: 600; }
+  .stats span { font-size: 11.5px; color: var(--muted); }
+  a { color: var(--accent); }
+  details.lib { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+  details.lib summary { cursor: pointer; font-size: 13px; color: var(--accent); }
+  .libf { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin: 10px 0; }
+  .liblist { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow: auto; }
+  .libit { display: flex; gap: 10px; align-items: center; padding: 6px 8px; background: var(--panel2); border-radius: 8px; }
+  .libit .i { flex: 1; min-width: 0; }
+  .libit .n { font-size: 13px; overflow-wrap: anywhere; }
+  .libit .m { font-size: 11px; color: var(--muted); }
+  .libit button { padding: 4px 10px; font-size: 12px; flex: none; }
+  @media (max-width: 860px) { .app { grid-template-columns: 1fr; } aside { position: static; height: auto; } main { padding: 16px; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <h1>🎙️ Lồng Tiếng <small>Whisper → ElevenLabs → thuyết minh</small></h1>
+    <div>
+      <label>Đường dẫn video</label>
+      <div style="display:flex; gap:6px">
+        <input id="src" placeholder="D:\video.mp4">
+        <button onclick="pick()" title="Chọn file">📁</button>
+      </div>
+    </div>
+    <div class="drop" id="drop">…hoặc kéo-thả file video vào đây</div>
+    <input type="file" id="file" accept="video/*" hidden>
+    <div class="row">
+      <div><label>Model Whisper</label>
+        <select id="model"><option>small</option><option selected>large-v3</option></select></div>
+      <div><label>Ngôn ngữ gốc</label>
+        <select id="lang"><option value="auto">Tự nhận diện</option>
+          {% for code, name in languages.items() %}<option value="{{ code }}">{{ name }}</option>{% endfor %}</select></div>
+    </div>
+    <div>
+      <label>Thuyết minh bằng</label>
+      <select id="target">
+        {% for code, name in languages.items() %}<option value="{{ code }}">{{ name }} (dịch bằng Claude)</option>{% endfor %}
+        <option value="none">Giữ nguyên ngôn ngữ gốc (không dịch)</option>
+      </select>
+    </div>
+    <button class="primary" onclick="start()">Nhận dạng &amp; dịch</button>
+    <div class="muted" style="font-size:12px">Bước này miễn phí. Chỉ tốn ký tự ElevenLabs khi bạn bấm Lồng tiếng sau khi xem lại lời.</div>
+
+    <div id="keybox" class="card" style="display:none; margin:0">
+      <label>ElevenLabs API key</label>
+      <div style="display:flex; gap:6px">
+        <input id="key" type="password" autocomplete="off">
+        <button onclick="saveKey()">Lưu</button>
+      </div>
+    </div>
+    <div id="quota" class="muted" style="font-size:12px"></div>
+
+    <div>
+      <label>Đã làm</label>
+      <div class="hist" id="hist"></div>
+    </div>
+  </aside>
+  <main id="main"><div class="empty">Chọn một video để bắt đầu.</div></main>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = t => { t = Math.max(0, t || 0); const m = Math.floor(t / 60); return `${String(m).padStart(2, '0')}:${(t % 60).toFixed(1).padStart(4, '0')}`; };
+const STATE = {queued: 'Đang chờ', running: 'Đang chạy', review: 'Chờ xem lại', done: 'Xong', error: 'Lỗi'};
+const MODELS = {{ models|tojson }};
+const DEFAULT_MODEL = {{ default_model|tojson }};
+const LANGS = {{ languages|tojson }};
+const player = new Audio();
+let account = {}, current = null, shownKey = null, timer = null, pending = {}, saveTimer = null;
+let voiceLang = '', libItems = [], libPage = 0, libLoaded = false;
+
+async function api(url, body) {
+  const r = await fetch(url, body === undefined ? {} : {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+  return d;
+}
+const formOpts = () => ({model: $('model').value, lang: $('lang').value, target: $('target').value});
+
+async function pick() { const d = await api('/api/pick-file', {}); if (d.path) $('src').value = d.path; }
+async function start() {
+  try { const d = await api('/api/projects', {source: $('src').value, ...formOpts()}); open_(d.id); loadHist(); }
+  catch (e) { alert(e.message); }
+}
+async function upload(file) {
+  const fd = new FormData(); fd.append('file', file);
+  Object.entries(formOpts()).forEach(([k, v]) => fd.append(k, v));
+  $('drop').textContent = `Đang gửi ${file.name}...`;
+  try {
+    const r = await fetch('/api/upload', {method: 'POST', body: fd});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    open_(d.id); loadHist();
+  } catch (e) { alert(e.message); }
+  $('drop').textContent = '…hoặc kéo-thả file video vào đây';
+}
+const drop = $('drop');
+drop.onclick = () => $('file').click();
+$('file').onchange = e => { if (e.target.files[0]) upload(e.target.files[0]); };
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = () => drop.classList.remove('over');
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]); };
+
+async function saveKey() { await api('/api/key', {key: $('key').value}); $('key').value = ''; loadAccount(); }
+async function loadAccount() {
+  account = await api('/api/account');
+  $('keybox').style.display = account.has_key && !account.error ? 'none' : 'block';
+  $('quota').textContent = account.error ? account.error
+    : account.sub ? `ElevenLabs ${account.sub.tier}: còn ${account.sub.left.toLocaleString()} / ${account.sub.limit.toLocaleString()} ký tự` : '';
+  if (current) { shownKey = null; refresh(); }
+}
+async function loadHist() {
+  const items = await api('/api/projects');
+  $('hist').innerHTML = items.map(i => `<div class="it ${i.id === current ? 'active' : ''}" onclick="open_('${esc(i.id)}')">
+    <div class="t">${esc(i.title)}</div><div class="s">${esc(STATE[i.state] || i.state)} · ${i.count} câu · ${esc(i.created)}</div></div>`).join('')
+    || '<div class="muted" style="font-size:12px">Chưa có.</div>';
+}
+function open_(id) { current = id; shownKey = null; pending = {}; refresh(); loadHist(); }
+
+async function refresh() {
+  clearTimeout(timer);
+  if (!current) return;
+  let p;
+  try { p = await api(`/api/projects/${encodeURIComponent(current)}`); } catch { return; }
+  const busy = p.state === 'queued' || p.state === 'running';
+  const key = `${p.id}:${p.state}:${p.result ? p.result.video : ''}`;
+  if (key !== shownKey) { shownKey = key; render(p); if (!busy) loadHist(); }
+  else updateStatus(p);
+  if (busy) timer = setTimeout(refresh, 1500);
+}
+
+function updateStatus(p) {
+  const el = $('status'); if (!el) return;
+  el.innerHTML = statusHtml(p);
+  const log = el.querySelector('.log'); if (log) log.scrollTop = log.scrollHeight;
+}
+function statusHtml(p) {
+  const busy = p.state === 'queued' || p.state === 'running';
+  return `<div class="toolbar"><span class="pill">${esc(STATE[p.state] || p.state)}</span><span style="flex:1">${esc(p.msg)}</span>
+      ${busy ? `<button onclick="cancel()">■ Dừng</button>` : ''}</div>
+    ${p.error ? `<div class="error" style="margin-top:6px">${esc(p.error)}</div>` : ''}
+    ${busy || p.error ? `<pre class="log">${esc((p.log || []).join('\n').replaceAll('\u200b', ''))}</pre>` : ''}`;
+}
+
+function render(p) {
+  const canRetry = p.state === 'error' && !(p.blocks || []).length;
+  let html = `<div class="toolbar" style="margin-bottom:14px"><h1>${esc(p.title)}</h1>
+      <button onclick="fetch('/api/open/${esc(p.id)}',{method:'POST'})">📂 Thư mục</button>
+      ${canRetry ? `<button onclick="retry()">Chạy lại</button>` : ''}</div>
+    <div class="card" id="status">${statusHtml(p)}</div>`;
+  if (p.result) html += resultHtml(p);
+  if ((p.blocks || []).length && p.state !== 'running' && p.state !== 'queued') html += dubFormHtml(p) + tableHtml(p);
+  $('main').innerHTML = html;
+  if ($('voice')) { fillVoices(p); estimate(); if ($('lib').open && !libLoaded) libSearch(); }
+}
+
+function resultHtml(p) {
+  const r = p.result, base = `/files/${encodeURIComponent(p.id)}/`;
+  return `<h2>Thành phẩm</h2><div class="card">
+    <video controls preload="metadata" src="${base}${encodeURIComponent(r.video)}"></video>
+    <div class="stats">
+      <div><b>${r.chars.toLocaleString()}</b><span>ký tự ElevenLabs lần này</span></div>
+      <div><b>${r.sped_up}</b><span>câu phải đọc nhanh hơn</span></div>
+      <div><b>×${r.max_tempo.toFixed(2)}</b><span>tốc độ cao nhất</span></div>
+      <div><b style="color:${r.late ? 'var(--warn)' : 'var(--ok)'}">${r.late}</b><span>câu còn lố giờ (tối đa ${r.max_over.toFixed(1)}s)</span></div>
+    </div>
+    <div class="toolbar"><a href="${base}${encodeURIComponent(r.video)}" download>Tải video</a>
+      <a href="${base}${encodeURIComponent(r.voice)}" download>Riêng giọng đọc</a>
+      <a href="${base}${encodeURIComponent(r.srt)}" download>Phụ đề .srt</a></div>
+  </div>`;
+}
+
+function dubFormHtml(p) {
+  const d = p.dub_opts || {};
+  const models = Object.entries(MODELS).map(([id, m]) => `<option value="${id}" ${(d.model || DEFAULT_MODEL) === id ? 'selected' : ''}>${esc(m[0])}</option>`).join('');
+  const duck = Math.round((d.duck ?? 0.15) * 100);
+  return `<h2>${p.result ? 'Lồng lại' : 'Lồng tiếng'}</h2><div class="card">
+    <div class="grid3">
+      <div><label>Giọng đọc</label><select id="voice" onchange="estimate()"></select></div>
+      <div><label>Model ElevenLabs</label><select id="tts" onchange="estimate()">${models}</select></div>
+      <div><label>Tiếng gốc khi có giọng đọc: <b id="duckv">${duck}%</b></label>
+        <input id="duck" type="range" min="0" max="50" value="${duck}" oninput="$('duckv').textContent=this.value+'%'"></div>
+      <div><label>Đọc nhanh tối đa: <b id="tempov">×${(d.max_tempo ?? 1.25).toFixed(2)}</b></label>
+        <input id="tempo" type="range" min="1" max="1.5" step="0.05" value="${d.max_tempo ?? 1.25}" oninput="$('tempov').textContent='×'+(+this.value).toFixed(2)"></div>
+    </div>
+    <details class="lib" id="lib" ontoggle="if (this.open && !libLoaded) libSearch()">
+      <summary>🔍 Tìm thêm giọng trong thư viện ElevenLabs (có giọng Việt)</summary>
+      <div class="libf">
+        <select id="libLang" onchange="libFilterChanged()"><option value="">Mọi ngôn ngữ</option>
+          ${Object.entries(LANGS).map(([c, n]) => `<option value="${c}">${esc(n)}</option>`).join('')}</select>
+        <select id="libGender" onchange="libSearch()"><option value="">Nam + nữ</option><option value="male">Nam</option><option value="female">Nữ</option></select>
+        <select id="libAccent" onchange="libSearch()"><option value="">Mọi miền</option><option value="northern">Miền Bắc</option><option value="central">Miền Trung</option><option value="southern">Miền Nam</option></select>
+        <input id="libQ" placeholder="Tên giọng..." onkeydown="if (event.key === 'Enter') libSearch()">
+      </div>
+      <div class="liblist" id="liblist"></div>
+      <div class="toolbar" style="margin-top:8px">
+        <button id="libMore" style="display:none" onclick="libSearch(true)">Xem thêm</button>
+        <input id="pasteId" placeholder="…hoặc dán Voice ID" style="flex:1; min-width:180px">
+        <button onclick="usePasted()">Dùng ID này</button>
+      </div>
+      <div class="muted" style="font-size:11.5px; margin-top:6px">Bấm Chọn sẽ thêm giọng vào tài khoản ElevenLabs của bạn (tối đa ${account.voice_limit || 30} giọng). Nghe thử thì không mất gì.</div>
+    </details>
+    ${p.translated ? `<label class="chk" style="margin-top:12px"><input type="checkbox" id="shorten" ${d.shorten === false ? '' : 'checked'}>
+      Câu dài quá khe thời gian: tự rút gọn rồi đọc lại (tốn thêm ký tự cho riêng câu đó)</label>` : ''}
+    <div class="toolbar" style="margin-top:12px">
+      <button class="primary" id="goDub" onclick="runDub()">🎙️ Lồng tiếng</button>
+      <span id="est" class="muted" style="font-size:12.5px"></span>
+    </div>
+  </div>`;
+}
+
+function voiceOptions(wantLang) {
+  const opt = v => `<option value="${esc(v.id)}">${esc(v.name)}${v.gender ? ' · ' + esc(v.gender) : ''}${v.accent ? ' · ' + esc(v.accent) : ''}</option>`;
+  const list = account.voices || [], own = list.filter(v => v.language === wantLang), rest = list.filter(v => v.language !== wantLang);
+  if (!list.length) return '<option value="">(chưa có giọng, kiểm tra API key)</option>';
+  if (!own.length) return rest.map(opt).join('');
+  return `<optgroup label="${esc(LANGS[wantLang] || wantLang)}">${own.map(opt).join('')}</optgroup>`
+    + (rest.length ? `<optgroup label="Ngôn ngữ khác">${rest.map(opt).join('')}</optgroup>` : '');
+}
+function fillVoices(p) {
+  const sel = $('voice'), list = account.voices || [];
+  voiceLang = p.translated ? p.opts.target : (p.source_lang || '');
+  const want = (p.dub_opts || {}).voice || account.remembered;
+  sel.innerHTML = voiceOptions(voiceLang);
+  const ownLang = list.filter(v => v.language === voiceLang);
+  if (want && list.some(v => v.id === want) && (!ownLang.length || ownLang.some(v => v.id === want))) sel.value = want;
+  libLoaded = false; libItems = []; libPage = 0;
+  $('libLang').value = LANGS[voiceLang] ? voiceLang : '';
+  $('libAccent').style.display = voiceLang === 'vi' ? '' : 'none';
+  if (!ownLang.length) $('lib').open = true;     // chưa có giọng đúng ngôn ngữ: mở sẵn thư viện
+}
+function libFilterChanged() {
+  const isVi = $('libLang').value === 'vi';
+  $('libAccent').style.display = isVi ? '' : 'none';
+  if (!isVi) $('libAccent').value = '';
+  libSearch();
+}
+async function libSearch(more) {
+  libLoaded = true;
+  const box = $('liblist');
+  if (!more) { libItems = []; libPage = 0; box.innerHTML = '<div class="muted" style="font-size:12px">Đang tìm...</div>'; }
+  else libPage++;
+  const q = new URLSearchParams({language: $('libLang').value, gender: $('libGender').value, accent: $('libAccent').value, q: $('libQ').value, page: libPage});
+  try {
+    const d = await api('/api/library?' + q);
+    libItems = libItems.concat(d.voices);
+    $('libMore').style.display = d.has_more ? '' : 'none';
+    const mine = new Set((account.voices || []).map(v => v.id));
+    box.innerHTML = libItems.map((v, i) => `<div class="libit">
+        <button onclick="preview(${i}, this)" title="Nghe thử">▶</button>
+        <div class="i"><div class="n">${esc(v.name)}</div>
+          <div class="m">${[v.gender === 'male' ? 'Nam' : v.gender === 'female' ? 'Nữ' : v.gender, v.age, v.accent, v.use_case].filter(Boolean).map(esc).join(' · ')}</div></div>
+        <button onclick="pickLib(${i}, this)">${mine.has(v.id) ? 'Dùng' : 'Chọn'}</button></div>`).join('')
+      || '<div class="muted" style="font-size:12px">Không có giọng nào khớp.</div>';
+  } catch (e) { box.innerHTML = `<div class="error" style="font-size:12px">${esc(e.message)}</div>`; }
+}
+function preview(i, btn) {
+  const src = libItems[i].preview;
+  if (!src) return alert('Giọng này không có bản nghe thử');
+  const playing = player.src === src && !player.paused;
+  player.pause();
+  document.querySelectorAll('#liblist button[title="Nghe thử"]').forEach(b => b.textContent = '▶');
+  if (playing) return;
+  player.src = src; player.play(); btn.textContent = '■';
+  player.onended = () => { btn.textContent = '▶'; };
+}
+function useVoice(id, voices) {
+  account.voices = voices;
+  $('voice').innerHTML = voiceOptions(voiceLang);
+  $('voice').value = id;
+  estimate();
+}
+async function pickLib(i, btn) {
+  const v = libItems[i], label = btn.textContent;
+  btn.disabled = true; btn.textContent = '...';
+  try {
+    const d = await api('/api/voices/add', {owner: v.owner, id: v.id, name: v.name});
+    useVoice(d.id, d.voices);
+    btn.textContent = 'Đã chọn';
+  } catch (e) { alert(e.message); btn.textContent = label; }
+  btn.disabled = false;
+}
+async function usePasted() {
+  const id = $('pasteId').value.trim();
+  if (!id) return;
+  try {
+    const d = await api('/api/voices/add', {id});
+    useVoice(d.id, d.voices);
+    $('pasteId').value = '';
+  } catch (e) { alert(e.message); }
+}
+
+function tableHtml(p) {
+  const cps = 15;
+  const rows = p.blocks.map(b => {
+    const budget = Math.round((b.end - b.start) * cps);
+    let tags = '';
+    if (b.tempo > 1.01) tags += `<span class="tag">×${b.tempo.toFixed(2)} </span>`;
+    if (b.over > 0.25) tags += `<span class="tag bad">lố ${b.over.toFixed(1)}s </span>`;
+    if (b.shortened) tags += `<span class="tag">đã rút gọn</span>`;
+    return `<tr><td class="time">${fmt(b.start)}<br>${fmt(b.end)}</td>
+      ${p.translated ? `<td class="src">${esc(b.source)}</td>` : ''}
+      <td><textarea rows="2" data-id="${b.id}" data-budget="${budget}" oninput="edited(this)">${esc(b.text)}</textarea>
+        <div class="len ${b.text.length > budget ? 'long' : ''}">${b.text.length}/${budget} ký tự ${tags}</div></td></tr>`;
+  }).join('');
+  return `<h2>Lời thuyết minh <span class="muted" style="font-weight:400;font-size:12px">sửa trực tiếp, tự lưu</span></h2>
+    <div class="tbl"><table><thead><tr><th>Thời gian</th>${p.translated ? '<th>Lời gốc</th>' : ''}<th>Đọc</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function edited(el) {
+  pending[el.dataset.id] = el.value;
+  const n = el.parentElement.querySelector('.len');
+  n.firstChild.textContent = `${el.value.length}/${el.dataset.budget} ký tự `;
+  n.classList.toggle('long', el.value.length > +el.dataset.budget);
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(flushEdits, 700);
+}
+async function flushEdits() {
+  clearTimeout(saveTimer);
+  if (!Object.keys(pending).length) return;
+  const edits = pending; pending = {};
+  await api(`/api/projects/${encodeURIComponent(current)}/blocks`, {edits});
+  estimate();
+}
+async function estimate() {
+  const el = $('est'); if (!el || !$('voice')) return;
+  const e = await api(`/api/projects/${encodeURIComponent(current)}/estimate`, {voice: $('voice').value, model: $('tts').value});
+  const left = account.sub ? account.sub.left : null;
+  const over = left !== null && e.chars > left;
+  el.innerHTML = `Sẽ tốn <b style="color:${over ? 'var(--err)' : 'var(--text)'}">${e.chars.toLocaleString()}</b> ký tự`
+    + (e.chars < e.total ? ` (${(e.total - e.chars).toLocaleString()} ký tự đã có sẵn, không tính lại)` : '')
+    + ` · khoảng $${e.usd} theo giá API` + (over ? ` · <span class="error">vượt số ký tự còn lại (${left.toLocaleString()})</span>` : '');
+}
+async function runDub() {
+  await flushEdits();
+  const s = $('shorten');
+  try {
+    await api(`/api/projects/${encodeURIComponent(current)}/dub`, {voice: $('voice').value, model: $('tts').value,
+      duck: +$('duck').value / 100, max_tempo: +$('tempo').value, shorten: s ? s.checked : false});
+    shownKey = null; refresh();
+  } catch (e) { alert(e.message); }
+}
+async function cancel() { await api(`/api/projects/${encodeURIComponent(current)}/cancel`, {}); }
+async function retry() { await api(`/api/projects/${encodeURIComponent(current)}/retry`, {}); shownKey = null; refresh(); }
+
+loadAccount(); loadHist();
+</script>
+</body>
+</html>

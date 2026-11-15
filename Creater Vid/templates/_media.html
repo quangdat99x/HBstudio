@@ -1,0 +1,63 @@
+{# Materials taken from the news (sources/media.json): the user approves or rejects each one before it is downloaded or used #}
+{% if mitems %}
+{% set big_waiting = mitems|selectattr('too_big')|selectattr('status', 'in', ['proposed', 'approved', 'need_api'])|list %}
+<details {{ 'open' if msum.proposed or msum.failed }}>
+  <summary class="card-header" style="border:none">
+    <h2>🧾 Nguyên liệu từ tin
+      {% if msum.proposed %}<span class="pill warn">{{ msum.proposed }} chờ duyệt</span>{% endif %}
+      {% if msum.approved %}<span class="pill ok">{{ msum.downloaded }}/{{ msum.approved }} đã duyệt đã tải</span>{% endif %}
+      {% if msum.rejected %}<span class="pill gray">{{ msum.rejected }} bỏ</span>{% endif %}
+      {% if msum.failed %}<span class="pill err">{{ msum.failed }} lỗi</span>{% endif %}
+    </h2>
+  </summary>
+  <div class="card-body" style="padding-top:0">
+    <div class="small muted">Ảnh, video lấy từ các tin đã chọn. <b>Chưa duyệt thì app không tải và Claude không được dùng.</b>
+      Dòng ⛔ ⚠ ℹ là nhắc nhở để bạn xem kỹ (bản quyền, cảnh nhạy cảm), không phải kết luận pháp lý: quyết định là của bạn.
+      Bấm ảnh để mở bài gốc.</div>
+    <div class="row gap wrap">
+      {% if msum.proposed %}<button class="btn btn-small" onclick="mediaApproveClean()">✓ Duyệt mọi mục không có ⚠ ⛔</button>{% endif %}
+      {% if big_waiting and not tg.authorized %}<span class="small warn">{{ big_waiting|length }} video lớn chỉ tải được sau khi đăng nhập
+        <a href="/settings#telegram">Telegram API</a>.</span>{% endif %}
+    </div>
+    <div class="media-grid">
+      {% for m in mitems %}
+      <div class="media-card ms-{{ m.status }}" id="media-{{ m.id }}">
+        <a class="media-thumb" href="{{ m.post_url if m.post_url and m.post_url.startswith('http') else '#' }}" target="_blank" rel="noopener">
+          {% if m.status == 'downloaded' and m.kind == 'photo' %}<img src="/p/{{ p.id }}/file?path={{ m.file|urlencode }}" loading="lazy" alt="">
+          {% elif m.status == 'downloaded' and m.kind == 'video' %}<video src="/p/{{ p.id }}/file?path={{ m.file|urlencode }}" controls preload="none"
+              {% if m.thumb %}poster="{{ m.thumb }}"{% endif %}></video>
+          {% elif m.thumb %}<img src="{{ m.thumb }}" referrerpolicy="no-referrer" loading="lazy" alt="" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'none',textContent:'ảnh xem trước đã hết hạn, mở bài gốc'}))">
+          {% else %}<div class="none">không có ảnh xem trước</div>{% endif %}
+          {% if m.kind == 'video' %}<span class="media-badge">🎞 {{ m.duration or '' }}{% if m.too_big %} · lớn{% endif %}</span>
+          {% else %}<span class="media-badge">🖼</span>{% endif %}
+        </a>
+        <div class="small row gap wrap"><b class="mono">{{ m.id }}</b><span class="side side-{{ m.side or 'x' }}">{{ m.source }}</span>
+          <span class="muted">{{ (m.posted_at or '')[5:16]|replace('T', ' ') }}</span></div>
+        <div class="small muted clamp2" title="{{ m.caption }}">{{ m.caption }}</div>
+        {% for f in m.flags %}<div class="small flag-{{ f.level }}">{{ '⛔' if f.level == 'high' else ('⚠' if f.level == 'warn' else 'ℹ') }} {{ f.text }}</div>{% endfor %}
+        <div class="small muted">{{ m.rights }}</div>
+        <div class="row gap wrap media-actions">
+          {% if m.status == 'proposed' %}
+            <button class="btn btn-tiny btn-success" onclick="mediaDecide('{{ m.id }}', 'approved')">✓ Duyệt</button>
+            <button class="btn btn-tiny btn-ghost btn-danger" onclick="mediaDecide('{{ m.id }}', 'rejected')">✕ Bỏ</button>
+          {% elif m.status in ('approved', 'downloading') %}
+            <span class="small info"><span class="spin"></span>đã duyệt, đang tải…</span>
+            <button class="btn btn-tiny btn-ghost btn-danger" onclick="mediaDecide('{{ m.id }}', 'rejected')">Bỏ</button>
+          {% elif m.status == 'downloaded' %}
+            <span class="small ok">✓ đã tải {{ m.file|basename }} · {{ m.size_mb }} MB{% if m.seconds %} · {{ m.seconds }} s{% endif %}{% if m.width %} · {{ m.width }}×{{ m.height }}{% endif %}</span>
+            <button class="btn btn-tiny btn-ghost btn-danger" onclick="mediaDecide('{{ m.id }}', 'rejected')">Bỏ</button>
+          {% elif m.status == 'rejected' %}
+            <span class="small muted">đã bỏ: không tải, không dùng</span>
+            <button class="btn btn-tiny btn-ghost" onclick="mediaDecide('{{ m.id }}', null)">Hoàn tác</button>
+          {% else %}
+            <span class="small error">{{ 'cần đăng nhập Telegram API' if m.status == 'need_api' else 'lỗi tải' }}{% if m.error %}: {{ m.error }}{% endif %}</span>
+            <button class="btn btn-tiny" onclick="mediaRetry('{{ m.id }}')">Thử lại</button>
+            <button class="btn btn-tiny btn-ghost btn-danger" onclick="mediaDecide('{{ m.id }}', 'rejected')">Bỏ</button>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</details>
+{% endif %}

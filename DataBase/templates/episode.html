@@ -1,0 +1,386 @@
+{% extends "base.html" %}
+{% set title = ep.id %}
+{% block content %}
+<section class="card">
+  <div class="card-header">
+    <h2>{{ ep.id }} · {{ ep.guest or '' }}
+      {% for g in guest_groups %}<a class="pill {{ 'group-main' if g.main else 'group-also' }}" href="/guests#group-{{ g.slug }}"
+        title="{{ g.guest }} · nhóm {{ 'chính' if g.main else 'phụ' }}">{{ g.name }}</a>{% endfor %}</h2>
+    <div class="row gap">
+      <span class="badge stage-{{ (ep.stage or 'new').split(':')[0] }}">{{ ep.stage }}</span>
+      {% if ep.clip_folder %}<button class="btn btn-small" data-path="{{ ep.clip_folder }}" onclick="openFolder(this.dataset.path)">Mở thư mục clip</button>{% endif %}
+      {% if ep.stage == 'reviewing' %}<button class="btn btn-small btn-primary" onclick="approve('{{ ep.id }}')">Duyệt cutlist, bắt đầu cắt</button>{% endif %}
+      <button class="btn btn-small" onclick="runEpisode('{{ ep.id }}')">Chạy tiếp pipeline</button>
+      <button class="btn btn-small btn-ghost" onclick="stopEpisode('{{ ep.id }}')">Dừng</button>
+    </div>
+  </div>
+  <div class="card-body grid2">
+    <div>
+      <div><b>Video:</b> {{ ep.source_video or '—' }}</div>
+      <div><b>Transcript:</b> {{ ep.transcript_path|basename or '—' }}</div>
+      <div><b>Cutlist:</b> {{ ep.cutlist_path|basename or '—' }}</div>
+      <div><b>Thời lượng:</b> {{ '%d phút'|format((ep.duration_sec or 0)//60) }}</div>
+      {% if ep.stage_error %}<div class="error">{{ ep.stage_error }}</div>{% endif %}
+    </div>
+    <div>
+      {% if ep.guest_card_md %}
+      <details><summary><b>Guest Card</b></summary><div class="md">{{ ep.guest_card_md|md|safe }}</div></details>
+      {% elif profile %}
+      <details><summary><b>Guest Card</b> · {{ profile.identity }}</summary>
+        <div class="small">
+          {% for k, v in profile.items() if k != 'identity' %}<div><b>{{ k }}:</b> {{ v if v is string else v|join(' · ') }}</div>{% endfor %}
+        </div></details>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-header"><h2>Đoạn highlight ({{ segments|length }})</h2>
+    <div class="row gap">
+      <span id="pick-bar" class="pick-bar" hidden>đã chọn <b id="pick-n">0</b> đoạn
+        <button class="btn btn-small btn-primary" onclick="zoomPicked('{{ ep.id }}')">🔍 Zoom đoạn đã chọn</button>
+        <button class="btn btn-small btn-danger" onclick="deletePicked()">🗑 Xoá đoạn đã chọn</button>
+        <button class="btn btn-small btn-ghost" onclick="clearPicked()">Bỏ chọn</button></span>
+      <span class="muted small">bấm vào một đoạn để đọc tóm tắt, hook, keyword, xem clip và viết title; tick ô bên trái để zoom hoặc xoá nhiều đoạn</span>
+      {% set unzoomed = segments|selectattr('clip_path')|rejectattr('clip_zoomed_path')|list %}
+      <button class="btn btn-small" onclick="zoomAll('{{ ep.id }}', {{ unzoomed|length }})"
+        title="Zoom mọi đoạn đã cắt mà chưa có bản zoom (kèm hook nếu bật trong Cài đặt)">🔍 Zoom tất cả{% if unzoomed %} ({{ unzoomed|length }}){% endif %}</button>
+      <button class="btn btn-small btn-ghost" onclick="runAllTitles('{{ ep.id }}')" title="Chạy skill {{ title_skill or 'viet-tittle' }} cho mọi đoạn chưa có title">Viết Title cho mọi đoạn</button>
+      <button class="btn btn-small" onclick="toggleAll(true)">Mở tất cả</button>
+      <button class="btn btn-small btn-ghost" onclick="toggleAll(false)">Thu gọn</button>
+    </div>
+  </div>
+  {% for s in segments %}
+  {% set a = s.analysis or {} %}
+  <details class="segment {{ 'is-hook' if s.kind == 'hook' else '' }}" id="seg-{{ s.id }}">
+    <summary>
+      <span class="rank"><input type="checkbox" class="seg-pick" value="{{ s.id }}" title="chọn để zoom hoặc xoá"
+        data-label="#{{ s.rank or '–' }} {{ s.title }}" onclick="event.stopPropagation()" onchange="onPick()">#{{ s.rank or '–' }}</span>
+      <span class="time">{{ s.start_hms }} → {{ s.end_hms }} <span class="muted">({{ '%d:%02d'|format((s.duration_sec or 0)//60, (s.duration_sec or 0)%60) }})</span></span>
+      <span class="title">{{ s.title }}{% if s.preview %}<span class="sub">{{ s.preview }}</span>{% endif %}</span>
+      <span class="meta">
+        {% if s.intensity %}<span class="pill">i{{ s.intensity }}</span>{% endif %}
+        {% if s.final_score %}<span class="pill">score {{ s.final_score }}</span>{% endif %}
+        {% if s.core_keyword %}<span class="pill kw">{{ s.core_keyword }}{% if s.keyword_reach %} · {{ s.keyword_reach }}{% endif %}</span>{% endif %}
+        {% if s.title_done %}<span class="pill ok" title="đã có title">📝 title</span>
+        {% elif s.title_run and s.title_run.status in ('queued', 'running') %}<span class="pill" title="đang viết title">⏳ title</span>{% endif %}
+        <span class="badge st-{{ s.status }}">{{ s.status }}</span>
+      </span>
+    </summary>
+    <div class="segment-body">
+      <div class="analysis-grid">
+        <div class="sec sec-main">
+          <div class="sec-label">Tóm tắt</div>
+          {% if a.tom_tat %}
+            <div class="md">{{ a.tom_tat|md|safe }}</div>
+          {% elif s.summary_vi or s.summary_en %}
+            {% if s.summary_vi %}<p>{{ s.summary_vi }}</p>{% endif %}
+            {% if s.summary_en %}<p class="muted">{{ s.summary_en }}</p>{% endif %}
+            <p class="small muted">Đoạn này chưa có khối phân tích đầy đủ của skill (dữ liệu từ cutlist cũ).</p>
+          {% else %}
+            <p class="muted">Chưa có tóm tắt: đoạn này được nạp từ clip cũ không có cutlist đi kèm.</p>
+          {% endif %}
+        </div>
+        {% if a.ly_do_dat %}
+        <div class="sec"><div class="sec-label">Tại sao đoạn này đắt</div><div class="md">{{ a.ly_do_dat|md|safe }}</div></div>
+        {% endif %}
+        {% if a.keyword %}
+        <div class="sec"><div class="sec-label">🔑 Keyword hạt nhân</div><div class="md">{{ a.keyword|md|safe }}</div></div>
+        {% elif s.core_keyword %}
+        <div class="sec"><div class="sec-label">🔑 Keyword hạt nhân</div>
+          <p><code>{{ s.core_keyword }}</code>{% if s.keyword_reach %} · Reach {{ s.keyword_reach }}{% endif %}{% if s.keyword_credibility %} · KGC {{ s.keyword_credibility }}{% endif %}</p>
+          {% if s.keyword_reason %}<p class="small">{{ s.keyword_reason }}</p>{% endif %}</div>
+        {% endif %}
+        {% if a.hook_cold_open or s.hooks %}
+        <div class="sec"><div class="sec-label">🪝 Hook cold open</div>
+          {% if a.hook_cold_open %}<div class="md">{{ a.hook_cold_open|md|safe }}</div>{% endif %}
+          {% if s.hooks %}
+          <div class="hooks">
+            {% for h in s.hooks %}
+            <div class="hook-row"><b>{{ h.title[:8] }}</b> {{ h.start_hms }} → {{ h.end_hms }} ({{ (h.duration_sec or 0)|round|int }}s)
+              <span class="badge st-{{ h.status }}">{{ h.status }}</span>
+              {% if h.clip_zoomed_path or h.clip_path %}<button class="btn btn-tiny" data-path="{{ h.clip_zoomed_path or h.clip_path }}" onclick="preview(this.dataset.path, this)">▶</button>{% endif %}
+              {% set hj = h.joined or {} %}
+              {% if s.clip_zoomed_path %}
+              <select class="input input-tiny" id="hjt-{{ h.id }}" title="kiểu chuyển cảnh hook → đoạn">
+                {% for k, v in hook_transitions.items() %}<option value="{{ k }}" {{ 'selected' if k == hook_transition }}>{{ v }}</option>{% endfor %}
+              </select>
+              <button class="btn btn-tiny btn-primary" id="hjb-{{ h.id }}" onclick="hookJoin({{ h.id }})" {{ 'disabled' if hj.status == 'running' }}
+                title="Nối hook này làm mở đầu cho bản ZOOM của đoạn, chuyển cảnh mượt kèm sound effect">🎬 {{ 'Nối lại' if hj.out else 'Nối vào bản zoom' }}</button>
+              {% else %}
+              <button class="btn btn-tiny" onclick="toast('Đoạn highlight này chưa zoom: bấm 🔍 Zoom đoạn này trước rồi mới nối hook được')"
+                title="cần bản zoom của đoạn trước">🎬 Nối vào bản zoom</button>
+              {% endif %}
+              <span class="small muted" id="hjs-{{ h.id }}">{% if hj.status == 'running' %}{{ hj.msg }}{% elif hj.status == 'failed' %}<span class="error">lỗi: {{ hj.error }}</span>{% endif %}</span>
+              {% if hj.out %}<button class="btn btn-tiny" data-path="{{ hj.out }}" onclick="preview(this.dataset.path, this)" title="{{ hj.out }}">▶ Bản có hook</button>
+                <button class="btn btn-tiny btn-ghost" data-path="{{ hj.out }}" onclick="openFolder(this.dataset.path)">Mở vị trí</button>{% endif %}
+              {% if hj.status == 'running' %}<script>document.addEventListener('DOMContentLoaded',()=>pollHookJoin({{ h.id }}))</script>{% endif %}
+              <button class="btn btn-tiny btn-danger" title="xoá riêng hook này" data-label="#{{ h.rank or '–' }} {{ h.title }}"
+                onclick="askDelete([{{ h.id }}], this.dataset.label)">✕</button>
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+        {% if a.fit %}
+        <div class="sec"><div class="sec-label">🎯 Fit với khách mời</div><div class="md">{{ a.fit|md|safe }}</div></div>
+        {% elif s.fit_reason %}
+        <div class="sec"><div class="sec-label">🎯 Fit với khách mời</div><p class="small">{{ s.fit_reason }}</p></div>
+        {% endif %}
+      </div>
+
+      {% if a.start_quote or a.end_quote or s.hook_en %}
+      <div class="quotes small">
+        <div><b>Start</b> {{ s.start_hms }} “{{ (a.start_quote or s.hook_en or '').strip('“”"') }}”</div>
+        {% if a.end_quote %}<div><b>End</b> {{ s.end_hms }} “{{ a.end_quote.strip('“”"') }}”</div>{% endif %}
+      </div>
+      {% endif %}
+      {% if s.themes or s.topics %}
+      <p class="small muted">{% if s.themes %}Themes: {{ s.themes|join(' · ') }}{% endif %}{% if s.themes and s.topics %} &nbsp;|&nbsp; {% endif %}{% if s.topics %}Topics: {{ s.topics|join(' · ') }}{% endif %}</p>
+      {% endif %}
+
+      <div class="row gap">
+        {% if s.clip_zoomed_path %}<button class="btn btn-small" data-path="{{ s.clip_zoomed_path }}" onclick="preview(this.dataset.path, this)">▶ Bản zoom</button>{% endif %}
+        {% if s.clip_path %}<button class="btn btn-small btn-ghost" data-path="{{ s.clip_path }}" onclick="preview(this.dataset.path, this)">▶ Bản gốc</button>{% endif %}
+        {% if s.clip_path and not s.clip_zoomed_path %}<button class="btn btn-small btn-primary" onclick="zoomSegs('{{ ep.id }}', [{{ s.id }}])"
+          title="Zoom đoạn này{% if s.hooks %} và {{ s.hooks|length }} hook của nó{% endif %}">🔍 Zoom đoạn này</button>{% endif %}
+        {% if s.clip_zoomed_path or s.clip_path %}<button class="btn btn-small btn-ghost" data-path="{{ s.clip_zoomed_path or s.clip_path }}" onclick="openFolder(this.dataset.path)">Mở vị trí</button>{% endif %}
+        {% if s.kind == 'highlight' and s.start_sec is not none %}<a class="btn btn-small" href="/compile?seed={{ s.id }}"
+          title="Video tổng hợp dài: mở đầu bằng đoạn này, Claude tìm các đoạn cùng chủ đề trong mọi tập và viết lời dẫn ElevenLabs nối lại">🧩 Tạo video tổng hợp</a>{% endif %}
+        {% if s.kind == 'highlight' %}{% set dx = s.docext or {} %}
+          {% if s.hooked_files %}<button class="btn btn-small" data-files='{{ s.hooked_files|tojson }}' data-title="{{ s.title }}"
+            onclick="docOpen({{ s.id }}, this)" {{ 'disabled' if dx.status in ('creating','filming','joining') }}
+            title="Creater Vid làm phim tài liệu kiểu hồ sơ tư liệu thật bổ sung cho đoạn này, rồi nối vào sau bản highlight + hook (bản đó giữ nguyên) bằng một câu dẫn">🎞 Làm phim tài liệu</button>
+          {% else %}<button class="btn btn-small btn-ghost" onclick="toast('Cần bản highlight đã nối hook: bấm 🎬 Nối vào bản zoom ở một hook của đoạn này trước')"
+            title="cần nối hook vào bản zoom trước">🎞 Làm phim tài liệu</button>{% endif %}
+        {% endif %}
+        <span class="grow"></span>
+        <button class="btn btn-small btn-danger" data-label="#{{ s.rank or '–' }} {{ s.title }}{% if s.hooks %} (kèm {{ s.hooks|length }} hook){% endif %}"
+          onclick="askDelete([{{ s.id }}], this.dataset.label)">🗑 Xoá đoạn</button>
+      </div>
+      {% if s.kind == 'highlight' and s.docext %}{% set dx = s.docext %}
+      <div class="docext small" id="dx-{{ s.id }}">
+        <b>🎞 Phim tài liệu</b> ~{{ dx.target_min }} phút
+        <span class="badge job-{{ dx.status }}">{{ {'creating':'đang tạo','filming':'Creater đang làm','joining':'đang nối','done':'xong','failed':'lỗi','stopped':'đã dừng'}.get(dx.status, dx.status) }}</span>
+        <span class="muted" id="dxm-{{ s.id }}">{{ dx.progress_msg or '' }}</span>
+        {% if dx.status == 'failed' %}<span class="error">{{ (dx.error or '')[:300] }}</span>{% endif %}
+        {% if dx.creater_url %}<a class="btn btn-tiny btn-ghost" href="{{ dx.creater_url }}" target="_blank" title="xem, duyệt, nhắn sửa trong Creater Vid">Mở dự án Creater</a>{% endif %}
+        {% if dx.final_path and not dx.final_missing %}<button class="btn btn-tiny btn-primary" data-path="{{ dx.final_path }}" onclick="preview(this.dataset.path, this)" title="{{ dx.final_path }}">▶ Bản hoàn chỉnh</button>
+          <button class="btn btn-tiny btn-ghost" data-path="{{ dx.final_path }}" onclick="openFolder(this.dataset.path)">Mở vị trí</button>{% endif %}
+        {% if dx.status in ('creating','filming','joining') %}<button class="btn btn-tiny btn-ghost" onclick="docAct({{ dx.id }},'stop')">Dừng theo dõi</button>
+          <script>document.addEventListener('DOMContentLoaded',()=>pollDoc({{ s.id }}, '{{ dx.status }}'))</script>{% endif %}
+        {% if dx.creater_pid and dx.status in ('done','failed','stopped') %}
+        <div class="row gap" style="margin-top:6px">
+          <input class="input grow" id="dxb-{{ dx.id }}" value="{{ dx.bridge_text or '' }}" placeholder="câu nối highlight → phim tài liệu (để trống = Claude viết)">
+          <button class="btn btn-tiny" onclick="docAct({{ dx.id }},'rejoin',{bridge: document.getElementById('dxb-{{ dx.id }}').value})"
+            title="nối lại với bản render mới nhất của Creater và câu nối trong ô">↻ Nối lại</button>
+        </div>{% endif %}
+      </div>
+      {% endif %}
+      <div class="preview"></div>
+      {% if s.kind == 'highlight' %}{% include '_title_block.html' %}{% endif %}
+      {% if s.analysis_md %}
+        <details class="raw"><summary>Nguyên văn khối phân tích (để copy)</summary><div class="md">{{ s.analysis_md|md|safe }}</div></details>
+      {% endif %}
+      {% if s.transcript %}
+        <details><summary>Transcript đoạn</summary><pre class="transcript">{{ s.transcript }}</pre></details>
+      {% endif %}
+    </div>
+  </details>
+  {% endfor %}
+</section>
+
+<dialog id="doc-dialog" class="modal">
+  <h3>🎞 Làm phim tài liệu bổ sung</h3>
+  <p class="small muted" id="doc-what"></p>
+  <p class="small muted">Creater Vid làm phim theo cách <b>hồ sơ tư liệu thật</b> (ảnh, trang tài liệu, footage thật), bám sát và đào sâu nội dung đoạn này, không kể lại. Xong Studio nối: <b>highlight + hook</b> (file giữ nguyên) → <b>một câu dẫn</b> ElevenLabs → <b>phim tài liệu</b>, ra file <code>…_HOOKnn_DOC.mp4</code> cạnh bản có hook.</p>
+  <label class="small">Bản highlight + hook <select class="input" id="doc-hooked"></select></label>
+  <div class="row gap">
+    <label class="small">Thời lượng phim (phút, gần đúng) <input class="input" id="doc-min" type="number" min="2" max="60" value="{{ docext_min }}" style="width:90px"></label>
+    <label class="small">Ngân sách nguyên liệu USD <input class="input" id="doc-budget" type="number" step="0.5" min="0" value="{{ docext_budget }}" placeholder="mặc định Creater" style="width:130px"></label>
+  </div>
+  <label class="small">Ghi chú cho Claude (không bắt buộc)<textarea class="input" id="doc-note" rows="3" placeholder="VD: tập trung vào bằng chứng khảo cổ ở Tel Arad, có phần phản biện của giới học thuật"></textarea></label>
+  <label class="small">Câu nối tự viết (để trống = Claude viết sau khi phim xong)<input class="input" id="doc-bridge" placeholder="[low] But what did they actually find on that altar?"></label>
+  <label class="check"><input type="checkbox" id="doc-auto" checked> Tự chạy hết các bước trong Creater (bỏ tick = dừng ở mỗi bước để bạn duyệt trong Creater)</label>
+  <label class="check"><input type="checkbox" id="doc-jre"> Cho Creater dùng kho highlight (clip từ các tập khác)</label>
+  <div class="row gap end">
+    <button class="btn btn-small btn-ghost" onclick="document.getElementById('doc-dialog').close()">Huỷ</button>
+    <button id="doc-ok" class="btn btn-small btn-primary" onclick="docCreate()">Bắt đầu làm phim</button>
+  </div>
+</dialog>
+
+<dialog id="del-dialog" class="modal">
+  <h3>Xoá đoạn</h3>
+  <ul id="del-what" class="small"></ul>
+  <p class="small muted">Đoạn biến khỏi trang tập và kết quả tìm kiếm, pipeline không cắt, không zoom nó nữa, "Chạy tiếp" không làm nó hiện lại. Hook của đoạn highlight bị xoá được xoá theo. Khôi phục được ở mục "Đoạn đã xoá" cuối trang.</p>
+  <label class="check"><input type="checkbox" id="del-files"> Chuyển luôn file clip (bản gốc + bản zoom) vào Thùng rác của Windows</label>
+  <div class="row gap end">
+    <button class="btn btn-small btn-ghost" onclick="document.getElementById('del-dialog').close()">Huỷ</button>
+    <button id="del-ok" class="btn btn-small btn-danger-solid" onclick="confirmDelete()">Xoá</button>
+  </div>
+</dialog>
+
+{% if deleted %}
+<section class="card">
+  <details class="deleted-list">
+    <summary class="card-header"><h2>Đoạn đã xoá ({{ deleted|length }})</h2>
+      <span class="muted small">không cắt, không zoom, không hiện khi tìm kiếm; bấm Khôi phục để đưa lại</span></summary>
+    <table class="table"><thead><tr><th>#</th><th>Loại</th><th>Thời gian</th><th>Tiêu đề</th><th>File</th><th></th></tr></thead>
+      <tbody>{% for s in deleted %}<tr class="{{ 'is-hook' if s.kind == 'hook' }}">
+        <td>{{ s.rank or '–' }}</td><td>{{ s.kind }}</td><td class="nowrap small">{{ s.start_hms }} → {{ s.end_hms }}</td>
+        <td>{{ s.title }}</td>
+        <td class="small">{% if s.has_zoom %}bản zoom{% elif s.has_clip %}bản gốc{% else %}<span class="muted">không còn</span>{% endif %}</td>
+        <td><button class="btn btn-tiny" onclick="restoreSegs([{{ s.id }}])">Khôi phục</button></td></tr>{% endfor %}</tbody></table>
+    <div class="card-body"><div class="row gap">
+      <button class="btn btn-small" onclick="restoreSegs([{{ deleted|map(attribute='id')|join(',') }}])">Khôi phục tất cả</button>
+      <span class="small muted">đoạn không còn file sẽ được cắt lại khi bấm "Chạy tiếp pipeline"</span></div></div>
+  </details>
+</section>
+{% endif %}
+
+<section class="card">
+  <div class="card-header"><h2>Dán khối phân tích</h2>
+    <span class="muted small">chỉ cần khi chạy skill bằng tay trong app Claude: bôi đen phần trả lời (từ "Tóm tắt" tới "Fit với khách mời", một hay nhiều đoạn) rồi dán vào đây. Studio tự nhận đoạn nhờ timestamp Start/End hoặc timestamp hook.</span></div>
+  <div class="card-body">
+    <textarea id="analysis-text" class="input" rows="6" placeholder="Tóm tắt: … Tại sao đoạn này đắt: … 🪝 HOOK COLD OPEN: 1. (02:14:01 – 02:14:15 · ~14s) … 🔑 Keyword hạt nhân: …"></textarea>
+    <div class="row gap"><button class="btn btn-primary" onclick="importAnalysis('{{ ep.id }}')">Lưu vào các đoạn tương ứng</button><span id="analysis-result" class="muted"></span></div>
+    <ul id="analysis-matched" class="small"></ul>
+  </div>
+</section>
+
+{% if jobs %}
+<section class="card">
+  <div class="card-header"><h2>Job của tập</h2></div>
+  <table class="table"><thead><tr><th>#</th><th>Bước</th><th>Trạng thái</th><th>Tiến độ</th><th>Thông báo</th><th>Bắt đầu</th><th>Kết thúc</th></tr></thead>
+  <tbody>{% for j in jobs %}<tr><td>{{ j.id }}</td><td>{{ j.stage }}</td><td><span class="badge job-{{ j.status }}">{{ j.status }}</span></td>
+    <td>{{ (j.progress or 0)|round|int }}%</td><td class="small">{{ (j.error or j.message or '')[:300] }}</td><td class="small muted">{{ j.started_at or '' }}</td><td class="small muted">{{ j.finished_at or '' }}</td></tr>{% endfor %}</tbody></table>
+</section>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+function preview(path, btn){ const box=btn.closest('.segment-body').querySelector('.preview');
+  box.innerHTML='<video controls preload="metadata" src="/media?path='+encodeURIComponent(path)+'"></video>'; }
+function toggleAll(open){ document.querySelectorAll('details.segment').forEach(d=>d.open=open); }
+async function importAnalysis(ep){ const text=document.getElementById('analysis-text').value; if(!text.trim()) return toast('Chưa dán gì');
+  const r=await api('/api/episodes/'+ep+'/analysis',{text});
+  if(r.error){ document.getElementById('analysis-result').textContent='Lỗi: '+r.error; return; }
+  document.getElementById('analysis-result').textContent=`${r.attached}/${r.blocks} khối đã gắn` + (r.unmatched&&r.unmatched.length? ' · chưa khớp: '+r.unmatched.join(' | '):'');
+  document.getElementById('analysis-matched').innerHTML=(r.matched||[]).map(m=>`<li>“${esc((m.block||'').slice(0,50))}” → <a href="#seg-${m.segment_id}">${esc(m.segment_title)}</a></li>`).join('');
+  if(r.attached) setTimeout(()=>location.reload(),2500); }
+async function runEpisode(id){ const r=await api('/api/episodes/'+id+'/run',{}); toast(r.error||r.message||'Đã đưa vào hàng đợi'); }
+async function stopEpisode(id){ const r=await api('/api/episodes/'+id+'/stop',{}); toast(r.error||r.message||'Đã gửi lệnh dừng'); }
+let _docSeg=null;
+function docOpen(id, btn){
+  _docSeg=id; const files=JSON.parse(btn.dataset.files||'[]');
+  document.getElementById('doc-what').textContent='#'+id+' · '+btn.dataset.title;
+  document.getElementById('doc-hooked').innerHTML=files.map(f=>`<option value="${esc(f)}">${esc(f.split(/[\\/]/).pop())}</option>`).join('');
+  document.getElementById('doc-dialog').showModal();
+}
+async function docCreate(){
+  const v=id=>document.getElementById(id);
+  const r=await api('/api/segments/'+_docSeg+'/docfilm',{hooked:v('doc-hooked').value, target_min:+v('doc-min').value,
+    budget_usd:v('doc-budget').value, note:v('doc-note').value, bridge:v('doc-bridge').value,
+    auto_advance:v('doc-auto').checked, use_jre:v('doc-jre').checked});
+  toast(r.error||r.message); if(!r.error){ v('doc-dialog').close(); setTimeout(()=>location.reload(),1200); }
+}
+async function docAct(job, action, body){ const r=await api('/api/docfilm/'+job+'/'+action, body||{}); toast(r.error||r.message);
+  if(!r.error) setTimeout(()=>location.reload(),1200); }
+async function pollDoc(seg, was){
+  const r=await (await fetch('/api/segments/'+seg+'/docfilm')).json();
+  if(!r || !r.status) return;
+  if(r.status!==was){ location.reload(); return; }
+  const el=document.getElementById('dxm-'+seg); if(el) el.textContent=r.progress_msg||'';
+  setTimeout(()=>pollDoc(seg, was), r.status==='joining'?3000:15000);
+}
+async function hookJoin(id){
+  const t=document.getElementById('hjt-'+id).value;
+  const r=await api('/api/segments/'+id+'/hook-join',{transition: t}); toast(r.error||r.message);
+  if(!r.error){ document.getElementById('hjb-'+id).disabled=true; pollHookJoin(id); }
+}
+async function pollHookJoin(id){
+  const el=document.getElementById('hjs-'+id);
+  const r=await (await fetch('/api/segments/'+id+'/hook-join')).json();
+  if(r.status==='running'){ el.textContent=r.msg||'đang nối…'; setTimeout(()=>pollHookJoin(id), 2000); return; }
+  if(r.status==='failed'){ el.innerHTML=''; el.textContent='lỗi: '+(r.error||''); el.classList.add('error'); document.getElementById('hjb-'+id).disabled=false; return; }
+  if(r.status==='done'){ toast('Nối hook xong'); location.reload(); }
+}
+async function zoomSegs(ep, ids){ const r=await api('/api/episodes/'+ep+'/zoom',{segment_ids: ids});
+  toast(r.error ? (String(r.error).includes('404')? 'Studio chưa nạp tính năng Zoom theo đoạn: bấm Stop rồi Start Hổ Báo Studio trong Tool Manager' : r.error) : r.message);
+  if(!r.error && r.clips) setTimeout(()=>location.reload(),1500); }
+function zoomPicked(ep){ const boxes=pickedBoxes(); if(!boxes.length) return; zoomSegs(ep, boxes.map(b=>+b.value)); clearPicked(); }
+async function zoomAll(ep, n){
+  if(!confirm('Zoom tất cả'+(n?' '+n+' đoạn':'')+' chưa có bản zoom của tập này? Zoom chạy lần lượt trong hàng đợi, có thể mất khá lâu.')) return;
+  const r=await api('/api/episodes/'+ep+'/zoom',{all: true}); toast(r.error||r.message);
+  if(!r.error && r.clips) setTimeout(()=>location.reload(),1500); }
+async function approve(id){ const r=await api('/api/episodes/'+id+'/approve',{}); toast(r.error||r.message||'Đã duyệt'); setTimeout(()=>location.reload(),1200); }
+if(location.hash && location.hash.startsWith('#seg-')){ const d=document.querySelector(location.hash); if(d){ d.open=true; d.scrollIntoView({block:'start'}); } }
+const NEED_RESTART='Studio chưa nạp tính năng Viết Title: bấm Stop rồi Start Hổ Báo Studio trong Tool Manager';
+async function runTitle(id){ const f=document.getElementById('focus-'+id), focus=f? f.value.trim() : '';
+  if(focus && !confirm('Viết title theo trọng tâm này và cắt lại HOOK 01 của đoạn cho đúng key mới? Clip hook cũ sẽ vào Thùng rác.')) return;
+  const m=document.getElementById('model-'+id), model=m? m.value : '';
+  const r=await api('/api/segments/'+id+'/title',{focus, model});
+  if(r.error){ toast(String(r.error).includes('404')? NEED_RESTART : r.error); return; }
+  toast(r.message||'Đã xếp vào hàng đợi viết title'); refreshTitle(id); }
+async function cancelTitle(id){ const r=await api('/api/segments/'+id+'/title/cancel',{}); toast(r.error||r.message); refreshTitle(id); }
+async function sendTitleChat(id){ const box=document.getElementById('chat-'+id); if(!box) return;
+  const message=box.value.trim(); if(!message){ toast('Nhập điều muốn Claude chỉnh'); box.focus(); return; }
+  box.disabled=true; const r=await api('/api/segments/'+id+'/title/chat',{message});
+  if(r.error){ box.disabled=false; toast(String(r.error).includes('404')? NEED_RESTART : r.error); return; }
+  toast(r.message||'Đã gửi cho Claude'); refreshTitle(id); }
+async function approveThumb(id, runId){
+  if(!confirm('Duyệt bản thumbnail #'+runId+'? Claude sẽ áp đúng bản này lên Canva (bản copy, không đụng template), lưu và export JPG.')) return;
+  const r=await api('/api/segments/'+id+'/title/approve-thumb',{run_id: runId});
+  if(r.error){ toast(String(r.error).includes('404')? NEED_RESTART : r.error); return; }
+  toast(r.message||'Đã gửi duyệt'); refreshTitle(id); }
+async function runThumb(id){ const q=document.getElementById('thumbreq-'+id), request=q? q.value.trim() : '';
+  const r=await api('/api/segments/'+id+'/thumb',{request});
+  if(r.error){ toast(String(r.error).includes('404')? NEED_RESTART : r.error); return; }
+  toast(r.message||'Đã xếp tạo thumbnail'); refreshTitle(id); }
+async function sendThumbChat(id, runId){ const box=document.getElementById('thumbchat-'+id); if(!box) return;
+  const message=box.value.trim(); if(!message){ toast('Nhập điều muốn chỉnh ở thumbnail'); box.focus(); return; }
+  box.disabled=true; const r=await api('/api/segments/'+id+'/thumb/chat',{message, run_id: runId||null});
+  if(r.error){ box.disabled=false; toast(String(r.error).includes('404')? NEED_RESTART : r.error); return; }
+  toast(r.message||'Đã gửi chỉnh thumbnail'); refreshTitle(id); }
+async function editThumb(id, runId){ const message=prompt('Sửa tiếp từ bản #'+runId+' (kết quả là một bản mới). Muốn đổi gì?');
+  if(!message||!message.trim()) return;
+  const r=await api('/api/segments/'+id+'/thumb/chat',{message: message.trim(), run_id: runId});
+  if(r.error){ toast(r.error); return; }
+  toast(r.message||'Đã gửi chỉnh thumbnail'); refreshTitle(id); }
+async function refreshTitle(id){
+  try{ const res=await fetch('/segments/'+id+'/title-block'); if(!res.ok) return;
+    const el=document.getElementById('title-'+id); if(!el) return;
+    el.outerHTML=await res.text();
+    const n=document.getElementById('title-'+id);
+    if(n && ['queued','running'].includes(n.dataset.status)) setTimeout(()=>refreshTitle(id),4000);
+  }catch(e){ setTimeout(()=>refreshTitle(id),8000); } }
+async function runAllTitles(ep){
+  if(!confirm('Viết title cho mọi đoạn highlight chưa có title của tập này? Mỗi đoạn là một lượt Claude, chạy lần lượt.')) return;
+  const r=await api('/api/episodes/'+ep+'/titles',{});
+  if(r.error){ toast(String(r.error).includes('404')? NEED_RESTART : r.error); return; }
+  toast(r.message); setTimeout(()=>location.reload(),1200); }
+document.querySelectorAll('.title-block').forEach(b=>{ if(['queued','running'].includes(b.dataset.status)) setTimeout(()=>refreshTitle(b.dataset.seg),4000); });
+// ---- delete / restore segments
+function pickedBoxes(){ return [...document.querySelectorAll('.seg-pick:checked')]; }
+function onPick(){ const n=pickedBoxes().length; document.getElementById('pick-bar').hidden=!n; document.getElementById('pick-n').textContent=n; }
+function clearPicked(){ pickedBoxes().forEach(b=>b.checked=false); onPick(); }
+function askDelete(ids, labels){ const d=document.getElementById('del-dialog'); d.dataset.ids=ids.join(',');
+  document.getElementById('del-what').innerHTML=[].concat(labels).map(l=>'<li>'+esc(l)+'</li>').join('');
+  document.getElementById('del-files').checked=false; d.showModal(); }
+function deletePicked(){ const boxes=pickedBoxes(); if(!boxes.length) return;
+  askDelete(boxes.map(b=>+b.value), boxes.map(b=>b.dataset.label)); }
+async function confirmDelete(){ const d=document.getElementById('del-dialog'), btn=document.getElementById('del-ok');
+  const ids=d.dataset.ids.split(',').map(Number), files=document.getElementById('del-files').checked;
+  btn.disabled=true; const r=await api('/api/segments/delete',{ids, files}); btn.disabled=false; d.close();
+  if(r.error){ toast(r.error); return; }
+  let msg=`Đã xoá ${r.highlights} đoạn highlight, ${r.hooks} hook`;
+  if(r.trashed && r.trashed.length) msg+=` · ${r.trashed.length} file vào Thùng rác`;
+  if(r.errors && r.errors.length) msg+=' · chưa chuyển được: '+r.errors.join('; ');
+  toast(msg); setTimeout(()=>location.reload(), r.errors && r.errors.length ? 5000 : 1200); }
+async function restoreSegs(ids){ const r=await api('/api/segments/restore',{ids}); if(r.error){ toast(r.error); return; }
+  toast(`Đã khôi phục ${r.restored} đoạn`+(r.missing_clips?` · ${r.missing_clips} đoạn chưa có clip, bấm "Chạy tiếp pipeline" để cắt lại`:''));
+  setTimeout(()=>location.reload(),1500); }
+</script>
+{% endblock %}

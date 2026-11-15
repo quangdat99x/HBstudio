@@ -1,0 +1,12 @@
+<div class="stepper">
+  {% for r in rows %}
+  {% set st = r.meta %}
+  <a class="step-chip {{ 'active' if r.step == step.key }} {{ r.status }}" href="?step={{ r.step }}" data-step="{{ r.step }}"
+     onclick="selectStep('{{ r.step }}'); return false;" title="{{ st.goal }}">
+    <span class="n">Bước {{ st.num }}</span>
+    <span class="name">{{ st.icon }} {{ st.name }}</span>
+    <span class="stat st-{{ r.status }}">{% if r.status in ('running', 'queued') %}<span class="spin"></span>{% elif r.status == 'approved' %}✓{% elif r.status == 'failed' %}✕{% elif r.status == 'review' %}●{% endif %}{{ r.label }}</span>
+    {% if r.stale %}<span class="stale warn" title="Bước trước đã thay đổi sau khi bước này chạy: nên xem lại hoặc chạy lại">⚠</span>{% endif %}
+  </a>
+  {% endfor %}
+</div>

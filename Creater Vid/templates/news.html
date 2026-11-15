@@ -1,0 +1,585 @@
+{% extends "base.html" %}
+{% from "_yt.html" import yt_picker %}
+{% set title = 'Tin tức' %}
+{% block content %}
+<div class="news-layout">
+  <aside class="card">
+    <div class="card-header"><h2>📰 Chủ đề theo dõi</h2>
+      <button class="btn btn-small btn-primary" onclick="openNewTopic()" title="Thêm chủ đề">＋ Chủ đề</button></div>
+    <div class="card-body" id="topics"><div class="muted small">Đang tải…</div></div>
+    <div class="card-body small muted" style="border-top:1px solid var(--border)" id="poll-note"></div>
+  </aside>
+
+  <section class="card" id="main-card">
+    <div class="card-header">
+      <div class="col" style="gap:2px;min-width:0">
+        <h2 id="t-name">Tin tức</h2>
+        <div class="small muted" id="t-meta"></div>
+      </div>
+      <div class="row gap wrap" id="t-actions" hidden>
+        <button class="btn btn-small btn-primary" id="digest-btn" onclick="pickDigest()"
+                title="Tự chọn {{ digest.stories }} sự kiện được nhiều nguồn đưa nhất trong 24 giờ qua, rồi mở hộp làm video kiểu Điểm tin 24h">📰 Điểm tin 24h</button>
+        <button class="btn btn-small" id="poll-btn" onclick="pollNow()">⟳ Cập nhật ngay</button>
+        <button class="btn btn-small btn-ghost" onclick="markAllSeen()" title="Bỏ nhãn mới của mọi tin">✓ Đã xem hết</button>
+        <button class="btn btn-small btn-ghost" onclick="openEditor()">⚙ Chủ đề & nguồn</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="row gap wrap">
+        <input class="input grow" id="q" placeholder="Lọc theo chữ trong tiêu đề, tóm tắt, tên nguồn…" style="min-width:200px">
+        <div class="seg" id="f-state">
+          <button data-v="" class="on">Tất cả</button><button data-v="new">Mới</button><button data-v="starred">★</button>
+          <button data-v="used">Đã làm video</button><button data-v="hidden">Đã ẩn</button>
+        </div>
+        <select class="input" id="f-side" title="Bên đưa tin">
+          <option value="">Mọi bên</option>
+          {% for k, v in sides.items() if k %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+          <option value="other">Khác / tìm kiếm</option>
+        </select>
+        <select class="input" id="f-sort">
+          <option value="time">Mới nhất</option><option value="hot">Nhiều nguồn nhất</option><option value="score">Khớp nhiều từ khóa</option>
+        </select>
+        <label class="check small"><input type="checkbox" id="f-group" checked> Gộp theo sự kiện</label>
+      </div>
+      <button class="btn btn-small newbar" id="newbar" hidden onclick="loadItems(true)">↑ Có tin mới, bấm để hiện</button>
+      <div id="feed" class="feed"><div class="muted small">Chọn một chủ đề.</div></div>
+    </div>
+  </section>
+</div>
+
+<div class="selbar" id="selbar" hidden>
+  <span>Đã chọn <b id="sel-n">0</b> tin</span>
+  <button class="btn btn-small btn-ghost" onclick="clearSel()">Bỏ chọn</button>
+  <button class="btn btn-small btn-primary" onclick="openVideo()">🎬 Làm video từ tin đã chọn</button>
+</div>
+
+<dialog id="new-dialog" class="modal">
+  <h3>＋ Chủ đề theo dõi mới</h3>
+  <label>Bắt đầu từ
+    <select class="input" id="nt-preset" onchange="presetChanged()">
+      {% for k, label in presets.items() %}<option value="{{ k }}">Mẫu: {{ label }}</option>{% endfor %}
+      <option value="">Trống (tự thêm nguồn)</option>
+    </select></label>
+  <div class="grid2" style="margin-top:10px">
+    <label>Tên chủ đề<input class="input" id="nt-name" placeholder="VD: Chiến sự Nga–Ukraina"></label>
+    <label>Ngôn ngữ video<select class="input" id="nt-language">{% for code, name in [('ru', 'Tiếng Nga'), ('uk', 'Tiếng Ukraina'), ('en', 'Tiếng Anh'), ('vi', 'Tiếng Việt'), ('fr', 'Tiếng Pháp'), ('es', 'Tiếng Tây Ban Nha'), ('de', 'Tiếng Đức')] %}
+      <option value="{{ code }}">{{ name }}</option>{% endfor %}</select></label>
+  </div>
+  <p class="small muted" id="nt-hint">Mẫu có sẵn 22 nguồn tiếng Nga đã kiểm tra (phía Nga, phía Ukraina, báo độc lập, quốc tế, Telegram, Bing/Google News) và bộ từ khóa chiến sự. Sửa thoải mái sau khi tạo.</p>
+  <div class="row gap end">
+    <button class="btn btn-small btn-ghost" onclick="document.getElementById('new-dialog').close()">Huỷ</button>
+    <button class="btn btn-small btn-primary" onclick="createTopic()">Tạo và cập nhật ngay</button>
+  </div>
+</dialog>
+
+<dialog id="edit-dialog" class="modal wide tall">
+  <h3>⚙ Chủ đề & nguồn</h3>
+  <div class="grid4">
+    <label>Tên<input class="input" id="et-name"></label>
+    <label>Ngôn ngữ video (mã)<input class="input" id="et-language" placeholder="ru"></label>
+    <label>Cập nhật mỗi (phút)<input class="input" id="et-interval" type="number" min="2"></label>
+    <label class="check" style="align-self:end"><input type="checkbox" id="et-enabled"> Tự cập nhật</label>
+  </div>
+  <div class="grid2" style="margin-top:10px">
+    <label><span>Từ khóa, mỗi dòng một từ. Viết thường = khớp đầu từ (<b>наступлен</b> → наступление, наступления…); viết HOA = khớp nguyên từ (<b>СВО</b> không khớp "своим")</span>
+      <textarea class="input mono" id="et-keywords" rows="8"></textarea></label>
+    <label>Loại trừ (tin chứa một trong các từ này bị bỏ)
+      <textarea class="input mono" id="et-exclude" rows="8"></textarea></label>
+  </div>
+  <label style="margin-top:10px">Yêu cầu mặc định khi làm video từ chủ đề này (góc nhìn, giọng, điều cần tránh)
+    <textarea class="input" id="et-brief" rows="3"></textarea></label>
+  <div class="grid4" style="margin-top:10px">
+    <label>Định dạng video<select class="input" id="et-format"><option value="9:16">9:16 (Shorts/TikTok/Reels)</option><option value="16:9">16:9 (YouTube)</option></select></label>
+    <label>Thời lượng tối thiểu (giây)<input class="input" id="et-target" type="number" min="10"></label>
+    <label>Kiểu video mặc định<select class="input" id="et-kind">{% for k, v in video_kinds.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label>
+  </div>
+  <div class="row gap end" style="margin-top:8px">
+    <button class="btn btn-small btn-primary" onclick="saveTopic()">Lưu chủ đề</button>
+  </div>
+
+  <div class="section-title" style="margin-top:14px">Nguồn tin <span class="muted" id="src-count"></span></div>
+  <div class="small muted">Nguồn bật "lọc" chỉ giữ tin khớp từ khóa; tắt "lọc" cho kênh chuyên về chủ đề (VD kênh Telegram của Bộ Quốc phòng). Sửa ô nào lưu ngay ô đó.</div>
+  <div class="scroll" style="max-height:44vh">
+    <table class="table src-table"><thead><tr><th></th><th>Loại</th><th>Tên</th><th>Địa chỉ / kênh / từ khóa tìm</th><th>Phía</th><th title="Chỉ giữ tin khớp từ khóa">Lọc</th><th>Lần cuối</th><th></th></tr></thead>
+      <tbody id="src-rows"></tbody>
+      <tfoot><tr>
+        <td></td>
+        <td><select class="input" id="ns-kind" onchange="kindHint()">{% for k, v in kinds.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></td>
+        <td><input class="input" id="ns-name" placeholder="tên hiển thị"></td>
+        <td><input class="input mono" id="ns-url" placeholder="https://…/rss.xml"></td>
+        <td><select class="input" id="ns-side">{% for k, v in sides.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></td>
+        <td><input type="checkbox" id="ns-filter" checked></td>
+        <td colspan="2" class="nowrap"><button class="btn btn-tiny" onclick="testNew()">Thử</button> <button class="btn btn-tiny btn-primary" onclick="addSource()">＋ Thêm</button></td>
+      </tr></tfoot>
+    </table>
+  </div>
+  <div id="test-out" class="small"></div>
+  <div class="row gap end">
+    <button class="btn btn-small btn-ghost btn-danger" onclick="deleteTopic()">Xóa chủ đề</button>
+    <span class="grow"></span>
+    <button class="btn btn-small" onclick="closeEditor()">Đóng</button>
+  </div>
+</dialog>
+
+<dialog id="video-dialog" class="modal wide tall">
+  <h3>🎬 Làm video từ <span id="v-n"></span> tin</h3>
+  <div class="box small" id="v-items" style="max-height:24vh;overflow:auto"></div>
+  <p class="small muted">App tạo một dự án mới: mỗi tin thành một file trong <span class="mono">sources/</span> (toàn văn đọc ngay lúc tạo), rồi Claude viết kịch bản ở bước 1 như mọi dự án.</p>
+  <div class="grid2">
+    <label>Kiểu video<select class="input" id="v-kind" onchange="kindChanged()">{% for k, v in video_kinds.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label>
+    <div class="small muted" id="v-kind-hint" style="align-self:end"></div>
+  </div>
+  <div id="v-focus-row" hidden style="margin-top:10px">
+    <label>Trọng tâm điểm tin (tuỳ chọn): tin sát nhất phát đầu tiên; từ khóa quan trọng nhất gõ trước, cách nhau bằng dấu phẩy
+      <div class="row gap">
+        <input class="input grow" id="v-focus" placeholder="VD: ưu tiên tin về Putin, Zelensky, đàm phán hoà bình, NATO"
+               onkeydown="if(event.key === 'Enter'){ event.preventDefault(); repickDigest(); }">
+        <button class="btn btn-small" id="v-repick" onclick="repickDigest()" title="Chọn lại các sự kiện theo trọng tâm">↻ Chọn lại tin</button>
+      </div></label>
+    <div class="small muted" id="v-focus-terms" style="margin-top:4px">Tên người, nước, chủ đề viết tiếng Việt hoặc tiếng Anh (Putin, Zelensky, Mỹ, NATO, đàm phán, drone…) hoặc gõ thẳng từ tiếng Nga.</div>
+  </div>
+  <div class="grid2" style="margin-top:10px">
+    <label>Tên video<input class="input" id="v-title"></label>
+    <label>Khán giả<input class="input" id="v-audience"></label>
+  </div>
+  <label style="margin-top:10px">Yêu cầu riêng<textarea class="input" id="v-brief" rows="4"></textarea></label>
+  <div class="grid4" style="margin-top:10px">
+    <label>Ngôn ngữ<input class="input" id="v-language"></label>
+    <label>Định dạng<select class="input" id="v-format"><option value="9:16">9:16</option><option value="16:9">16:9</option></select></label>
+    <label>Thời lượng tối thiểu (giây)<input class="input" id="v-target" type="number" min="10"></label>
+    <label>Ngân sách nguyên liệu (USD)<input class="input" id="v-budget" type="number" min="0" step="0.5" value="{{ s.budget_usd }}"></label>
+  </div>
+  <div style="margin-top:10px">{{ yt_picker('v', yt_last('news'), vis=yt_last('vis_news')) }}</div>
+  <div class="row gap wrap" style="margin-top:10px">
+    <label class="check"><input type="checkbox" id="v-start" checked> Chạy bước 1 (Kịch bản) ngay</label>
+    <label class="check"><input type="checkbox" id="v-auto"> Tự chạy hết 6 bước, không chờ duyệt</label>
+  </div>
+  <div class="row gap end">
+    <button class="btn btn-small btn-ghost" onclick="document.getElementById('video-dialog').close()">Huỷ</button>
+    <button class="btn btn-small btn-primary" id="v-go" onclick="makeVideo()">Tạo dự án</button>
+  </div>
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script>
+const KINDS = {{ kinds|tojson }}, SIDES = {{ sides|tojson }}, DEFAULT_AUDIENCE = {{ s.audience|tojson }};
+const URL_HINT = {rss: 'https://…/rss.xml', telegram: '@kenh hoặc https://t.me/kenh', bing: 'từ khóa tìm, VD: ВСУ фронт', gnews: 'từ khóa tìm, VD: линия фронта'};
+const AUDIENCE = {{ audiences|tojson }}, DIGEST = {{ digest|tojson }};
+const ls ={get(k){ try { return localStorage.getItem('news.' + k); } catch(e){ return null; } },
+            set(k, v){ try { localStorage.setItem('news.' + k, v); } catch(e){} }};
+let topics = [], tid = null, items = [], shownMax = 0, sel = new Map(), openBodies = new Map(), openGroups = new Set(), storyCache = new Map();
+let filters = {state: '', side: '', q: '', sort: ls.get('sort') || 'time', group: ls.get('group') !== '0'};
+let fastPoll = null;
+
+const topic = () => topics.find(t => t.id === tid);
+const safeUrl = u => /^https?:\/\//i.test(u || '') ? u : '#';
+function when(iso){ return iso ? new Date(iso) : null; }
+function ago(iso){
+  const d = when(iso); if(!d) return ''; const s = (Date.now() - d) / 1000;
+  if(s < 60) return 'vừa xong'; if(s < 3600) return Math.floor(s / 60) + ' phút trước';
+  if(s < 86400) return Math.floor(s / 3600) + ' giờ trước'; return Math.floor(s / 86400) + ' ngày trước';
+}
+function hhmm(iso){ const d = when(iso); if(!d) return ''; const today = new Date().toDateString() === d.toDateString();
+  return (today ? '' : d.getDate() + '/' + (d.getMonth() + 1) + ' ') + d.toTimeString().slice(0, 5); }
+
+// ---------------------------------------------------------------- topics
+async function loadTopics(){
+  let r; try { r = await (await fetch('/api/news/topics')).json(); } catch(e){ return; }
+  topics = r.topics || [];
+  if(!topic()){ const saved = parseInt(ls.get('topic') || '0'); tid = (topics.find(t => t.id === saved) || topics[0] || {}).id || null; }
+  document.getElementById('poll-note').innerHTML = r.enabled
+    ? 'Tự cập nhật: <span class="ok">bật</span> · mỗi chủ đề theo chu kỳ riêng. <a href="/settings#news">Cài đặt</a>'
+    : 'Tự cập nhật: <span class="warn">tắt</span> (chỉ khi bấm Cập nhật ngay). <a href="/settings#news">Bật trong Cài đặt</a>';
+  renderTopics(); renderHead();
+  if(!topics.length){ document.getElementById('feed').innerHTML = '<div class="muted small">Chưa có chủ đề. Bấm <b>＋ Chủ đề</b>: mẫu "Chiến sự Nga–Ukraina (tiếng Nga)" có sẵn nguồn và từ khóa.</div>'; openNewTopic(); }
+  return r;
+}
+function renderTopics(){
+  document.getElementById('topics').innerHTML = topics.map(t => `
+    <div class="topic-item ${t.id === tid ? 'active' : ''}" onclick="selectTopic(${t.id})">
+      <div class="name">${t.polling ? '<span class="spin"></span>' : ''}${esc(t.name)}
+        ${t.new_count ? `<span class="pill">${t.new_count} mới</span>` : ''}${t.enabled ? '' : '<span class="pill gray">tạm dừng</span>'}</div>
+      <div class="sub">${t.total} tin · ${t.source_count} nguồn${t.source_errors ? ` · <span class="warn">${t.source_errors} lỗi</span>` : ''} · ${esc((t.language || '').toUpperCase())}</div>
+      <div class="sub">${t.last_polled_at ? 'cập nhật ' + ago(t.last_polled_at) + (t.last_new ? ` (+${t.last_new})` : '') : 'chưa cập nhật'}</div>
+    </div>`).join('') || '<div class="muted small">Chưa có chủ đề.</div>';
+}
+function renderHead(){
+  const t = topic();
+  document.getElementById('t-actions').hidden = !t;
+  if(!t){ document.getElementById('t-name').textContent = 'Tin tức'; document.getElementById('t-meta').textContent = ''; return; }
+  document.getElementById('t-name').textContent = '📰 ' + t.name;
+  const err = t.source_errors ? ` · <a href="#" onclick="openEditor();return false" class="warn">⚠ ${t.source_errors} nguồn lỗi</a>` : '';
+  document.getElementById('t-meta').innerHTML = `Video ${esc((t.language || '').toUpperCase())} · ${esc(t.format)} · ≥ ${t.target_sec}s · ${t.source_count} nguồn · cập nhật mỗi ${t.interval_min} phút`
+    + (t.last_polled_at ? ` · lần cuối ${hhmm(t.last_polled_at)}` : '') + err;
+  const b = document.getElementById('poll-btn');
+  b.disabled = !!t.polling; b.innerHTML = t.polling ? '<span class="spin"></span>Đang cập nhật…' : '⟳ Cập nhật ngay';
+}
+async function selectTopic(id){
+  if(id === tid) return;
+  tid = id; ls.set('topic', id); sel.clear(); openBodies.clear(); openGroups.clear(); storyCache.clear(); renderSel();
+  renderTopics(); renderHead(); await loadItems(true);
+}
+
+// ---------------------------------------------------------------- items
+async function loadItems(reset){
+  if(!tid) return;
+  const p = new URLSearchParams({topic: tid, state: filters.state, side: filters.side, q: filters.q});
+  let r; try { r = await (await fetch('/api/news/items?' + p)).json(); } catch(e){ return; }
+  const prevMax = reset ? Infinity : shownMax;
+  items = r.items || [];
+  storyCache.clear();
+  shownMax = Math.max((topic() || {}).last_item_id || 0, ...items.map(i => i.id));
+  document.getElementById('newbar').hidden = true;
+  renderFeed(prevMax);
+}
+function groupItems(){
+  const groups = new Map();
+  for(const it of items){
+    const key = filters.group ? (it.story_id || it.id) : it.id;
+    if(!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(it);
+  }
+  const out = [...groups.values()].map(list => {
+    // the item the story was built around (every other item was matched against it), else the first non-search one
+    const rank = i => (['bing', 'gnews'].includes(i.kind) ? 1 : 0);
+    const head = list.find(i => i.id === i.story_id)
+      || [...list].sort((a, b) => rank(a) - rank(b) || (a.published_at || '').localeCompare(b.published_at || ''))[0];
+    return {head, list, latest: list.reduce((m, i) => (i.published_at || '') > m ? i.published_at : m, ''),
+            size: Math.max(head.story_size || 1, list.length), score: Math.max(...list.map(i => i.score || 0))};
+  });
+  const byTime = (a, b) => b.latest.localeCompare(a.latest);
+  if(filters.sort === 'hot') out.sort((a, b) => b.size - a.size || byTime(a, b));
+  else if(filters.sort === 'score') out.sort((a, b) => b.score - a.score || byTime(a, b));
+  else out.sort(byTime);
+  return out;
+}
+function sideTag(it){
+  const s = it.side || '';
+  return `<span class="side side-${s || 'x'}" title="${esc(SIDES[s] || 'Không rõ phía')}">${esc(it.source || '?')}</span>`;
+}
+function stateTag(it){
+  return it.state === 'new' ? '<span class="pill">mới</span>' : it.state === 'starred' ? '<span class="pill warn">★</span>'
+       : it.state === 'used' ? `<a class="pill ok" href="/p/${it.project_id}">đã làm video</a>` : it.state === 'hidden' ? '<span class="pill gray">đã ẩn</span>' : '';
+}
+function itemHtml(it, fresh, child){
+  const kind = it.kind === 'telegram' ? '<span class="pill gray">Telegram</span>' : (it.kind === 'bing' || it.kind === 'gnews') ? '<span class="pill gray">tìm kiếm</span>' : '';
+  const views = it.extra && it.extra.views ? `<span title="lượt xem">👁 ${esc(it.extra.views)}</span>` : '';
+  const photos = (it.media || []).filter(m => m.kind === 'photo').length, vids = (it.media || []).filter(m => m.kind === 'video');
+  const big = vids.filter(m => m.too_big).length;
+  const video = (photos || vids.length) ? `<span class="news-media" title="ảnh, video của bài (dùng làm nguyên liệu sau khi bạn duyệt)">`
+    + (photos ? `🖼 ${photos}` : '') + (photos && vids.length ? ' · ' : '')
+    + (vids.length ? `🎞 ${vids.length}${vids.length === 1 && vids[0].duration ? ' (' + esc(vids[0].duration) + ')' : ''}${big ? ` · ${big} lớn` : ''}` : '') + '</span>' : '';
+  const body = openBodies.get(it.id);
+  return `<div class="news-item st-${it.state} ${fresh ? 'fresh' : ''} ${child ? 'child' : ''}" id="it-${it.id}">
+    <input type="checkbox" class="sel" ${sel.has(it.id) ? 'checked' : ''} onchange="toggleSel(${it.id}, this.checked)" title="Chọn để làm video">
+    <div class="grow" style="min-width:0">
+      <div class="news-meta"><span class="nowrap" title="${esc((it.published_at || '').replace('T', ' '))}">${hhmm(it.published_at)} · ${ago(it.published_at)}</span>
+        ${sideTag(it)} ${kind} ${views} ${video} ${stateTag(it)}</div>
+      <a class="news-title" href="${esc(safeUrl(it.url))}" target="_blank" rel="noopener" onclick="seen(${it.id})">${esc(it.title)}</a>
+      ${it.summary && it.summary !== it.title ? `<div class="news-sum">${esc(it.summary)}</div>` : ''}
+      <div class="news-actions">
+        <button class="btn btn-tiny" onclick="toggleBody(${it.id})">${body ? '▴ Thu gọn' : (it.has_body ? '📖 Toàn văn' : '📖 Đọc bài')}</button>
+        <button class="btn btn-tiny btn-ghost" onclick="star(${it.id})" title="Đánh dấu">${it.state === 'starred' ? '★ Bỏ dấu' : '☆'}</button>
+        <button class="btn btn-tiny btn-ghost" onclick="hide(${it.id})" title="${it.state === 'hidden' ? 'Hiện lại' : 'Ẩn tin này'}">${it.state === 'hidden' ? 'Hiện lại' : 'Ẩn'}</button>
+        ${it.matched ? `<span class="small muted" title="Từ khóa khớp">🔑 ${esc(it.matched)}</span>` : ''}
+      </div>
+      ${body ? `<div class="news-body">${body.loading ? '<span class="spin"></span> đang đọc bài…' : (body.error ? `<div class="warn small">Không lấy được toàn văn: ${esc(body.error)}</div>` : '') + esc(body.text || '')}</div>` : ''}
+    </div>
+    ${it.image ? `<img class="news-thumb" src="${esc(safeUrl(it.image))}" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}
+  </div>`;
+}
+function renderFeed(prevMax){
+  const feed = document.getElementById('feed');
+  if(!items.length){ feed.innerHTML = '<div class="muted small" style="padding:10px 0">' + ((topic() || {}).last_polled_at ? 'Không có tin khớp bộ lọc.' : 'Đang cập nhật lần đầu, tin sẽ hiện trong giây lát…') + '</div>'; return; }
+  const fresh = id => prevMax !== Infinity && id > prevMax;
+  feed.innerHTML = groupItems().map(g => {
+    const others = g.size - 1, key = g.head.story_id || g.head.id, open = openGroups.has(key);
+    const outlets = (g.head.story_outlets || '').split(',').filter(Boolean);
+    let html = itemHtml(g.head, fresh(g.head.id), false);
+    if(filters.group && others > 0){
+      const kids = (storyCache.get(key) || g.list).filter(i => i.id !== g.head.id);
+      html += `<div class="news-group">
+        <button class="btn btn-tiny btn-ghost" onclick="toggleGroup(${key})">${open ? '▾' : '▸'} +${others} tin cùng sự kiện · ${outlets.length} nguồn: ${esc(outlets.slice(0, 6).join(', '))}${outlets.length > 6 ? '…' : ''}</button>
+        <button class="btn btn-tiny btn-ghost" onclick="selectGroup(${key})" title="Chọn mọi tin của sự kiện này">☑ chọn cả nhóm</button>
+        ${open ? kids.map(i => itemHtml(i, fresh(i.id), true)).join('') : ''}</div>`;
+    }
+    return `<div class="news-entry">${html}</div>`;
+  }).join('');
+}
+async function storyOf(key){
+  if(!storyCache.has(key)){
+    const r = await (await fetch('/api/news/story/' + key)).json();
+    const list = (r.items || []).filter(i => !filters.side || (filters.side === 'other' ? !i.side : i.side === filters.side));
+    storyCache.set(key, list);
+  }
+  return storyCache.get(key);
+}
+async function toggleGroup(key){
+  if(openGroups.has(key)) openGroups.delete(key); else { openGroups.add(key); await storyOf(key); }
+  renderFeed(Infinity);
+}
+async function selectGroup(key){
+  for(const i of await storyOf(key)) sel.set(i.id, i);
+  renderSel(); renderFeed(Infinity);
+}
+function findItem(id){
+  return items.find(i => i.id === id) || [...storyCache.values()].flat().find(i => i.id === id);
+}
+async function toggleBody(id){
+  if(openBodies.has(id)){ openBodies.delete(id); renderFeed(Infinity); return; }
+  openBodies.set(id, {loading: true}); renderFeed(Infinity);
+  const r = await (await fetch(`/api/news/items/${id}/body`)).json().catch(() => ({error: 'lỗi mạng'}));
+  openBodies.set(id, {text: r.body || '', error: r.error});
+  const it = findItem(id); if(it && it.state === 'new') it.state = 'seen';
+  renderFeed(Infinity);
+}
+function seen(id){ const it = findItem(id); if(it && it.state === 'new'){ it.state = 'seen'; fetch(`/api/news/items/${id}/body`).catch(() => {}); } }
+async function setState(ids, state){
+  const r = await api('/api/news/items/state', {ids, state}); if(r.error){ toast(r.error); return false; } return true;
+}
+async function star(id){
+  const it = findItem(id); if(!it) return;
+  const next = it.state === 'starred' ? 'seen' : 'starred';
+  if(await setState([id], next)){ it.state = next; renderFeed(Infinity); }
+}
+async function hide(id){
+  const it = findItem(id); if(!it) return;
+  const next = it.state === 'hidden' ? 'seen' : 'hidden';
+  if(await setState([id], next)){
+    it.state = next;
+    if(next === 'hidden' && filters.state !== 'hidden'){ items = items.filter(i => i.id !== id); storyCache.clear(); sel.delete(id); renderSel(); }
+    renderFeed(Infinity); loadTopics();
+  }
+}
+async function markAllSeen(){
+  const r = await api(`/api/news/topics/${tid}/seen`, {}); if(r.error){ toast(r.error); return; }
+  toast(`Đã bỏ nhãn mới của ${r.count} tin`); await loadTopics(); await loadItems(true);
+}
+
+// ---------------------------------------------------------------- selection, video
+function toggleSel(id, on){ const it = findItem(id); if(on && it) sel.set(id, it); else sel.delete(id); renderSel(); }
+function clearSel(){ sel.clear(); renderSel(); renderFeed(Infinity); }
+function renderSel(){ document.getElementById('selbar').hidden = !sel.size; document.getElementById('sel-n').textContent = sel.size; }
+function selList(){ return [...sel.values()].sort((a, b) => (a.published_at || '').localeCompare(b.published_at || '')); }
+function renderVideoItems(){
+  // a digest shows the order it was picked in (closest to the focus first), items added by hand after them
+  const order = i => i.digest_order || Infinity;
+  const list = selList().sort((a, b) => order(a) - order(b) || 0);
+  document.getElementById('v-n').textContent = list.length;
+  document.getElementById('v-items').innerHTML = list.map(i => `<div>${i.digest_order === 1 && (i.focus_hits || []).length ? '<b title="tin sát trọng tâm nhất, phát đầu tiên">▶ Mở đầu:</b> ' : ''}`
+    + `${(i.focus_hits || []).length ? '<b title="khớp trọng tâm">★</b> ' : ''}`
+    + `${hhmm(i.published_at)} ${sideTag(i)} ${esc(i.title)}`
+    + (i.story_size > 1 ? ` <span class="muted">· ${i.story_size} nguồn</span>` : '') + '</div>').join('');
+}
+function openVideo(kind){
+  const t = topic() || {};
+  renderVideoItems();
+  document.getElementById('v-brief').value = t.brief || '';
+  document.getElementById('v-language').value = t.language || 'ru';
+  document.getElementById('v-audience').value = AUDIENCE[t.language] || DEFAULT_AUDIENCE;
+  document.getElementById('v-kind').value = kind || t.video_kind || 'single';
+  document.getElementById('v-focus').value = ls.get('focus.' + tid) || '';
+  kindChanged();
+  if(!document.getElementById('video-dialog').open) document.getElementById('video-dialog').showModal();
+}
+// a digest is a long 16:9 YouTube bulletin whose title Claude writes by the formula (news rulebook 2.9); a single story keeps
+// the topic's own format, length and the story's headline
+function kindChanged(){
+  const t = topic() || {}, digest = document.getElementById('v-kind').value === 'digest';
+  const list = selList();
+  const own = (t.video_kind || 'single') === (digest ? 'digest' : 'single');      // the topic's defaults fit this kind
+  document.getElementById('v-title').value = digest ? '' : (list.find(i => i.id === i.story_id) || list[list.length - 1] || {}).title || '';
+  document.getElementById('v-title').placeholder = digest ? 'để trống = "Điểm tin 24h <ngày>", Claude đặt tựa theo công thức' : '';
+  document.getElementById('v-format').value = own ? (t.format || '9:16') : (digest ? '16:9' : '9:16');
+  document.getElementById('v-target').value = own ? (t.target_sec || 60) : (digest ? DIGEST.target_sec : 60);
+  document.getElementById('v-focus-row').hidden = !digest;
+  kindHint();
+}
+function kindHint(){
+  const digest = document.getElementById('v-kind').value === 'digest';
+  const n = new Set(selList().map(i => i.story_id || i.id)).size;
+  document.getElementById('v-kind-hint').innerHTML = digest
+    ? `${n} sự kiện · menu tiêu đề mở đầu, mỗi tin ~40–60 s, tin của thumbnail ở giữa video (bộ quy tắc tin tức mục 2.9)`
+    : 'Một sự kiện, kể ngắn gọn từ các tin đã chọn';
+}
+// the events of the last 24 h, most covered first; with a focus, the events that name it come first
+async function fetchDigest(focus){
+  try { return await (await fetch(`/api/news/topics/${tid}/digest?stories=${DIGEST.stories}&focus=${encodeURIComponent(focus || '')}`)).json(); }
+  catch(e){ return {error: 'không gọi được app'}; }
+}
+function applyDigest(r, focus){
+  sel.clear(); r.items.forEach(it => sel.set(it.id, it)); renderSel(); renderFeed(Infinity);
+  const terms = r.focus_terms || [];
+  document.getElementById('v-focus-terms').innerHTML = !focus ? 'Tên người, nước, chủ đề viết tiếng Việt hoặc tiếng Anh (Putin, Zelensky, Mỹ, NATO, đàm phán, drone…) hoặc gõ thẳng từ tiếng Nga.'
+    : terms.length ? `Tìm theo: <span class="mono">${esc(terms.join(', '))}</span> · <b>${r.focus_matched}/${r.stories.length}</b> sự kiện khớp (★), phần còn lại là tin nhiều nguồn nhất. Câu trọng tâm cũng được gửi cho Claude khi viết kịch bản.`
+    : '<span class="warn">Không nhận ra từ khóa nào</span>: thử tên tiếng Anh (Putin, Zelensky, Trump…) hoặc gõ tiếng Nga (Путин). Câu trọng tâm vẫn được gửi cho Claude.';
+}
+async function pickDigest(){
+  const btn = document.getElementById('digest-btn'); btn.disabled = true;
+  const focus = ls.get('focus.' + tid) || '';
+  const r = await fetchDigest(focus);
+  btn.disabled = false;
+  if(r.error){ toast(r.error); return; }
+  if(!r.items.length){ toast('Chưa có tin nào trong 24 giờ qua'); return; }
+  applyDigest(r, focus);
+  toast(`Đã chọn ${r.stories.length} sự kiện (trong ${r.considered} sự kiện 24 giờ qua)`);
+  openVideo('digest');
+}
+async function repickDigest(){
+  const focus = document.getElementById('v-focus').value.trim(), btn = document.getElementById('v-repick');
+  ls.set('focus.' + tid, focus);
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Đang chọn…';
+  const r = await fetchDigest(focus);
+  btn.disabled = false; btn.textContent = '↻ Chọn lại tin';
+  if(r.error){ toast(r.error); return; }
+  if(!r.items.length){ toast('Chưa có tin nào trong 24 giờ qua'); return; }
+  applyDigest(r, focus); renderVideoItems(); kindHint();
+}
+async function makeVideo(){
+  const v = id => document.getElementById(id).value.trim(), ck = id => document.getElementById(id).checked;
+  if(v('v-kind') === 'digest') ls.set('focus.' + tid, v('v-focus'));
+  const btn = document.getElementById('v-go'); btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Đang đọc toàn văn các tin…';
+  const r = await api('/api/news/make-project', {ids: [...sel.keys()], title: v('v-title'), brief: v('v-brief'), language: v('v-language'),
+    format: v('v-format'), target_sec: v('v-target'), budget_usd: v('v-budget'), audience: v('v-audience'),
+    video_kind: v('v-kind'), focus: v('v-kind') === 'digest' ? v('v-focus') : '',
+    yt: v('v-yt'), yt_auto: v('v-ytauto') === '1', yt_vis: v('v-ytvis'),
+    start: ck('v-start'), auto_advance: ck('v-auto')});
+  btn.disabled = false; btn.textContent = 'Tạo dự án';
+  if(r.error){ toast(r.error); return; }
+  if(r.queued && r.queued.error) toast(r.queued.error);
+  location.href = r.url;
+}
+
+// ---------------------------------------------------------------- polling
+async function pollNow(){
+  const r = await api(`/api/news/topics/${tid}/poll`, {}); if(r.error){ toast(r.error); return; }
+  toast('Đang lấy tin từ mọi nguồn…'); await loadTopics(); startFastPoll();
+}
+function startFastPoll(){
+  if(fastPoll) return;
+  fastPoll = setInterval(async () => {
+    await loadTopics();
+    if(!topics.some(t => t.polling)){ clearInterval(fastPoll); fastPoll = null; await loadItems(false); }
+  }, 2500);
+}
+async function tick(){
+  if(document.querySelector('dialog[open]')) return;
+  const before = (topic() || {}).last_item_id || 0;
+  await loadTopics();
+  const t = topic(); if(!t) return;
+  if(t.polling) startFastPoll();
+  if((t.last_item_id || 0) > Math.max(before, shownMax)){
+    if(window.scrollY < 150 && !openBodies.size) await loadItems(false);
+    else document.getElementById('newbar').hidden = false;
+  }
+}
+
+// ---------------------------------------------------------------- topic editor
+function presetChanged(){
+  const p = document.getElementById('nt-preset').value;
+  document.getElementById('nt-hint').hidden = !p;
+  if(p && !document.getElementById('nt-name').value) document.getElementById('nt-name').placeholder = 'để trống = tên của mẫu';
+}
+function openNewTopic(){ document.getElementById('nt-name').value = ''; presetChanged(); document.getElementById('new-dialog').showModal(); }
+async function createTopic(){
+  const preset = document.getElementById('nt-preset').value, name = document.getElementById('nt-name').value.trim();
+  if(!preset && !name){ toast('Cần đặt tên chủ đề'); return; }
+  const r = await api('/api/news/topics', {preset, name, language: document.getElementById('nt-language').value});
+  if(r.error){ toast(r.error); return; }
+  document.getElementById('new-dialog').close();
+  tid = r.id; ls.set('topic', r.id); await loadTopics(); await loadItems(true); startFastPoll();
+  if(!preset) openEditor();
+}
+let editing = null;
+async function openEditor(){
+  const r = await (await fetch('/api/news/topics/' + tid)).json();
+  editing = r.topic;
+  const t = r.topic, set = (id, v) => document.getElementById(id).value = v == null ? '' : v;
+  set('et-name', t.name); set('et-language', t.language); set('et-interval', t.interval_min); set('et-keywords', t.keywords);
+  set('et-exclude', t.exclude); set('et-brief', t.brief); set('et-format', t.format); set('et-target', t.target_sec);
+  set('et-kind', t.video_kind || 'single');
+  document.getElementById('et-enabled').checked = !!t.enabled;
+  renderSources(r.sources); kindHint(); document.getElementById('test-out').innerHTML = '';
+  if(!document.getElementById('edit-dialog').open) document.getElementById('edit-dialog').showModal();
+}
+function renderSources(list){
+  document.getElementById('src-count').textContent = `(${list.filter(s => s.enabled).length}/${list.length} đang bật)`;
+  const sideOpts = cur => Object.entries(SIDES).map(([k, v]) => `<option value="${k}" ${k === (cur || '') ? 'selected' : ''}>${v}</option>`).join('');
+  document.getElementById('src-rows').innerHTML = list.map(s => {
+    const status = s.last_error ? `<span class="error" title="${esc(s.last_error)}">✕ ${esc(s.last_error.slice(0, 40))}</span>`
+      : s.last_ok_at ? `<span class="ok">✓</span> ${s.last_count ?? 0} tin · ${ago(s.last_ok_at)}` : '<span class="muted">chưa chạy</span>';
+    return `<tr class="${s.enabled ? '' : 'muted'}">
+      <td><input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="saveSource(${s.id}, {enabled: this.checked})" title="Bật/tắt nguồn"></td>
+      <td class="small nowrap">${esc(KINDS[s.kind] || s.kind)}</td>
+      <td><input class="input" value="${esc(s.name || '')}" onchange="saveSource(${s.id}, {name: this.value})"></td>
+      <td><input class="input mono" value="${esc(s.url)}" onchange="saveSource(${s.id}, {url: this.value})" title="${esc(s.fetch_url)}"></td>
+      <td><select class="input" onchange="saveSource(${s.id}, {side: this.value})">${sideOpts(s.side)}</select></td>
+      <td><input type="checkbox" ${s.filter ? 'checked' : ''} onchange="saveSource(${s.id}, {filter: this.checked})"></td>
+      <td class="small nowrap">${status}</td>
+      <td class="nowrap"><button class="btn btn-tiny" onclick="testSource('${s.kind}', ${esc(JSON.stringify(s.url))})">Thử</button>
+        <a class="btn btn-tiny btn-ghost" href="${esc(safeUrl(s.fetch_url))}" target="_blank" rel="noopener" title="Mở nguồn">↗</a>
+        <button class="btn btn-tiny btn-ghost btn-danger" onclick="removeSource(${s.id})" title="Xóa nguồn">✕</button></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="8" class="muted small">Chưa có nguồn. Thêm ở dòng dưới.</td></tr>';
+}
+function kindHint(){ document.getElementById('ns-url').placeholder = URL_HINT[document.getElementById('ns-kind').value]; }
+async function reloadSources(){ const r = await (await fetch('/api/news/topics/' + tid)).json(); renderSources(r.sources); }
+async function saveSource(id, data){ const r = await api('/api/news/sources/' + id, data); if(r.error) toast(r.error); else toast('Đã lưu'); reloadSources(); }
+async function removeSource(id){ if(!confirm('Xóa nguồn này? Tin đã lấy về vẫn giữ.')) return; await api(`/api/news/sources/${id}/delete`, {}); reloadSources(); }
+async function addSource(){
+  const v = id => document.getElementById(id).value.trim();
+  const r = await api(`/api/news/topics/${tid}/sources`, {kind: v('ns-kind'), url: v('ns-url'), name: v('ns-name'), side: v('ns-side'),
+    filter: document.getElementById('ns-filter').checked});
+  if(r.error){ toast(r.error); return; }
+  document.getElementById('ns-url').value = ''; document.getElementById('ns-name').value = ''; toast('Đã thêm nguồn'); reloadSources();
+}
+function testNew(){ testSource(document.getElementById('ns-kind').value, document.getElementById('ns-url').value.trim()); }
+async function testSource(kind, url){
+  if(!url){ toast('Nhập địa chỉ trước'); return; }
+  const out = document.getElementById('test-out');
+  out.innerHTML = `<div class="box"><span class="spin"></span> đang thử ${esc(url)}…</div>`;
+  const r = await api('/api/news/sources/test', {kind, url, language: document.getElementById('et-language').value || 'ru',
+    keywords: document.getElementById('et-keywords').value});
+  out.innerHTML = r.ok
+    ? `<div class="box"><span class="ok">✓ ${esc(r.title || url)}</span>: ${r.count} tin, ${r.matched} khớp từ khóa${r.latest ? ', mới nhất ' + hhmm(r.latest) : ''}
+       <ul style="margin:4px 0 0 18px">${(r.sample || []).map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>`
+    : `<div class="alert err">✕ ${esc(r.error || 'lỗi')} <span class="mono small">${esc(r.url || '')}</span></div>`;
+}
+async function saveTopic(){
+  const v = id => document.getElementById(id).value;
+  const r = await api('/api/news/topics/' + tid, {name: v('et-name'), language: v('et-language'), interval_min: v('et-interval'),
+    enabled: document.getElementById('et-enabled').checked, keywords: v('et-keywords'), exclude: v('et-exclude'), brief: v('et-brief'),
+    format: v('et-format'), target_sec: v('et-target'), video_kind: v('et-kind')});
+  if(r.error){ toast(r.error); return; }
+  const changedFilter = editing && (editing.keywords !== r.topic.keywords || editing.exclude !== r.topic.exclude);
+  editing = r.topic;
+  toast(changedFilter ? 'Đã lưu. Từ khóa đổi: tin mới sẽ lọc theo bộ mới (bấm Cập nhật ngay để lấy lại).' : 'Đã lưu chủ đề');
+  await loadTopics();
+}
+async function closeEditor(){ document.getElementById('edit-dialog').close(); await loadTopics(); }
+async function deleteTopic(){
+  const t = topic(); if(!t || !confirm(`Xóa chủ đề "${t.name}" cùng mọi nguồn và tin đã lấy? Dự án đã tạo không bị ảnh hưởng.`)) return;
+  await api(`/api/news/topics/${tid}/delete`, {});
+  document.getElementById('edit-dialog').close(); tid = null; await loadTopics(); await loadItems(true);
+}
+
+// ---------------------------------------------------------------- filters
+document.querySelectorAll('#f-state button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#f-state button').forEach(x => x.classList.toggle('on', x === b));
+  filters.state = b.dataset.v; loadItems(true);
+});
+document.getElementById('f-side').onchange = e => { filters.side = e.target.value; loadItems(true); };
+document.getElementById('f-sort').value = filters.sort;
+document.getElementById('f-sort').onchange = e => { filters.sort = e.target.value; ls.set('sort', filters.sort); renderFeed(Infinity); };
+document.getElementById('f-group').checked = filters.group;
+document.getElementById('f-group').onchange = e => { filters.group = e.target.checked; ls.set('group', filters.group ? '1' : '0'); renderFeed(Infinity); };
+let qTimer; document.getElementById('q').oninput = e => { clearTimeout(qTimer); qTimer = setTimeout(() => { filters.q = e.target.value; loadItems(true); }, 300); };
+
+(async () => {
+  await loadTopics(); await loadItems(true);
+  if(topics.some(t => t.polling)) startFastPoll();
+  setInterval(tick, 20000);
+  setInterval(() => { renderTopics(); }, 60000);        // keep the "x phút trước" labels fresh
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,5 @@
+flask
+pywebview
+faster-whisper
+# faster-whisper 1.2.1 calls av.open(metadata_errors=...), removed in PyAV 19
+av<19

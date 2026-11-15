@@ -1,0 +1,28 @@
+{% for m in msgs %}
+  {% set st = flow.by_key.get(m.step) if m.step else None %}
+  {% if m.role == 'user' %}
+    {% if m.kind == 'step' %}
+      <div class="chat-msg user step">{{ m.content }}</div>
+    {% else %}
+      <div class="chat-msg user">{% if st %}<div class="chat-tag">ở bước {{ st.num }} · {{ st.name }}</div>{% endif %}{{ m.content }}</div>
+    {% endif %}
+  {% elif m.status == 'done' %}
+    <div class="chat-msg bot">
+      <div class="md">{{ (m.content or 'Đã xong.')|md|safe }}</div>
+      <div class="bot-foot small muted">
+        {{ m.progress_msg or '' }}
+        {% if m.rules_version %}<a class="pill ok" href="{{ rules_url }}" title="Claude đã cập nhật bộ quy tắc trong lượt này">📘 quy tắc đã cập nhật</a>{% endif %}
+      </div>
+      {% if m.error %}<div class="small warn">⚠️ {{ m.error }}</div>{% endif %}
+      {% if m.log_md and m.log_md|length > (m.content or '')|length + 40 %}
+        <details class="small"><summary class="muted">Nhật ký lượt này</summary><div class="md">{{ m.log_md|md|safe }}</div></details>
+      {% endif %}
+    </div>
+  {% elif m.status in ('queued', 'running') %}
+    <div class="chat-msg bot running small"><span class="spin"></span> {{ m.progress_msg or 'đang chờ tới lượt…' }}</div>
+  {% else %}
+    <div class="chat-msg bot small error">Không xong: {{ m.error or 'lỗi không rõ' }}</div>
+  {% endif %}
+{% else %}
+  <div class="small muted">Chưa có tin nhắn. Bấm <b>▶ Chạy bước</b> ở khung bên trái để Claude bắt đầu, hoặc nhắn Claude bất cứ điều gì về phim này.</div>
+{% endfor %}

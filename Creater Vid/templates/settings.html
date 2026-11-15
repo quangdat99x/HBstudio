@@ -1,0 +1,499 @@
+{% extends "base.html" %}
+{% set title = 'Cài đặt' %}
+{% set icons = {'ok': '✓', 'warn': '!', 'error': '✕', 'info': 'i'} %}
+{% block content %}
+{% if saved %}<div class="notice">Đã lưu cài đặt.</div>{% endif %}
+<section class="card">
+  <div class="card-header">
+    <h2>🧰 Kiểm tra hệ thống {% if health.ok %}<span class="pill ok">sẵn sàng</span>{% else %}<span class="pill err">{{ health.errors }} lỗi</span>{% endif %}
+      {% if health.warns %}<span class="pill warn">{{ health.warns }} cảnh báo</span>{% endif %}</h2>
+    <button class="btn btn-small btn-ghost" onclick="location.reload()">↻ Kiểm tra lại</button>
+  </div>
+  <div class="card-body" style="padding:0">
+    <table class="table"><tbody>
+    {% for c in checks %}
+    <tr class="check-row">
+      <td class="check-{{ c.state }}"><b>{{ icons[c.state] }}</b></td>
+      <td class="nowrap"><b>{{ c.name }}</b></td>
+      <td class="small">{{ c.detail }}{% if c.hint %}<div class="warn">{{ c.hint }}</div>{% endif %}<div class="small muted" id="job-{{ c.action }}"></div></td>
+      <td class="nowrap">
+        {% if c.action == 'install_engine' %}<button class="btn btn-tiny btn-primary" onclick="startJob('install_engine')">Cài engine</button>
+        {% elif c.action == 'ensure_browser' %}<button class="btn btn-tiny btn-primary" onclick="startJob('ensure_browser')">Tải Chrome</button>
+        {% elif c.action == 'probe' %}<button class="btn btn-tiny" onclick="probe()" id="probe-btn">Chạy thử Claude</button>
+        {% elif c.action == 'check_elevenlabs' %}<button class="btn btn-tiny" onclick="checkProvider('elevenlabs')">Kiểm tra</button>
+        {% elif c.action == 'check_fal' %}<button class="btn btn-tiny" onclick="checkProvider('fal')">Kiểm tra</button>
+        {% elif c.action == 'check_openai' %}<button class="btn btn-tiny" onclick="checkProvider('openai')">Kiểm tra</button>
+        {% elif c.action == 'check_google' %}<button class="btn btn-tiny" onclick="checkProvider('google')">Kiểm tra</button>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody></table>
+    <div class="card-body small muted" id="probe-out">Chạy thử Claude: một lượt nhỏ với model mặc định bên dưới, báo đăng nhập và model thực tế trả lời.
+      Kiểm tra ElevenLabs / fal.ai: app gọi thẳng API bằng key đã lưu (không tốn tiền).</div>
+  </div>
+</section>
+
+<form method="post" id="settings-form">
+<input type="hidden" name="_changed" id="changed">
+<section class="card">
+  <div class="card-header"><h2>🎥 Mặc định cho dự án mới</h2></div>
+  <div class="card-body">
+    <label>Thư mục chứa dự án (ảnh, footage, render: nên đặt ở ổ còn trống nhiều)<input class="input" name="projects_root" value="{{ s.projects_root }}"></label>
+    <div class="grid4">
+      <label>Ngân sách nguyên liệu / dự án (USD)<input class="input" name="budget_usd" type="number" min="0" step="0.5" value="{{ s.budget_usd }}"></label>
+      <label>Ngôn ngữ trên phim<input class="input" name="language" value="{{ s.language }}"></label>
+      <label>Định dạng<select class="input" name="format"><option {{ 'selected' if s.format == '16:9' }}>16:9</option><option {{ 'selected' if s.format == '9:16' }}>9:16</option></select></label>
+      <label>Thời lượng tối thiểu (giây)<input class="input" name="target_sec" type="number" value="{{ s.target_sec }}"></label>
+    </div>
+    <div class="grid2">
+      <label>Khán giả<input class="input" name="audience" value="{{ s.audience }}"></label>
+      <label>Phong cách hình ảnh mặc định (để trống = Claude đề xuất)<input class="input" name="style" value="{{ s.style }}"></label>
+    </div>
+    <label class="check"><input type="checkbox" name="auto_advance" {{ 'checked' if s.auto_advance == '1' }}> Dự án mới tự chạy hết các bước, không chờ duyệt</label>
+    <label>Cách dựng hình mặc định<select class="input" name="pipeline" style="max-width:460px">
+      <option value="layered" {{ 'selected' if s.pipeline not in ('fullframe', 'stacked', 'dossier') }}>Ghép lớp: nhân vật tách nền ghép lên nền vẽ (cách cũ)</option>
+      <option value="stacked" {{ 'selected' if s.pipeline == 'stacked' }}>Xếp lớp: GPT vẽ 2–4 lớp riêng của mỗi cảnh, engine xếp lớp và đi camera thật (mới)</option>
+      <option value="fullframe" {{ 'selected' if s.pipeline == 'fullframe' }}>Ảnh liền khối → 3D: mỗi cảnh một ảnh hoàn chỉnh, camera 3D trên GPU (cách mới)</option>
+      <option value="dossier" {{ 'selected' if s.pipeline == 'dossier' }}>Hồ sơ tư liệu: ảnh, trang tài liệu, footage thật dựng như vật chứng; AI chỉ tái hiện cảnh không có ảnh (mới)</option>
+    </select></label>
+  </div>
+</section>
+
+<section class="card" id="api">
+  <div class="card-header"><h2>🔑 API tạo nguyên liệu (giọng đọc, ảnh, video)</h2>
+    <span class="small muted">Key lưu trong creater.db trên máy này. Claude không thấy key: nó chạy gen.py, gen.py tự đọc key.</span></div>
+  <div class="card-body">
+    <div class="section-title">ElevenLabs · giọng đọc, hiệu ứng âm thanh</div>
+    <div class="grid2">
+      <label>Model giọng đọc<select class="input" name="tts_model">
+        {% for mid, m in tts_models.items() %}<option value="{{ mid }}" {{ 'selected' if s.tts_model == mid }}>{{ m[0] }} · ${{ m[1] }}/1.000 ký tự{{ ' · hiểu tag cảm xúc' if m[3] else '' }}</option>{% endfor %}
+      </select></label>
+    </div>
+    <div class="small muted" style="margin-top:6px">Các key ElevenLabs (lưu trong creater.db, trình duyệt chỉ thấy 4 ký tự cuối). Key được chọn là key gen.py, Hổ Báo Studio và voice-dub dùng.</div>
+    <table class="table" id="el-keys"><thead><tr><th>Dùng</th><th>Tên</th><th>Key</th><th>Địa chỉ</th><th>Credit còn</th><th></th></tr></thead>
+      <tbody><tr><td colspan="6" class="muted small">đang tải…</td></tr></tbody></table>
+    <div class="row gap wrap" style="margin-top:6px">
+      <button type="button" class="btn btn-tiny" onclick="elKeys('all/check')">↻ Kiểm tra credit tất cả key</button>
+      <span class="small" id="st-elevenlabs"></span>
+    </div>
+    <div class="grid2" style="margin-top:6px">
+      <label>Tên gợi nhớ<input class="input" id="el-new-label" placeholder="VD: acc chính, acc mua 1…" autocomplete="off"></label>
+      <label>API key <span class="muted">(elevenlabs.io → Developers → API Keys)</span>
+        <input class="input mono" type="password" id="el-new-key" autocomplete="off" placeholder="dán key vào đây"></label>
+      <label>Base URL <span class="muted">(để trống nếu key lấy từ elevenlabs.io; key mua của dịch vụ trung gian thì điền địa chỉ của họ)</span>
+        <input class="input mono" id="el-new-base" placeholder="https://api.elevenlabs.io" autocomplete="off"></label>
+    </div>
+    <div class="row gap"><button type="button" class="btn btn-tiny" onclick="elAdd()">＋ Thêm key và kiểm tra</button>
+      <span class="small" id="el-add-st"></span></div>
+    <div class="small muted" style="margin-top:4px">Giọng đọc theo ngôn ngữ của video (dự án tiếng Nga dùng giọng của "ru", ngôn ngữ chưa có giọng thì dùng giọng "en"):</div>
+    <table class="table" id="voice-table"><thead><tr><th>Ngôn ngữ</th><th>Giọng</th><th>Voice id</th><th></th></tr></thead>
+      <tbody>{% for lang, v in voices.items() %}<tr>
+        <td class="mono">{{ lang }}</td><td>{{ v.name }}</td><td class="mono small">{{ v.id }}</td>
+        <td class="nowrap"><button type="button" class="btn btn-tiny" onclick="openVoices('{{ lang }}')">Đổi</button>
+          <button type="button" class="btn btn-tiny btn-ghost" onclick="removeVoice('{{ lang }}')">Bỏ</button></td></tr>{% endfor %}
+      </tbody></table>
+    <div class="row gap"><input class="input" id="new-lang" placeholder="mã ngôn ngữ, VD vi" style="width:170px">
+      <button type="button" class="btn btn-tiny" onclick="openVoices(document.getElementById('new-lang').value.trim().toLowerCase())">＋ Chọn giọng cho ngôn ngữ này</button></div>
+
+    <div class="section-title" style="margin-top:10px">fal.ai · ảnh, sửa ảnh, video</div>
+    <div class="grid2">
+      <label>API key <span class="muted">(fal.ai → Dashboard → Keys; key ADMIN mới xem được số dư)</span>
+        <input class="input mono" type="password" name="fal_api_key" autocomplete="off"
+          placeholder="{{ ('đã lưu ' ~ s.fal_api_key_hint ~ ' · gõ key mới để thay') if s.fal_api_key_hint else 'dán key vào đây rồi bấm Lưu cài đặt' }}"></label>
+      <div class="row gap wrap" style="align-self:end">
+        <button type="button" class="btn btn-tiny" onclick="checkProvider('fal')">Lưu và kiểm tra key</button>
+        {% if s.fal_api_key_hint %}<button type="button" class="btn btn-tiny btn-ghost btn-danger" onclick="clearKey('fal')">Xóa key</button>{% endif %}
+        <span class="small" id="st-fal"></span>
+      </div>
+    </div>
+    <div class="section-title" style="margin-top:10px">OpenAI · ảnh GPT trực tiếp (tùy chọn)</div>
+    <div class="grid2">
+      <label>API key <span class="muted">(platform.openai.com → API keys; tổ chức phải được xác minh mới dùng được GPT Image)</span>
+        <input class="input mono" type="password" name="openai_api_key" autocomplete="off"
+          placeholder="{{ ('đã lưu ' ~ s.openai_api_key_hint ~ ' · gõ key mới để thay') if s.openai_api_key_hint else 'dán key vào đây rồi bấm Lưu cài đặt' }}"></label>
+      <label>Base URL <span class="muted">(giữ nguyên nếu key lấy từ platform.openai.com; key mua của dịch vụ trung gian thì điền địa chỉ /v1 của họ)</span>
+        <input class="input mono" name="openai_base_url" value="{{ s.openai_base_url }}" placeholder="https://api.openai.com/v1"></label>
+    </div>
+    <div class="row gap wrap">
+      <button type="button" class="btn btn-tiny" onclick="checkProvider('openai')">Lưu và kiểm tra key</button>
+      {% if s.openai_api_key_hint %}<button type="button" class="btn btn-tiny btn-ghost btn-danger" onclick="clearKey('openai')">Xóa key</button>{% endif %}
+      <span class="small" id="st-openai"></span>
+    </div>
+    <div class="section-title" style="margin-top:10px">Google Gemini · ảnh Nano Banana trực tiếp (tùy chọn)</div>
+    <div class="grid2">
+      <label>API key <span class="muted">(aistudio.google.com → Get API key; cần bật thanh toán, model ảnh không có gói miễn phí)</span>
+        <input class="input mono" type="password" name="google_api_key" autocomplete="off"
+          placeholder="{{ ('đã lưu ' ~ s.google_api_key_hint ~ ' · gõ key mới để thay') if s.google_api_key_hint else 'dán key vào đây rồi bấm Lưu cài đặt' }}"></label>
+      <div class="row gap wrap" style="align-self:end">
+        <button type="button" class="btn btn-tiny" onclick="checkProvider('google')">Lưu và kiểm tra key</button>
+        {% if s.google_api_key_hint %}<button type="button" class="btn btn-tiny btn-ghost btn-danger" onclick="clearKey('google')">Xóa key</button>{% endif %}
+        <span class="small" id="st-google"></span>
+      </div>
+    </div>
+
+    <div class="section-title" style="margin-top:10px">Gemini web · ảnh bằng gói Gemini của bạn qua trình duyệt ($0)</div>
+    <div class="small muted">Model <span class="mono">gemini-web:Argon</span> hoặc <span class="mono">gemini-web:Pro</span> (sau dấu hai chấm là chữ trong menu model của Gemini,
+      VD Argon, Pro, Flash; để trống = giữ chế độ đang chọn). App dùng một hồ sơ Chrome riêng: bấm <b>Mở để đăng nhập</b> một lần, đăng nhập Google rồi đóng cửa sổ.
+      Ảnh chạy lần lượt (~1–3 phút/ảnh), có hạn mức mỗi ngày của gói. Khi Gemini đổi giao diện, app nhờ Claude tìm lại nút rồi lưu vào
+      <span class="mono">work\gemini_web\selectors.json</span>. Nên dùng tài khoản Google riêng: Google không cho phép tự động hoá bản web.</div>
+    <div class="grid4">
+      <label>Thư mục hồ sơ Chrome <span class="muted">(trống = work\gemini_web\profile)</span>
+        <input class="input mono" name="gemini_web_profile" value="{{ s.gemini_web_profile }}"></label>
+      <label>Cửa sổ trình duyệt<select class="input" name="gemini_web_mode">
+        {% for v, lbl in (('hidden', 'Ẩn (ngoài màn hình)'), ('headless', 'Không cửa sổ (headless)'), ('show', 'Hiện')) %}
+        <option value="{{ v }}" {{ 'selected' if s.gemini_web_mode == v }}>{{ lbl }}</option>{% endfor %}</select></label>
+      <label>Lỗi / hết lượt thì dùng <span class="muted">(trống = dừng và báo)</span>
+        <input class="input mono" name="gemini_web_fallback" list="fal-models" value="{{ s.gemini_web_fallback }}" placeholder="VD google:gemini-3-pro-image"></label>
+      <label class="row gap" style="align-self:end"><input type="checkbox" name="gemini_web_delogo" {{ 'checked' if s.gemini_web_delogo == '1' }}> Làm mờ logo Gemini ở góc ảnh</label>
+    </div>
+    <div class="row gap wrap">
+      <button type="button" class="btn btn-tiny" onclick="geminiWeb('login')">Mở để đăng nhập</button>
+      <button type="button" class="btn btn-tiny" onclick="geminiWeb('status')">Kiểm tra đăng nhập</button>
+      <span class="small" id="st-gemini-web"></span>
+    </div>
+
+    <div class="section-title" style="margin-top:10px">Model cho từng việc</div>
+    <div class="small muted">Mỗi ô nhận: id model fal (VD <span class="mono">fal-ai/nano-banana-pro</span>), hoặc gọi thẳng
+      <span class="mono">openai:gpt-image-2.5-sunburst</span> / <span class="mono">google:gemini-3-pro-image</span> bằng key OpenAI, Google ở trên.
+      Bấm vào ô để chọn từ danh sách.</div>
+    <div class="grid4">
+      <label>Ảnh chính<input class="input mono" name="image_model" list="fal-models" value="{{ s.image_model }}"></label>
+      <label>Ảnh rẻ (thử vai, nháp)<input class="input mono" name="image_model_draft" list="fal-models" value="{{ s.image_model_draft }}"></label>
+      <label>Sửa ảnh (biến thể từ ảnh gốc)<input class="input mono" name="image_model_edit" list="fal-models" value="{{ s.image_model_edit }}"></label>
+      <label>Video (ảnh → video)<input class="input mono" name="video_model" list="fal-models" value="{{ s.video_model }}"></label>
+    </div>
+    <datalist id="fal-models">{% for a, ep in aliases.items() %}<option value="{{ ep }}">{{ a }}{{ ' · gọi thẳng' if ':' in ep else ' · qua fal' }}</option>{% endfor %}</datalist>
+    <div class="row gap"><input class="input" id="fal-q" placeholder="tìm model trên fal, VD: upscale, flux, veo" style="width:280px">
+      <button type="button" class="btn btn-tiny" onclick="searchFal()">Tìm</button></div>
+    <div class="small" id="fal-results"></div>
+    <div class="small muted">Giá tham khảo · qua fal: Nano Banana Pro $0,15/ảnh · Seedream 5 Flash $0,027/ảnh · GPT Image 2.5 theo token ·
+      Kling v3 Standard $0,084/giây (không tiếng) · gọi thẳng Google: Nano Banana Pro $0,134/ảnh 1K–2K ($0,24 4K), Nano Banana 2 $0,067/ảnh 1K,
+      Flash Lite $0,034 · gọi thẳng OpenAI: GPT Image 2.5 $30/1 triệu token ảnh ra (≈ $0,17/ảnh 1024² chất lượng high) ·
+      ElevenLabs v4 $0,08/1.000 ký tự (≈ 1 phút đọc). gen.py ghi chi phí thật từng lần vào notes/costs.json của dự án.</div>
+    <div class="row gap end"><button class="btn btn-primary" type="submit">Lưu cài đặt</button></div>
+  </div>
+</section>
+
+<section class="card" id="telegram">
+  <div class="card-header"><h2>📨 Telegram API (tải video lớn từ kênh)</h2>
+    <span class="small muted">Không bắt buộc: ảnh và video nhỏ vẫn lấy được qua trang web công khai của kênh.</span></div>
+  <div class="card-body">
+    <div class="small muted">Lấy <b>api_id</b> và <b>api_hash</b> ở <b>my.telegram.org</b> → đăng nhập bằng số điện thoại (mã gửi trong app Telegram)
+      → <b>API development tools</b> → tạo app (App title, Short name, Platform: Desktop). Nên dùng một tài khoản Telegram phụ.</div>
+    <div class="grid4">
+      <label>api_id<input class="input mono" name="telegram_api_id" value="{{ s.telegram_api_id }}" placeholder="VD 12345678" autocomplete="off"></label>
+      <label>api_hash<input class="input mono" type="password" name="telegram_api_hash" autocomplete="off"
+        placeholder="{{ ('đã lưu ' ~ s.telegram_api_hash_hint) if s.telegram_api_hash_hint else '32 ký tự' }}"></label>
+      <label>Số điện thoại của tài khoản<input class="input mono" name="telegram_phone" value="{{ s.telegram_phone }}" placeholder="+84912345678" autocomplete="off"></label>
+      <div class="row gap" style="align-self:end"><button type="button" class="btn btn-small" onclick="tgSendCode()">Gửi mã đăng nhập</button></div>
+    </div>
+    <div class="row gap wrap" id="tg-code-row" hidden>
+      <input class="input mono" id="tg-code" placeholder="mã Telegram vừa gửi trong app" autocomplete="off" style="width:220px">
+      <input class="input" id="tg-pass" type="password" placeholder="mật khẩu xác minh 2 bước (nếu có)" autocomplete="off" style="width:260px">
+      <button type="button" class="btn btn-small btn-primary" onclick="tgSignIn()">Đăng nhập</button>
+    </div>
+    <div class="row gap wrap">
+      <span class="small" id="tg-status"></span>
+      <button type="button" class="btn btn-tiny" onclick="tgCall('status')">Kiểm tra</button>
+      <button type="button" class="btn btn-tiny btn-ghost btn-danger" onclick="if(confirm('Đăng xuất Telegram khỏi app?')) tgCall('logout')">Đăng xuất</button>
+    </div>
+    <div class="small muted">Phiên đăng nhập lưu ở <span class="mono">work\telegram\creater.session</span> trên máy này: ai có file đó là vào được tài khoản.
+      Không gửi file đó, mã đăng nhập hay api_hash cho ai, kể cả trong khung chat.</div>
+  </div>
+</section>
+
+<section class="card" id="tgbot">
+  <div class="card-header"><h2>📲 Duyệt qua Telegram (bot)</h2>
+    <span class="small muted">Dự án chạy từng bước: mỗi bước chờ duyệt được gửi về Telegram, duyệt bằng nút bấm.</span></div>
+  <div class="card-body">
+    <div class="small muted">1) Trong Telegram mở <b>@BotFather</b> → <span class="mono">/newbot</span> → đặt tên → copy <b>token</b> dán vào ô dưới, bấm <b>Kiểm tra &amp; lưu</b>.
+      2) Mở bot vừa tạo, gửi <span class="mono">/start {{ s.tg_bot_pair or '…' }}</span> (mã ghép đôi bên dưới). Bot chỉ nghe đúng chat đã ghép.</div>
+    <div class="grid4">
+      <label>Token bot<input class="input mono" type="password" name="tg_bot_token" id="tgb-token" autocomplete="off"
+        placeholder="{{ ('đã lưu ' ~ s.tg_bot_token_hint) if s.tg_bot_token_hint else '123456:ABC…' }}"></label>
+      <div class="row gap" style="align-self:end"><button type="button" class="btn btn-small" onclick="tgbCheck()">Kiểm tra &amp; lưu</button></div>
+      <label class="row gap" style="align-self:end"><input type="checkbox" name="tg_bot_on" {{ 'checked' if s.tg_bot_on == '1' }}> Bật gửi duyệt qua Telegram</label>
+    </div>
+    <div class="row gap wrap">
+      <span class="small">Mã ghép đôi: <b class="mono" id="tgb-pair">{{ s.tg_bot_pair }}</b></span>
+      <span class="small" id="tgb-status">{% if s.tg_bot_chat_name %}<span class="ok">✓ đã ghép với {{ s.tg_bot_chat_name }}</span>{% else %}<span class="muted">chưa ghép chat</span>{% endif %}</span>
+      <button type="button" class="btn btn-tiny" onclick="tgbAct('test')">Gửi tin thử</button>
+      <button type="button" class="btn btn-tiny btn-ghost btn-danger" onclick="if(confirm('Bỏ ghép chat Telegram hiện tại?')) tgbAct('unpair')">Bỏ ghép</button>
+    </div>
+    <div class="small muted">Trên Telegram: <b>✅ Duyệt &amp; chạy bước sau</b> · <b>✅ Chỉ duyệt</b> · <b>🔁 Làm lại bước</b> (kèm ghi chú) ·
+      trả lời (reply) tin của bước để Claude sửa · gõ <span class="mono">/cho</span> để xem các bước đang chờ. Dự án bật «tự chạy tất cả» không gửi.</div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-header"><h2>🤖 Claude Code (chạy headless)</h2></div>
+  <div class="card-body">
+    <div class="grid4">
+      <label>Model mặc định (fable, opus, sonnet, haiku hoặc id đầy đủ)<input class="input" name="claude_model" value="{{ s.claude_model }}"></label>
+      <label>Effort mặc định<select class="input" name="claude_effort">{% for e in ['', 'low', 'medium', 'high', 'xhigh', 'max'] %}<option value="{{ e }}" {{ 'selected' if s.claude_effort == e }}>{{ e or '(mặc định CLI)' }}</option>{% endfor %}</select></label>
+      <label>Model dự phòng khi quá tải<input class="input" name="claude_fallback_model" value="{{ s.claude_fallback_model }}"></label>
+      <label>Số lượt công cụ tối đa / lượt dài<input class="input" name="claude_max_turns" type="number" value="{{ s.claude_max_turns }}"></label>
+      <label title="Mỗi dự án vẫn một lượt mỗi lúc; việc nặng GPU/CPU (render hình, giọng đọc, dựng & render) luôn chạy từng cái một">Số lượt Claude chạy cùng lúc (1–8)<input class="input" name="claude_parallel" type="number" min="1" max="8" value="{{ s.claude_parallel }}"></label>
+      <label title="Một phiên cho cả dự án thì tới các bước cuối mỗi lệnh công cụ đọc lại 700k–950k token">Phiên Claude<select class="input" name="claude_session_mode">{% for v, t in [('step', 'mỗi bước một phiên mới'), ('project', 'cả dự án một phiên (cách cũ)')] %}<option value="{{ v }}" {{ 'selected' if s.claude_session_mode == v }}>{{ t }}</option>{% endfor %}</select></label>
+    </div>
+    <div class="small muted">Model / effort của mọi dự án chỉ lấy từ đây. Thứ tự: ô của bước (trong mảng của dự án) → mặc định của mảng → mặc định chung ở trên.</div>
+    {% set efforts = ['', 'low', 'medium', 'high', 'xhigh', 'max'] %}
+    {% for kk, kd in KINDS.items() %}
+    <div class="section-title">{{ kd.icon }} {{ kd.label }}</div>
+    <table class="table">
+      <thead><tr><th>Bước</th><th>Model</th><th>Effort</th></tr></thead><tbody>
+      <tr><td class="small"><b>Mặc định của mảng</b> (cho bước để trống)</td>
+        <td><input class="input" style="width:100%" name="model_desk_{{ kk }}" value="{{ s['model_desk_' ~ kk] }}" placeholder="trống = mặc định chung"></td>
+        <td><select class="input" name="effort_desk_{{ kk }}">{% for e in efforts %}<option value="{{ e }}" {{ 'selected' if s['effort_desk_' ~ kk] == e }}>{{ e or '(mặc định chung)' }}</option>{% endfor %}</select></td></tr>
+      {% set sk = 'subagent_model_' ~ kk %}
+      <tr title="Agent con Claude tự mở trong lượt (kiểm chứng, tìm bằng chứng, chép văn bản gốc ở bước kịch bản), chiếm ~70% token của bước đó. Thử A/B mù 10/11/2026 trên một phim tài liệu: agent con Sonnet 5/10 so với Opus 8,5 ở kiểm chứng, 5,5 so với 9 ở bằng chứng, và chép bản tóm tắt thay vì nguyên văn">
+        <td class="small"><b>Model của agent con</b> (tra cứu, kiểm chứng)</td>
+        <td><select class="input" name="{{ sk }}">{% for v, t in [('inherit', 'như model của lượt (Opus)'), ('sonnet', 'sonnet (rẻ hơn ~45%)'), ('haiku', 'haiku (rẻ nhất)')] %}<option value="{{ v }}" {{ 'selected' if s[sk] == v }}>{{ t }}</option>{% endfor %}</select></td>
+        <td class="small muted">{{ 'đã thử: Opus tốt hơn rõ' if kk == 'doc' else 'chưa thử A/B' }}</td></tr>
+      {% set names = flow_of(kk).names() %}
+      {% for k in flow_of(kk).keys|list + ['chat'] %}{% set mk = 'model_' ~ kk ~ '_' ~ k %}{% set ek = 'effort_' ~ kk ~ '_' ~ k %}
+      <tr><td class="small">{{ names[k] if k in names else 'Chat (sửa theo góp ý)' }}</td>
+        <td><input class="input" style="width:100%" name="{{ mk }}" value="{{ s[mk] or '' }}" placeholder="trống = mặc định mảng"></td>
+        <td><select class="input" name="{{ ek }}">{% for e in efforts %}<option value="{{ e }}" {{ 'selected' if (s[ek] or '') == e }}>{{ e or '(mặc định mảng)' }}</option>{% endfor %}</select></td></tr>{% endfor %}
+    </tbody></table>
+    {% endfor %}
+    <label>Lệnh Claude CLI (để "claude" = tự tìm, ưu tiên E:\Tool\claude-cli)<input class="input mono" name="claude_cli" value="{{ s.claude_cli }}"></label>
+  </div>
+</section>
+
+<section class="card" id="news">
+  <div class="card-header"><h2>📰 Tin tức (cập nhật theo thời gian thực)</h2><a class="small" href="/news">Mở trang Tin tức →</a></div>
+  <div class="card-body">
+    <div class="grid4">
+      <label class="check" style="align-self:end"><input type="checkbox" name="news_enabled" {{ 'checked' if s.news_enabled == '1' }}> Tự cập nhật trong nền</label>
+      <label>Chỉ lấy tin đăng trong vòng (giờ)<input class="input" name="news_max_age_h" type="number" min="1" value="{{ s.news_max_age_h }}"></label>
+      <label>Giữ tin trong (ngày)<input class="input" name="news_keep_days" type="number" min="1" value="{{ s.news_keep_days }}"></label>
+    </div>
+    <div class="small muted">Chu kỳ cập nhật, nguồn và từ khóa đặt riêng cho từng chủ đề ở trang Tin tức. Tin đã đánh dấu ★ hoặc đã làm video không bị xóa.</div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-header"><h2>🔧 Công cụ trên máy</h2></div>
+  <div class="card-body">
+    <div class="grid2">
+      <label>Python tách nền (torch + BiRefNet)<input class="input mono" name="bgremove_python" value="{{ s.bgremove_python }}"></label>
+      <label>Python có faster-whisper<input class="input mono" name="whisper_python" value="{{ s.whisper_python }}"></label>
+      <label>ffmpeg.exe (trống = PATH, rồi E:\Tool\video-cutter-portable)<input class="input mono" name="ffmpeg" value="{{ s.ffmpeg }}"></label>
+    </div>
+    <div class="section-title">Nguồn tùy chọn: kho highlight JRE (chỉ đọc)</div>
+    <div class="grid2">
+      <label>Python của Hổ Báo Studio<input class="input mono" name="jre_python" value="{{ s.jre_python }}"></label>
+      <label>hldb.py<input class="input mono" name="jre_hldb" value="{{ s.jre_hldb }}"></label>
+    </div>
+    <div class="row gap end"><button class="btn btn-primary" type="submit">Lưu cài đặt</button></div>
+  </div>
+</section>
+</form>
+
+<dialog id="voice-dialog" class="modal wide tall">
+  <h3>Chọn giọng đọc cho ngôn ngữ <span class="mono" id="vd-lang"></span></h3>
+  <div class="row gap wrap">
+    <input class="input grow" id="vd-q" placeholder="tìm theo tên, mô tả: documentary, narrator, news…" onkeydown="if(event.key==='Enter'){event.preventDefault();searchVoices()}">
+    <select class="input" id="vd-gender"><option value="">Nam và nữ</option><option value="male">Nam</option><option value="female">Nữ</option></select>
+    <label class="check small"><input type="checkbox" id="vd-mine" onchange="searchVoices()"> Giọng trong tài khoản của tôi</label>
+    <button type="button" class="btn btn-small" onclick="searchVoices()">Tìm</button>
+  </div>
+  <p class="small muted">Thư viện giọng ElevenLabs theo ngôn ngữ. Bấm ▶ để nghe thử (miễn phí). Giọng thư viện chưa có trong tài khoản sẽ được thêm tự động lần đầu đọc.</p>
+  <div id="vd-list" style="max-height:55vh;overflow:auto"></div>
+  <div class="row gap end"><button type="button" class="btn btn-small" onclick="document.getElementById('voice-dialog').close()">Đóng</button></div>
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script>
+const changed = new Set();
+document.querySelectorAll('#settings-form [name]').forEach(el => {
+  if(el.name === '_changed') return;
+  el.addEventListener('change', () => { changed.add(el.name); document.getElementById('changed').value = [...changed].join(','); });
+});
+async function startJob(name){
+  const r = await api('/api/setup/' + name, {}); toast(r.error || r.message);
+  const el = document.getElementById('job-' + name);
+  const t = setInterval(async () => {
+    const j = (await (await fetch('/api/setup/jobs')).json())[name]; if(!j) return;
+    el.textContent = j.error ? ('Lỗi: ' + j.error) : j.progress;
+    if(!j.running){ clearInterval(t); if(!j.error) setTimeout(() => location.reload(), 800); }
+  }, 2000);
+}
+async function probe(){
+  const b = document.getElementById('probe-btn'), out = document.getElementById('probe-out');
+  b.disabled = true; out.innerHTML = '<span class="spin"></span> đang chạy một lượt nhỏ…';
+  const r = await api('/api/claude/probe', {model: document.querySelector('[name=claude_model]').value, effort: document.querySelector('[name=claude_effort]').value});
+  b.disabled = false;
+  out.innerHTML = r.ok ? `<span class="ok">✓ Claude trả lời "${esc((r.result || '').trim())}"</span> · ${esc(r.summary || '')}`
+                       : `<span class="error">✕ ${esc(r.error || 'lỗi')}</span>` + (r.logged_in === false ? ' · chưa đăng nhập' : '');
+}
+// ---------------------------------------------------------------- generation APIs
+async function geminiWeb(action){   // Gemini web: the app's own Chrome profile (sign in once, check without a window)
+  const el = document.getElementById('st-gemini-web');
+  el.innerHTML = '<span class="spin"></span> ' + (action === 'login' ? 'đang mở Chrome…' : 'đang kiểm tra (mở Chrome không cửa sổ)…');
+  const r = await api(`/api/providers/gemini-web/${action}`, {});
+  el.innerHTML = r.ok ? `<span class="ok">✓ ${esc(r.message || ('đã đăng nhập' + (r.mode ? ' · chế độ đang chọn: ' + r.mode : '')))}</span>`
+                      : `<span class="error">✕ ${esc(r.error || 'lỗi')}</span>`;
+}
+async function checkProvider(name){
+  const el = document.getElementById('st-' + name) || document.getElementById('probe-out');
+  // a key just typed (or a new Base URL) is saved first: the check always tests what gen.py will use
+  const input = document.querySelector(`#settings-form [name="${name}_api_key"]`);
+  const base = ['openai', 'elevenlabs'].includes(name) ? document.querySelector(`#settings-form [name="${name}_base_url"]`) : null;
+  if((input && input.value.trim()) || base){
+    el.innerHTML = '<span class="spin"></span> đang lưu…';
+    const body = {key: input ? input.value.trim() : ''};
+    if(base) body.base_url = base.value.trim();
+    const s = await api(`/api/providers/${name}/key`, body);
+    if(s.error){ el.innerHTML = `<span class="error">✕ ${esc(s.error)}</span>`; return; }
+    if(input && input.value.trim()){
+      input.value = ''; input.placeholder = `đã lưu ${s.hint} · gõ key mới để thay`;
+      changed.delete(input.name); document.getElementById('changed').value = [...changed].join(',');
+    }
+  }
+  el.innerHTML = '<span class="spin"></span> đang kiểm tra…';
+  const r = await api(`/api/providers/${name}/check`, {});
+  if(!r.ok){ el.innerHTML = `<span class="error">✕ ${esc(r.error || 'lỗi')}</span>`; return; }
+  el.innerHTML = name === 'elevenlabs' && r.models
+    ? `<span class="ok">✓ key hợp lệ</span> · gói không rõ (địa chỉ trung gian) · model: <span class="mono">${esc(r.models.join(', ') || 'không liệt kê')}</span>`
+    : name === 'elevenlabs'
+    ? `<span class="ok">✓ gói ${esc(r.tier)} · còn ${(r.left || 0).toLocaleString()} / ${(r.limit || 0).toLocaleString()} ký tự${r.reset ? ' · làm mới ' + esc(r.reset) : ''}</span>`
+    : r.models ? (r.models.length ? `<span class="ok">✓ key hợp lệ</span> · model ảnh: <span class="mono">${esc(r.models.join(', '))}</span>`
+                                  : `<span class="warn">! ${esc(r.note || 'key hợp lệ nhưng không có model tạo ảnh')}</span>`)
+    : `<span class="ok">✓ key hợp lệ</span>` + (r.balance != null ? ` · số dư $${esc(r.balance)}` : (r.balance_note ? ` · <span class="muted">${esc(r.balance_note)}</span>` : ''));
+}
+// ---------------------------------------------------------------- ElevenLabs keys
+function elCredit(st){
+  if(!st) return '<span class="muted">chưa kiểm tra</span>';
+  if(!st.ok) return `<span class="error" title="${esc(st.error || '')}">✕ ${esc((st.error || 'lỗi').slice(0, 70))}</span>`;
+  if(st.models) return `<span class="ok">✓ dùng được</span> <span class="muted">· không rõ số dư (trung gian)</span>`;
+  const pct = st.limit ? Math.round(100 * (st.left || 0) / st.limit) : 0;
+  return `<b>${(st.left || 0).toLocaleString('vi-VN')}</b> / ${(st.limit || 0).toLocaleString('vi-VN')} ký tự <span class="muted">(${pct}%) · gói ${esc(st.tier || '?')}${st.reset ? ' · làm mới ' + esc(st.reset) : ''}${st.at ? ' · đọc lúc ' + esc(String(st.at).slice(11, 16)) : ''}</span>`;
+}
+function elRender(keys){
+  const tb = document.querySelector('#el-keys tbody');
+  if(!keys.length){ tb.innerHTML = '<tr><td colspan="6" class="muted small">chưa có key nào: thêm ở dưới</td></tr>'; return; }
+  tb.innerHTML = keys.map(k => `<tr${k.active ? ' style="background:var(--accent-soft, rgba(80,160,255,.12))"' : ''}>
+    <td><input type="radio" name="el-active-pick" ${k.active ? 'checked' : ''} onchange="elKeys('${k.id}/use')" title="dùng key này"></td>
+    <td>${esc(k.label)}${k.active ? ' <span class="ok small">● đang dùng</span>' : ''}</td>
+    <td class="mono small">${esc(k.hint)}</td><td class="mono small">${esc(k.base_url)}</td>
+    <td class="small">${elCredit(k.status)}</td>
+    <td class="nowrap"><button type="button" class="btn btn-tiny btn-ghost" onclick="elKeys('${k.id}/check')">↻</button>
+      <button type="button" class="btn btn-tiny btn-ghost btn-danger" onclick="if(confirm('Xóa key này khỏi danh sách?')) elKeys('${k.id}/delete')">Xóa</button></td></tr>`).join('');
+}
+async function elKeys(action){
+  const el = document.getElementById('st-elevenlabs');
+  el.innerHTML = action ? '<span class="spin"></span> đang xử lý…' : '';
+  const r = action ? await api(`/api/providers/elevenlabs/keys/${action}`, {}) : await (await fetch('/api/providers/elevenlabs/keys')).json();
+  if(r.error){ el.innerHTML = `<span class="error">✕ ${esc(r.error)}</span>`; return; }
+  el.innerHTML = action && action.endsWith('/use') ? '<span class="ok">✓ đã đổi key đang dùng</span>' : '';
+  elRender(r.keys || []);
+}
+async function elAdd(){
+  const st = document.getElementById('el-add-st'), key = document.getElementById('el-new-key');
+  if(!key.value.trim()){ st.innerHTML = '<span class="error">dán key trước</span>'; return; }
+  st.innerHTML = '<span class="spin"></span> đang thêm và kiểm tra…';
+  const r = await api('/api/providers/elevenlabs/keys', {label: document.getElementById('el-new-label').value.trim(),
+    key: key.value.trim(), base_url: document.getElementById('el-new-base').value.trim()});
+  if(r.error){ st.innerHTML = `<span class="error">✕ ${esc(r.error)}</span>`; return; }
+  key.value = ''; document.getElementById('el-new-label').value = ''; document.getElementById('el-new-base').value = '';
+  st.innerHTML = '<span class="ok">✓ đã thêm</span>';
+  elRender(r.keys || []);
+}
+elKeys();
+// ---------------------------------------------------------------- Telegram API
+function tgShow(r){
+  const el = document.getElementById('tg-status');
+  if(r.ok && r.authorized && r.me){ el.innerHTML = `<span class="ok">✓ đã đăng nhập: ${esc(r.me.name || '')}${r.me.username ? ' (@' + esc(r.me.username) + ')' : ''}</span>`; document.getElementById('tg-code-row').hidden = true; }
+  else if(r.ok && r.sent){ el.innerHTML = '<span class="info">Đã gửi mã vào app Telegram của bạn: nhập mã rồi bấm Đăng nhập.</span>'; document.getElementById('tg-code-row').hidden = false; document.getElementById('tg-code').focus(); }
+  else if(r.ok){ el.innerHTML = '<span class="muted">chưa đăng nhập</span>'; }
+  else { el.innerHTML = `<span class="error">✕ ${esc(r.error || 'lỗi')}</span>`; if(r.need_password){ document.getElementById('tg-pass').focus(); } }
+}
+async function tgCall(action, body){
+  document.getElementById('tg-status').innerHTML = '<span class="spin"></span> đang làm…';
+  const r = await api('/api/telegram/' + action, body || {}); tgShow(r); return r;
+}
+async function tgSendCode(){
+  const v = n => document.querySelector(`#settings-form [name="${n}"]`).value.trim();
+  if(!v('telegram_phone')){ toast('Nhập số điện thoại dạng +84…'); return; }
+  const r = await tgCall('send-code', {api_id: v('telegram_api_id'), api_hash: v('telegram_api_hash'), phone: v('telegram_phone')});
+  ['telegram_api_id', 'telegram_api_hash', 'telegram_phone'].forEach(n => changed.delete(n));
+  document.getElementById('changed').value = [...changed].join(',');
+  if(r.ok) document.querySelector('#settings-form [name="telegram_api_hash"]').value = '';
+}
+async function tgSignIn(){
+  const code = document.getElementById('tg-code').value.trim(), password = document.getElementById('tg-pass').value;
+  if(!code && !password){ toast('Nhập mã đăng nhập'); return; }
+  const r = await tgCall('sign-in', {code, password});
+  if(r.ok){ document.getElementById('tg-code').value = ''; document.getElementById('tg-pass').value = ''; }
+}
+{% set tgs = tg_status %}{% if tgs %}tgShow({{ tgs|tojson }});{% endif %}
+
+// ---------------------------------------------------------------- Telegram approval bot
+async function tgbCheck(){
+  const el = document.getElementById('tgb-status'), inp = document.getElementById('tgb-token');
+  el.innerHTML = '<span class="spin"></span> đang kiểm tra…';
+  const r = await api('/api/tgbot/check', {token: inp.value.trim()});
+  if(!r.ok){ el.innerHTML = `<span class="error">✕ ${esc(r.error || 'lỗi')}</span>`; return; }
+  inp.value = ''; changed.delete('tg_bot_token'); document.getElementById('changed').value = [...changed].join(',');
+  document.getElementById('tgb-pair').textContent = r.pair;
+  el.innerHTML = `<span class="ok">✓ bot @${esc(r.bot)}</span> · ` + (r.chat ? `<span class="ok">đã ghép với ${esc(r.chat)}</span>`
+    : `<span class="info">gửi <span class="mono">/start ${esc(r.pair)}</span> cho @${esc(r.bot)} để ghép</span>`);
+}
+async function tgbAct(action){
+  const el = document.getElementById('tgb-status');
+  const r = await api('/api/tgbot/' + action, {});
+  if(!r.ok){ el.innerHTML = `<span class="error">✕ ${esc(r.error || 'lỗi')}</span>`; return; }
+  if(action === 'unpair'){ document.getElementById('tgb-pair').textContent = r.pair; el.innerHTML = '<span class="muted">chưa ghép chat</span>'; }
+  else toast('đã gửi tin thử');
+}
+
+async function clearKey(name){
+  if(!confirm('Xóa API key ' + name + ' khỏi app?')) return;
+  await api(`/api/providers/${name}/clear-key`, {}); location.reload();
+}
+let voiceLang = null;
+function openVoices(lang){
+  if(!/^[a-z]{2,3}$/.test(lang || '')){ toast('Nhập mã ngôn ngữ 2–3 chữ (en, ru, vi…)'); return; }
+  voiceLang = lang;
+  document.getElementById('vd-lang').textContent = lang;
+  document.getElementById('vd-q').value = '';
+  document.getElementById('voice-dialog').showModal();
+  searchVoices();
+}
+async function searchVoices(){
+  const out = document.getElementById('vd-list');
+  out.innerHTML = '<span class="spin"></span> đang tìm…';
+  const mine = document.getElementById('vd-mine').checked;
+  const p = new URLSearchParams({lang: voiceLang, q: document.getElementById('vd-q').value.trim(),
+    gender: document.getElementById('vd-gender').value, mine: mine ? '1' : '0'});
+  const r = await (await fetch('/api/providers/voices?' + p)).json();
+  if(r.error){ out.innerHTML = `<div class="alert err">${esc(r.error)}</div>`; return; }
+  out.innerHTML = r.voices.map((v, i) => `<div class="box" style="margin-bottom:6px">
+      <div class="row gap"><b class="grow">${esc(v.name)}</b><span class="small muted">${esc([v.gender, v.age, v.accent, v.language].filter(Boolean).join(' · '))}</span>
+        <button type="button" class="btn btn-tiny btn-primary" onclick="chooseVoice(${i})">Dùng giọng này</button></div>
+      ${v.description ? `<div class="small muted">${esc(v.description)}</div>` : ''}
+      ${v.preview ? `<audio controls preload="none" src="${esc(v.preview)}" style="width:100%;height:32px;margin-top:4px"></audio>` : ''}
+    </div>`).join('') || '<div class="muted small">Không có giọng nào khớp.</div>';
+  window._voices = r.voices;
+}
+async function chooseVoice(i){
+  const v = window._voices[i];
+  const r = await api('/api/providers/voice', {lang: voiceLang, voice: {id: v.id, name: v.name, owner: v.owner || ''}});
+  if(r.error){ toast(r.error); return; }
+  location.reload();
+}
+async function removeVoice(lang){
+  if(!confirm('Bỏ giọng của ngôn ngữ ' + lang + '?')) return;
+  const r = await api('/api/providers/voice', {lang, voice: null}); if(r.error){ toast(r.error); return; } location.reload();
+}
+async function searchFal(){
+  const out = document.getElementById('fal-results'); out.innerHTML = '<span class="spin"></span>';
+  const r = await (await fetch('/api/providers/fal/models?q=' + encodeURIComponent(document.getElementById('fal-q').value.trim()))).json();
+  if(r.error){ out.innerHTML = `<span class="error">${esc(r.error)}</span>`; return; }
+  out.innerHTML = r.models.map(m => `<div><span class="mono">${esc(m.endpoint)}</span> · ${esc(m.name || '')} · <span class="muted">${esc(m.category || '')}</span>
+    <button type="button" class="btn btn-tiny btn-ghost" onclick="copyText('${esc(m.endpoint)}')">copy</button></div>`).join('') || '<span class="muted">không thấy</span>';
+}
+</script>
+{% endblock %}

@@ -1,0 +1,316 @@
+{% extends "base.html" %}
+{% set title = "Cài đặt" %}
+{% block content %}
+{% if saved %}<div class="notice">Đã lưu.</div>{% endif %}
+<form method="post" action="/settings">
+<section class="card"><div class="card-header"><h2>Đường dẫn và pipeline</h2></div>
+  <div class="card-body grid2">
+    <label>Thư mục media (video, transcript, cutlist, clip)<input class="input" name="media_root" value="{{ s.media_root }}"></label>
+    <label>Model Whisper<input class="input" name="whisper_model" value="{{ s.whisper_model }}"></label>
+    <label>Ngôn ngữ Whisper<input class="input" name="whisper_language" value="{{ s.whisper_language }}"></label>
+    <label>Số đoạn tối đa mỗi tập<input class="input" name="max_segments" value="{{ s.max_segments }}"></label>
+    <label>Giây chờ file ổn định<input class="input" name="file_stable_seconds" value="{{ s.file_stable_seconds }}"></label>
+    <label>Cảnh báo ổ đĩa còn dưới (GB)<input class="input" name="disk_warn_gb" value="{{ s.disk_warn_gb }}"></label>
+    <label class="check"><input type="checkbox" name="watch_enabled" value="1" {{ 'checked' if s.watch_enabled=='1' }}> Tự theo dõi thư mục media, video mới là chạy</label>
+    <label class="check"><input type="checkbox" name="review_gate" value="1" {{ 'checked' if s.review_gate=='1' }}> Cổng duyệt: chờ duyệt cutlist trước khi cắt</label>
+    <label class="check"><input type="checkbox" name="auto_zoom" value="1" {{ 'checked' if s.auto_zoom=='1' }}> Tự zoom mọi clip ngay sau khi cắt (tắt: vào trang tập chọn đoạn cần zoom, hoặc bấm Zoom tất cả)</label>
+    <label class="check"><input type="checkbox" name="zoom_hooks" value="1" {{ 'checked' if s.zoom_hooks=='1' }}> Zoom cả clip hook</label>
+    <label class="check"><input type="checkbox" name="delete_original_clip_after_zoom" value="1" {{ 'checked' if s.delete_original_clip_after_zoom=='1' }}> Xoá clip gốc sau khi zoom xong</label>
+    <label class="check"><input type="checkbox" name="delete_source_after_ready" value="1" {{ 'checked' if s.delete_source_after_ready=='1' }}> Xoá video gốc (cả tập) sau khi cắt xong mọi đoạn highlight</label>
+  </div></section>
+<section class="card"><div class="card-header"><h2>Tham số zoom</h2></div>
+  <div class="card-body grid3">
+    <label>zoom_factor<input class="input" name="zoom_factor" value="{{ s.zoom_factor }}"></label>
+    <label>smoothing_speed<input class="input" name="zoom_smoothing_speed" value="{{ s.zoom_smoothing_speed }}"></label>
+    <label>analysis_fps<input class="input" name="zoom_analysis_fps" value="{{ s.zoom_analysis_fps }}"></label>
+    <label>max_faces<input class="input" name="zoom_max_faces" value="{{ s.zoom_max_faces }}"></label>
+    <label>min_switch_duration<input class="input" name="zoom_min_switch_duration" value="{{ s.zoom_min_switch_duration }}"></label>
+    <label>mar_threshold<input class="input" name="zoom_mar_threshold" value="{{ s.zoom_mar_threshold }}"></label>
+  </div></section>
+<section class="card"><div class="card-header"><h2>Nối hook vào bản zoom</h2></div>
+  <div class="card-body grid3">
+    <label>Chuyển cảnh mặc định<select class="input" name="hook_join_transition">
+      {% for k, v in hook_transitions.items() %}<option value="{{ k }}" {{ 'selected' if s.hook_join_transition == k }}>{{ v }} ({{ k }})</option>{% endfor %}
+    </select></label>
+    <label>Thời lượng chuyển cảnh (giây)<input class="input" name="hook_join_duration" value="{{ s.hook_join_duration }}"></label>
+    <label>Âm lượng sound effect (0–2)<input class="input" name="hook_join_sfx_volume" value="{{ s.hook_join_sfx_volume }}"></label>
+    <label>Sound effect (file trong DataBase/assets/sfx hoặc đường dẫn đầy đủ; trống = transition.mp3)<input class="input" name="hook_join_sfx" list="sfx-list" value="{{ s.hook_join_sfx }}" placeholder="transition.mp3">
+      <datalist id="sfx-list">{% for f in sfx_files %}<option value="{{ f }}">{% endfor %}</datalist></label>
+  </div></section>
+<section class="card"><div class="card-header"><h2>Claude Code headless</h2>
+    <span class="small {{ 'ok' if claude.installed and (claude.token or claude.logged_in) else 'error' }}">{{ 'CLI: ' + claude.version if claude.installed else 'Chưa cài Claude CLI' }} · {{ 'có token' if claude.token else ('đã đăng nhập' if claude.logged_in else 'CHƯA đăng nhập: nhấn đúp E:\\Tool\\DataBase\\dang-nhap-claude.bat rồi gõ /login') }}</span></div>
+  <div class="card-body">
+    <p class="small muted">Model để trống = model mặc định của Claude Code cho tài khoản bạn, giống lúc mở Claude Code mà không chọn gì. Gõ bí danh <code>fable</code>, <code>opus</code>, <code>sonnet</code>, <code>haiku</code> hoặc tên đầy đủ như <code>claude-opus-5</code>. Effort giống lệnh /effort trong Claude Code. Bấm "Kiểm tra" để chạy một lượt nhỏ và xem model thực tế trả lời.</p>
+    <datalist id="model-options">
+      <option value="fable">fable · Claude Fable 5.1, mạnh nhất, mặc định cho bước chọn nội dung</option>
+      <option value="opus">opus · chất lượng cao, nhanh và rẻ quota hơn fable</option>
+      <option value="sonnet">sonnet · cân bằng, rẻ hơn</option>
+      <option value="haiku">haiku · nhanh, rẻ, chỉ hợp việc đơn giản</option>
+      <option value="claude-opus-5">claude-opus-5</option>
+      <option value="claude-sonnet-5">claude-sonnet-5</option>
+      <option value="claude-fable-5-1">claude-fable-5-1</option>
+    </datalist>
+    <div class="grid2">
+      <label>Model cho bước CHỌN NỘI DUNG<input class="input" list="model-options" name="claude_model_select" value="{{ s.claude_model_select }}" placeholder="trống = mặc định"></label>
+      <label>Effort cho bước chọn nội dung
+        <select class="input" name="claude_effort_select">{% for e in ['', 'low', 'medium', 'high', 'xhigh', 'max'] %}<option value="{{ e }}" {{ 'selected' if s.claude_effort_select == e }}>{{ e or 'mặc định' }}</option>{% endfor %}</select></label>
+      <label>Model cho HỎI AI<input class="input" list="model-options" name="claude_model_ask" value="{{ s.claude_model_ask }}" placeholder="trống = mặc định"></label>
+      <label>Effort cho Hỏi AI
+        <select class="input" name="claude_effort_ask">{% for e in ['', 'low', 'medium', 'high', 'xhigh', 'max'] %}<option value="{{ e }}" {{ 'selected' if s.claude_effort_ask == e }}>{{ e or 'mặc định' }}</option>{% endfor %}</select></label>
+      <label>Model dự phòng khi quá tải (cách nhau bằng dấu phẩy)<input class="input" name="claude_fallback_model" value="{{ s.claude_fallback_model }}" placeholder="ví dụ: sonnet"></label>
+      <label>Số lần chạy lại khi cutlist lỗi<input class="input" name="select_retry" value="{{ s.select_retry }}"></label>
+      <label>max-turns<input class="input" name="claude_max_turns" value="{{ s.claude_max_turns }}"></label>
+      <label>allowedTools<input class="input" name="claude_allowed_tools" value="{{ s.claude_allowed_tools }}"></label>
+      <label>permission-mode<input class="input" name="claude_permission_mode" value="{{ s.claude_permission_mode }}"></label>
+      <label>Đường dẫn CLI (trống = tự tìm)<input class="input" name="claude_cli" value="{{ s.claude_cli }}"></label>
+    </div>
+    <div class="row gap">
+      <button type="button" class="btn" id="probe-btn" onclick="probeClaude()">Kiểm tra: model nào đang trả lời?</button>
+      <span id="probe-result" class="small muted"></span>
+    </div>
+  </div></section>
+<section class="card"><div class="card-header"><h2>Viết Title cho từng đoạn highlight</h2>
+    <span class="small muted">nút "Viết Title" trên mỗi đoạn chạy skill này bằng Claude headless, hàng đợi riêng, không chặn pipeline</span></div>
+  <div class="card-body">
+    <datalist id="title-model-options">
+      <option value="opus">opus · Claude, làm đủ cả thumbnail mock</option>
+      <option value="fable">fable · Claude mạnh nhất</option>
+      <option value="sonnet">sonnet · Claude rẻ hơn</option>
+      <option value="gemini-3.5-flash">gemini-3.5-flash · Gemini, gói free chạy được, không làm thumbnail</option>
+      <option value="gemini-3.8-flash">gemini-3.8-flash · Gemini Flash mới nhất</option>
+      <option value="gemini-pro-latest">gemini-pro-latest · Gemini Pro, cần bật billing</option>
+      <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview · Gemini Pro, cần bật billing</option>
+    </datalist>
+    <p class="small muted">Model bắt đầu bằng <code>gemini</code> thì skill chạy qua Gemini API thay cho Claude: viết đủ title, description, timestamps, tags và gợi ý thumbnail bằng chữ, nhưng <b>không dựng mock thumbnail</b> (Gemini không chạy được công cụ trên máy). Nhắn chỉnh metadata vẫn dùng đúng model của lượt đó. Effort không áp cho Gemini.</p>
+    <div class="grid3">
+      <label>Skill<input class="input" name="title_skill" value="{{ s.title_skill }}" placeholder="viet-tittle"></label>
+      <label>Model<input class="input" list="title-model-options" name="claude_model_title" value="{{ s.claude_model_title }}" placeholder="opus"></label>
+      <label>Effort (chỉ Claude)
+        <select class="input" name="claude_effort_title">{% for e in ['', 'low', 'medium', 'high', 'xhigh', 'max'] %}<option value="{{ e }}" {{ 'selected' if s.claude_effort_title == e }}>{{ e or 'mặc định' }}</option>{% endfor %}</select></label>
+      <label>Model ảnh AI cho ô giữa thumbnail
+        <input class="input" list="thumb-image-models" name="thumb_image_model" value="{{ s.thumb_image_model }}" placeholder="openai:gpt-image-2.5-sunburst">
+        <datalist id="thumb-image-models">
+          <option value="openai:gpt-image-2.5-sunburst">GPT Image 2.5 Sunburst · Creater đang dùng</option>
+          <option value="openai:gpt-image-2.5-flare">GPT Image 2.5 Flare</option>
+          <option value="openai:gpt-image-1-mini">GPT Image 1 mini · rẻ</option>
+        </datalist></label>
+      <label>Chất lượng ảnh AI
+        <select class="input" name="thumb_image_quality">{% for q, t in [('high', 'high · đẹp nhất (đo thật ~$0,04/ảnh)'), ('medium', 'medium · rẻ hơn'), ('low', 'low · rẻ nhất, chỉ để nháp')] %}<option value="{{ q }}" {{ 'selected' if (s.thumb_image_quality or 'high') == q }}>{{ t }}</option>{% endfor %}</select></label>
+      <label>Gemini API key <span class="small {{ 'ok' if gemini_configured else 'muted' }}">{{ '· đã có key' if gemini_configured else '· chưa có key' }}</span>
+        <input class="input" type="password" name="gemini_api_key" value="" autocomplete="off"
+               placeholder="{{ 'đã có key, để trống nếu không đổi' if gemini_configured else 'dán key Google AI Studio' }}"></label>
+      <label>Gemini base URL (key mua ngoài)
+        <input class="input" name="gemini_base_url" value="{{ s.gemini_base_url }}" placeholder="trống = gọi thẳng Google · key sk-… thì điền https://…/v1 của bên bán"></label>
+    </div>
+  </div></section>
+<section class="card" id="google-translate"><div class="card-header"><h2>Google Dịch khi bôi đen</h2>
+    <span class="small {{ 'ok' if gt_configured else 'muted' }}">{{ 'đã có API key, dịch ngay trong Studio' if gt_configured else 'chưa có API key: nút Dịch sẽ mở trang Google Dịch trên trình duyệt' }}</span></div>
+  <div class="card-body">
+    <p class="small">Bôi đen chữ tiếng Anh ở bất kỳ trang nào của Studio rồi bấm nút <b>🌐 Dịch</b> hiện cạnh đoạn chọn. Có API key thì bản dịch hiện ngay trong một khung nhỏ; chưa có key thì Studio mở translate.google.com với đoạn đã chọn.</p>
+    <p class="small muted">Tạo key: vào Google Cloud Console, tạo hoặc chọn một project đã gắn tài khoản thanh toán, bật "Cloud Translation API", vào Credentials, tạo API key và giới hạn key chỉ dùng cho Cloud Translation API, rồi dán vào ô dưới. Google tính phí theo số ký tự và có hạn mức miễn phí hằng tháng, xem trang giá của Google để biết con số hiện tại.</p>
+    <div class="grid2">
+      <label>Google Cloud Translation API key
+        <input class="input" type="password" name="google_translate_api_key" value="" autocomplete="off"
+               placeholder="{{ 'đã lưu key, để trống nếu không đổi' if gt_configured else 'dán key vào đây' }}"></label>
+      <div class="row gap" style="align-items:flex-end"><button type="button" class="btn" onclick="testTranslate()">Thử dịch</button><span id="gt-result" class="small muted"></span></div>
+    </div>
+  </div></section>
+<div class="row gap"><button class="btn btn-primary">Lưu cài đặt</button></div>
+</form>
+
+<section class="card" id="podcasts"><div class="card-header"><h2>Show podcast</h2>
+  <span class="small muted">Mỗi show một profile: Studio nhận tập theo mẫu tên file, chạy đúng skill của show, prompt dùng đúng tên host/kênh</span></div>
+  <div class="card-body">
+    <p class="small muted">Mẫu tên file: mỗi dòng một mẫu, chữ thường/hoa như nhau, dùng <code>{num}</code> (số tập), <code>{guest}</code>,
+      <code>{date}</code> (show không đánh số: mã tập thành SHOW-20261105), <code>{*}</code> (bất kỳ). Ví dụ
+      <code>Shawn Ryan Show #{num} - {guest}</code>. Dòng bắt đầu bằng <code>re:</code> là regex có nhóm num/guest/date.
+      Skill chọn nội dung không tự xuất cutlist <code>flat_hooks</code> thì Studio tự kèm định dạng đầu ra của nó.
+      Show chưa có skill viết title thì dùng skill Viết Title chung ở trên, kèm ghi chú đổi tên host/show.
+      Không có template Canva thì thumbnail chỉ dựng bản mock.
+      <b>Podcast bổ trợ</b>: chỉ chạy transcript, không chọn highlight; video tổng hợp của show chính quét thêm các tập này
+      để bổ sung chuyên gia khác, bằng chứng, phản biện. Show bổ trợ không cần mẫu tên file: khi nạp ở trang Hàng đợi
+      chọn show đó là được (tập được đánh số tự động).</p>
+    {% for p in podcasts + [{'id': '', 'name': '', 'sort': 100, 'episodes': 0, 'highlights': 0}] %}
+    <details class="pod-form" {{ 'open' if not p.id }} data-id="{{ p.id }}">
+      <summary>{% if p.id %}<b>{{ p.id }}</b> · {{ p.name }}{% if p.role == 'support' %} <span class="pill">bổ trợ</span>{% endif %} <span class="muted small">· {{ p.episodes }} tập · {{ p.highlights }} highlight</span>
+        {% else %}<b>＋ Thêm show mới</b>{% endif %}</summary>
+      <div class="grid3" style="margin-top:8px">
+        <label>Mã show (tiền tố mã tập)<input class="input" data-k="id" value="{{ p.id }}" {{ 'readonly' if p.id }} placeholder="SRS"></label>
+        <label>Tên show<input class="input" data-k="name" value="{{ p.name or '' }}" placeholder="Shawn Ryan Show"></label>
+        <label>Host<input class="input" data-k="host" value="{{ p.host or '' }}" placeholder="Shawn Ryan"></label>
+        <label>Tên gọi ngắn của host (thumbnail)<input class="input" data-k="host_short" value="{{ p.host_short or '' }}" placeholder="Shawn"></label>
+        <label>Kênh YouTube đăng clip<input class="input" data-k="channel" value="{{ p.channel or '' }}" placeholder="SRS Clips"></label>
+        <label>Khán giả<input class="input" data-k="audience" value="{{ p.audience or '' }}" placeholder="khán giả YouTube Mỹ"></label>
+        <label>Skill chọn nội dung<input class="input" data-k="select_skill" value="{{ p.select_skill or '' }}" placeholder="chon-noi-dung-srs-v2"></label>
+        <label>Skill viết title (trống = skill chung)<input class="input" data-k="title_skill" value="{{ p.title_skill or '' }}" placeholder="viet-tittle"></label>
+        <label>Template Canva thumbnail (trống = chỉ mock)<input class="input" data-k="thumb_template" value="{{ p.thumb_template or '' }}"></label>
+        <label>Thứ tự<input class="input" data-k="sort" type="number" value="{{ p.sort or 100 }}"></label>
+        <label>Vai trò<select class="input" data-k="role">
+          <option value="main" {{ 'selected' if (p.role or 'main') == 'main' }}>Show chính (chọn highlight, cắt clip, title)</option>
+          <option value="support" {{ 'selected' if p.role == 'support' }}>Podcast bổ trợ (cấp clip cho video tổng hợp; có skill chọn nội dung thì chạy đủ pipeline, không có thì chỉ transcript)</option>
+        </select></label>
+      </div>
+      <label>Mẫu tên file video (mỗi dòng một mẫu)<textarea class="input" data-k="patterns" rows="2" placeholder="Shawn Ryan Show #{num} - {guest}">{{ p.patterns or '' }}</textarea></label>
+      <div class="row gap" style="margin-top:6px">
+        <button type="button" class="btn btn-small btn-primary" onclick="savePodcast(this)">Lưu show</button>
+        {% if p.id and not p.episodes %}<button type="button" class="btn btn-small btn-ghost" onclick="deletePodcast('{{ p.id }}')">Xoá show</button>{% endif %}
+        <span class="small muted pod-result"></span>
+      </div>
+      {% if p.id %}{% set w = watch.get(p.id) or {} %}
+      <div class="cw-box" data-pid="{{ p.id }}" style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border,#ccc)">
+        <div class="row gap" style="align-items:center"><b>📡 Quét kênh tự động</b>
+          <label class="row gap" style="align-items:center;margin:0"><input type="checkbox" data-w="enabled" {{ 'checked' if w.enabled }}> Bật hẹn giờ quét</label>
+          <span class="small muted cw-status">
+            {% if w.last_scan_at %}Lần quét cuối {{ w.last_scan_at|replace('T',' ') }}: {{ w.last_result or '' }}{% endif %}
+            {% if w.last_error %} · <span style="color:#c33">{{ w.last_error }}</span>{% endif %}
+            {% if w.enabled and w.next_scan_at %} · lần tới {{ w.next_scan_at|replace('T',' ') }}{% endif %}
+          </span></div>
+        <div class="grid3" style="margin-top:8px">
+          <label>Link kênh chính (YouTube)<input class="input" data-w="channel_url" value="{{ w.channel_url or '' }}" placeholder="https://www.youtube.com/@joerogan"></label>
+          <label>Giờ quét cố định trong ngày (trống = theo chu kỳ)<input class="input" data-w="schedule_times" value="{{ w.schedule_times or '' }}" placeholder="06:00, 18:30"></label>
+          <label>Chu kỳ quét (giờ, khi không đặt giờ cố định)<input class="input" data-w="every_hours" type="number" step="0.25" min="0.25" value="{{ w.every_hours }}"></label>
+          <label>Bỏ video ngắn hơn (phút, 0 = không lọc)<input class="input" data-w="min_minutes" type="number" min="0" value="{{ w.min_minutes }}"></label>
+          <label>Tối đa video tải mỗi lượt<input class="input" data-w="max_per_scan" type="number" min="1" max="50" value="{{ w.max_per_scan }}"></label>
+          <label>Số video mới nhất đọc mỗi lượt<input class="input" data-w="scan_depth" type="number" min="5" max="100" value="{{ w.scan_depth }}"></label>
+        </div>
+        <div class="grid3">
+          <label>Keyword video mới cần lấy (mỗi dòng/dấu phẩy một từ, khớp tiêu đề; trống = lấy mọi video mới)<textarea class="input" data-w="keywords" rows="2" placeholder="Joe Rogan Experience #">{{ w.keywords or '' }}</textarea></label>
+          <label>Keyword loại trừ (tiêu đề chứa thì bỏ)<textarea class="input" data-w="exclude_keywords" rows="2" placeholder="trailer, live">{{ w.exclude_keywords or '' }}</textarea></label>
+        </div>
+        <p class="small muted" style="margin:4px 0">Lần quét đầu chỉ ghi nhận video đang có trên kênh (không tải lại cả kho); từ lượt sau video mới khớp keyword được tải về thư mục Full rồi tự chạy pipeline và index. Tiêu đề khớp mẫu tên của show khác (vd JRE MMA Show trên kênh PowerfulJRE) thì vào đúng show đó; tập đã có trong Studio thì bỏ qua.</p>
+        <div class="row gap">
+          <button type="button" class="btn btn-small btn-primary" onclick="cwSave(this)">Lưu lịch quét</button>
+          <button type="button" class="btn btn-small" onclick="cwScan(this)">Quét ngay</button>
+          <button type="button" class="btn btn-small btn-ghost" onclick="cwList(this)">Xem video đã quét</button>
+          <span class="small muted cw-result"></span>
+        </div>
+        <div class="cw-videos small" style="margin-top:6px"></div>
+      </div>
+      {% endif %}
+    </details>
+    {% endfor %}
+    <div class="row gap" style="margin-top:10px">
+      <input id="pod-test" class="input grow" placeholder="Thử một tên file video, vd: Shawn Ryan Show #171 - Mike Benz.mp4">
+      <button type="button" class="btn btn-small" onclick="testPodcastName()">Thử nhận diện</button>
+      <span id="pod-test-result" class="small"></span>
+    </div>
+  </div>
+</section>
+
+<section class="card danger">
+  <div class="card-header"><h2>Làm sạch dữ liệu</h2></div>
+  <div class="card-body">
+    <p class="small">Xóa toàn bộ tập, đoạn, transcript, theme đã gán và lịch sử job khỏi database để chạy lại từ đầu. Giữ nguyên cài đặt trên trang này và danh sách theme. Database được sao lưu vào <code>E:\Tool\DataBase\backups</code> trước khi xóa, khôi phục được bằng <code>hldb restore</code>.</p>
+    <p class="small"><b>Không xóa file trên đĩa.</b> Video, transcript, cutlist và thư mục clip trong thư mục media bạn tự xóa nếu muốn. Nếu giữ lại rồi bấm "Quét lại" ở trang Hàng đợi, chúng sẽ được nạp lại.</p>
+    <div class="row gap"><button type="button" class="btn" onclick="resetData()">Làm sạch dữ liệu…</button><span id="reset-result" class="small muted"></span></div>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+async function probeClaude(){
+  const btn=document.getElementById('probe-btn'), out=document.getElementById('probe-result');
+  const model=document.querySelector('[name=claude_model_select]').value, effort=document.querySelector('[name=claude_effort_select]').value;
+  btn.disabled=true; out.textContent='Đang chạy một lượt nhỏ với model "'+(model||'mặc định')+'"…';
+  try{ const r=await api('/api/claude/probe',{model, effort});
+    if(!r.logged_in) out.textContent='Chưa đăng nhập: '+(r.error||r.result||'');
+    else if(r.ok) out.textContent='OK · model trả lời: '+((r.models||[]).join(', ')||'?')+' · '+(r.summary||'')+' · trả lời: '+(r.result||'').slice(0,60);
+    else out.textContent='Lỗi: '+(r.error||'');
+  }catch(e){ out.textContent='Lỗi: '+e; }
+  finally{ btn.disabled=false; }
+}
+// Send only the fields that were edited, so a page left open with old values cannot overwrite newer settings.
+document.querySelector('form[action="/settings"]').addEventListener('submit', function(){
+  const changed=[];
+  for(const el of this.elements){
+    if(!el.name || el.name==='_changed') continue;
+    let diff;
+    if(el.type==='checkbox') diff = el.checked!==el.defaultChecked;
+    else if(el.tagName==='SELECT'){ const def=[...el.options].find(o=>o.defaultSelected)||el.options[0]; diff = el.value!==(def?def.value:''); }
+    else diff = el.value!==el.defaultValue;
+    if(diff) changed.push(el.name);
+  }
+  let h=this.querySelector('input[name=_changed]');
+  if(!h){ h=document.createElement('input'); h.type='hidden'; h.name='_changed'; this.appendChild(h); }
+  h.value=changed.join(',');
+});
+async function testTranslate(){
+  const out=document.getElementById('gt-result'); out.textContent='Đang dịch "The oldest structure in the world"…';
+  const r=await api('/api/translate',{text:'The oldest structure in the world'});
+  out.textContent = r.error ? ('Lỗi: '+r.error+(r.code==='no_key'?' (lưu key trước rồi thử lại)':'')) : ('OK: '+r.translation);
+}
+async function savePodcast(btn){
+  const box=btn.closest('.pod-form'), out=box.querySelector('.pod-result'), d={};
+  box.querySelectorAll('[data-k]').forEach(el=>{ d[el.dataset.k]=el.value; });
+  out.textContent='Đang lưu…';
+  const r=await api('/api/podcasts',d);
+  if(r.error){ out.textContent='Lỗi: '+r.error; return; }
+  out.textContent='Đã lưu '+r.id; setTimeout(()=>location.reload(),600);
+}
+async function deletePodcast(id){
+  if(!confirm('Xoá profile show '+id+'? (chỉ xoá được khi show chưa có tập nào)')) return;
+  const r=await api('/api/podcasts/'+encodeURIComponent(id)+'/delete',{});
+  if(r.error) return toast(r.error);
+  location.reload();
+}
+function cwData(box){
+  const d={};
+  box.querySelectorAll('[data-w]').forEach(el=>{ d[el.dataset.w] = el.type==='checkbox' ? (el.checked?1:0) : el.value; });
+  return d;
+}
+function cwStatus(box, cfg){
+  if(!cfg) return;
+  let t = cfg.last_scan_at ? ('Lần quét cuối '+cfg.last_scan_at.replace('T',' ')+': '+(cfg.last_result||'')) : 'chưa quét lần nào';
+  if(cfg.last_error) t += ' · lỗi: '+cfg.last_error;
+  if(cfg.enabled && cfg.next_scan_at) t += ' · lần tới '+cfg.next_scan_at.replace('T',' ');
+  box.querySelector('.cw-status').textContent = t;
+}
+function cwRender(box, vids){
+  const el=box.querySelector('.cw-videos');
+  if(!vids || !vids.length){ el.innerHTML='<span class="muted">chưa có video nào (bấm Quét ngay)</span>'; return; }
+  el.innerHTML='<table class="table" style="width:100%"><tr><th>Video</th><th>Thời lượng</th><th>Trạng thái</th><th></th></tr>'+vids.map(v=>
+    '<tr><td><a href="'+esc(v.url)+'" target="_blank">'+esc(v.title||v.video_id)+'</a></td><td>'+(v.duration_sec?Math.round(v.duration_sec/60)+' phút':'?')+
+    '</td><td>'+esc(v.status_vi)+(v.target_podcast&&v.status==='queued'?' → '+esc(v.target_podcast):'')+(v.note?' <span class="muted">('+esc(v.note)+')</span>':'')+
+    '</td><td>'+(v.status!=='queued'?'<button type="button" class="btn btn-small btn-ghost" onclick="cwDownload(this,\''+esc(v.video_id)+'\')">Tải + index</button>':'')+'</td></tr>').join('')+'</table>';
+}
+async function cwSave(btn){
+  const box=btn.closest('.cw-box'), out=box.querySelector('.cw-result');
+  out.textContent='Đang lưu…';
+  const r=await api('/api/channel-watch/'+encodeURIComponent(box.dataset.pid), cwData(box));
+  if(r.error){ out.textContent='Lỗi: '+r.error; return; }
+  out.textContent='Đã lưu'; cwStatus(box, r.config);
+}
+async function cwScan(btn){
+  const box=btn.closest('.cw-box'), out=box.querySelector('.cw-result');
+  btn.disabled=true; out.textContent='Đang đọc kênh (5–30 giây)…';
+  try{
+    const r=await api('/api/channel-watch/'+encodeURIComponent(box.dataset.pid)+'/scan',{});
+    out.textContent = r.error ? ('Lỗi: '+r.error) : (r.message||'xong');
+    cwStatus(box, r.config); cwRender(box, r.videos);
+  } finally { btn.disabled=false; }
+}
+async function cwList(btn){
+  const box=btn.closest('.cw-box');
+  const r=await (await fetch('/api/channel-watch/'+encodeURIComponent(box.dataset.pid))).json();
+  cwStatus(box, r.config); cwRender(box, r.videos);
+}
+async function cwDownload(btn, vid){
+  const box=btn.closest('.cw-box');
+  btn.disabled=true;
+  const r=await api('/api/channel-watch/'+encodeURIComponent(box.dataset.pid)+'/download',{video_id:vid});
+  toast(r.error||r.message); cwList(btn);
+}
+async function testPodcastName(){
+  const out=document.getElementById('pod-test-result');
+  const r=await api('/api/podcasts/test-name',{name:document.getElementById('pod-test').value});
+  out.textContent = r.error ? r.error : ('→ '+r.episode_id+' · show '+r.podcast_id+' · số '+r.number+' · khách: '+(r.guest||'?'));
+}
+async function resetData(){
+  const c=prompt('Gõ XOA để xóa toàn bộ dữ liệu tập/đoạn khỏi database (có sao lưu trước):');
+  if(!c) return;
+  const out=document.getElementById('reset-result'); out.textContent='Đang sao lưu và làm sạch…';
+  const r=await api('/api/admin/reset',{confirm:c});
+  out.textContent = r.error ? ('Lỗi: '+r.error) : ('Xong. Đã xóa '+r.before.episodes+' tập, '+r.before.segments+' đoạn. Sao lưu: '+r.backup);
+}
+</script>
+{% endblock %}

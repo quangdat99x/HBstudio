@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% set title = "Tập" %}
+{% block content %}
+<section class="card">
+  <div class="card-header"><h2>{{ 'Tập ' ~ show if show else 'Tất cả tập' }} ({{ episodes|length }})</h2>
+    <label class="row gap small">Show:
+      <select class="input" id="show-pick" onchange="location.href = this.value ? '/episodes?show=' + encodeURIComponent(this.value) : '/episodes'">
+        <option value=""{{ ' selected' if not show }}>Tất cả show</option>
+        {% for p in podcasts if p.episodes %}<option value="{{ p.id }}"{{ ' selected' if show==p.id }}>{{ p.id }} · {{ p.name }}{{ ' (bổ trợ)' if p.role == 'support' }} · {{ p.episodes }} tập</option>{% endfor %}
+      </select>
+    </label></div>
+</section>
+
+{# one section per show: main shows (JRE, JRE MMA…) first, the support library apart #}
+{% for p in podcasts if p.episodes and (not show or show == p.id) %}
+{% set rows = episodes|selectattr('podcast_id', 'equalto', p.id)|list %}
+{% set support = p.role == 'support' %}
+<section class="card">
+  <div class="card-header"><h2>{{ p.name }} <span class="muted">· {{ p.id }}{{ ' · bổ trợ' if support }} · {{ rows|length }} tập</span></h2>
+    {% if support %}<span class="small muted">{{ ('skill chọn nội dung: ' ~ p.select_skill) if p.select_skill else 'chỉ transcript' }}</span>{% endif %}</div>
+  <table class="table">
+    <thead><tr><th>Tập</th>{% if support %}<th>Tên tập</th>{% endif %}<th>Khách mời</th><th>Stage</th><th>Highlight</th><th>Hook</th><th>Đã cắt</th><th>Đã zoom</th><th>Có phân tích</th>{% if not support %}<th>Video</th>{% endif %}</tr></thead>
+    <tbody>
+    {% for e in rows %}
+      <tr>
+        <td><a href="/episodes/{{ e.id }}">{{ e.id }}</a></td>
+        {% if support %}<td class="small">{{ e.title or e.source_video or '—' }}</td>{% endif %}
+        <td>{{ e.guest or '' }}</td>
+        <td><span class="badge stage-{{ (e.stage or 'new').split(':')[0] }}">{{ e.stage }}</span></td>
+        <td>{{ e.highlights }}</td><td>{{ e.hooks }}</td><td>{{ e.cut }}</td><td>{{ e.zoomed }}</td><td>{{ e.analysed }}</td>
+        {% if not support %}<td class="small muted">{{ e.source_video or '—' }}</td>{% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endfor %}
+{% endblock %}

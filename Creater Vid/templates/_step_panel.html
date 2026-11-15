@@ -1,0 +1,269 @@
+{% macro f(path) %}/p/{{ p.id }}/file?path={{ path|urlencode }}{% endmacro %}
+{% set s = row.status %}
+<div class="card-header">
+  <div class="col" style="gap:2px">
+    <h2>{{ step.icon }} Bước {{ step.num }} · {{ step.name }} <span class="badge st-{{ s }}">{% if s in ('running','queued') %}<span class="spin"></span>{% endif %}{{ row.label }}</span></h2>
+    {% set stx = step.text(p) %}
+    <div class="goal">{{ stx.goal }}</div>
+  </div>
+  <div class="row gap wrap end">
+    {% if s == 'locked' %}
+      <span class="small muted">Chờ bước {{ step.num - 1 }} được duyệt</span>
+    {% elif s in ('running', 'queued') %}
+      <button class="btn btn-small btn-ghost" onclick="stopTurn()">■ Dừng</button>
+    {% else %}
+      <input class="input" id="step-note" style="width:220px" placeholder="Ghi chú cho lượt này (tuỳ chọn)" {{ 'disabled' if busy }}>
+      <button class="btn btn-small {{ 'btn-primary' if s in ('ready', 'failed') else '' }}" onclick="runStep('{{ step.key }}')" {{ 'disabled' if busy }}>
+        {{ '▶ Chạy bước' if s in ('ready',) else '↻ Chạy lại' }}</button>
+      {% if s == 'review' %}<button class="btn btn-small btn-success" onclick="approveStep('{{ step.key }}')" {{ 'disabled' if busy }}>✓ Duyệt</button>{% endif %}
+      {% if s == 'approved' %}<button class="btn btn-small btn-ghost" onclick="reopenStep('{{ step.key }}')" title="Bỏ duyệt để sửa tiếp bước này">↩ Mở lại</button>{% endif %}
+    {% endif %}
+  </div>
+</div>
+<div class="card-body">
+  <details {{ 'open' if s in ('ready', 'locked') }}>
+    <summary class="small muted">Bước này làm gì · {{ step.spends }}</summary>
+    <ul class="does">{% for x in stx.does %}<li>{{ x }}</li>{% endfor %}</ul>
+    <div class="gate" style="margin-top:6px">Cổng duyệt: {{ stx.gate }} · chi tiết ở mục {{ step.rule }} của <a href="{{ rules_url }}">bộ quy tắc {{ KINDS[kind].label|lower }}</a></div>
+  </details>
+  {% if row.stale %}<div class="alert">⚠ Bước trước đã thay đổi sau khi bước này chạy. Xem lại kết quả, hoặc bấm Chạy lại / nhắn Claude cập nhật.</div>{% endif %}
+  {% if row.error %}<div class="alert err">{{ row.error }}</div>{% endif %}
+  {% for pr in row.problems_list %}{% if pr.startswith('⚠') %}<div class="alert">{{ pr }}</div>{% elif not row.error %}<div class="alert err">{{ pr }}</div>{% endif %}{% endfor %}
+  {% if summary %}<div class="small"><b>Kết quả:</b> {{ summary }}{% if row.approved_at and s == 'approved' %} · duyệt lúc {{ row.approved_at.replace('T', ' ')[:16] }}{% endif %}</div>{% endif %}
+
+{# ================================================================ 1 · script #}
+{% if step.key == 'script' %}
+  <div class="section-title">Tư liệu đầu vào</div>
+  <div class="box col">
+    <div class="src-list">
+      {% for x in sources.files %}
+      <div class="src-item"><span>📄</span><a class="grow" href="{{ f(x.path) }}" target="_blank">{{ x.name }}</a><span class="small muted">{{ x.kb }} KB</span>
+        <button class="btn btn-tiny btn-ghost" onclick="deleteSource('{{ x.name|e }}')" title="Chuyển vào Thùng rác">✕</button></div>
+      {% else %}<div class="small muted">Chưa có tư liệu. Claude sẽ tự nghiên cứu trên web{% if p.use_jre %} và trong kho highlight JRE{% endif %}.</div>{% endfor %}
+    </div>
+    <label class="drop" id="drop">Kéo thả file vào đây hoặc bấm để chọn (PDF, TXT, SRT, DOCX, ảnh, audio…)
+      <input type="file" id="src-files" multiple hidden onchange="uploadSources(this.files)"></label>
+    <label>Link tham khảo (mỗi dòng một link, có thể ghi chú sau link)
+      <textarea class="input" id="links" rows="3" placeholder="https://… — bản dịch R.H. Charles 1917">{{ sources.links }}</textarea></label>
+    <div class="row gap end"><button class="btn btn-small" onclick="saveLinks()">Lưu link</button></div>
+  </div>
+  {% if v.script or v.research_md %}
+  {% if kind == 'doc' and v.script %}<a class="bp-cta" href="/p/{{ p.id }}/blueprint">🧭 <b>Xem sơ đồ dự án</b><span>khung xương các hồi, nguyên liệu cần, kế hoạch các bước sau và ngân sách: duyệt trên sơ đồ trước khi bấm Duyệt</span></a>{% endif %}
+  <div class="tabs">
+    {% if v.script_md %}<button class="btn btn-small tab-btn" data-tab="t-script" onclick="showTab('t-script')">Kịch bản</button>{% endif %}
+    {% if v.beats %}<button class="btn btn-small tab-btn" data-tab="t-beats" onclick="showTab('t-beats')">Beats ({{ v.beats|length }} · {{ v.total }})</button>{% endif %}
+    {% if v.sources %}<button class="btn btn-small tab-btn" data-tab="t-src" onclick="showTab('t-src')">Nguồn ({{ v.sources|length }})</button>{% endif %}
+    {% if v.research_md %}<button class="btn btn-small tab-btn" data-tab="t-research" onclick="showTab('t-research')">Nghiên cứu</button>{% endif %}
+  </div>
+  {% if v.script_md %}<div class="tab-pane md scroll box" id="t-script">
+    {% if v.script and v.script.logline %}<p><b>{{ v.script.title }}</b> · {{ v.script.logline }}</p>{% endif %}
+    {{ v.script_md|md|safe }}</div>{% endif %}
+  {% if v.beats %}<div class="tab-pane scroll" id="t-beats" hidden>
+    <table class="table"><thead><tr><th>#</th><th>Lúc</th><th class="num">Giây</th><th>Nội dung</th></tr></thead><tbody>
+    {% for b in v.beats %}<tr>
+      <td class="nowrap">{{ b.id }}<div class="beat-type">{{ b.type }}</div></td><td class="mono">{{ b._start }}</td><td class="num">{{ b.duration_sec }}</td>
+      <td>{% if b.narration %}<div>{{ b.narration }}</div>{% endif %}
+        {% if b.quote and b.quote.text %}<div class="small" style="color:#fde68a">“{{ b.quote.text }}” — {{ b.quote.speaker }}</div>{% endif %}
+        {% if b.on_screen_text %}<div class="small muted">Chữ: {{ b.on_screen_text }}</div>{% endif %}
+        {% if b.visual_idea %}<div class="small muted">🎨 {{ b.visual_idea }}</div>{% endif %}
+        {% if b.characters %}<div>{% for c in b.characters %}<span class="pill gray">{{ c }}</span>{% endfor %}</div>{% endif %}</td>
+    </tr>{% endfor %}</tbody></table></div>{% endif %}
+  {% if v.sources %}<div class="tab-pane scroll" id="t-src" hidden>
+    <table class="table"><thead><tr><th>ID</th><th>Nguồn</th><th>Loại</th></tr></thead><tbody>
+    {% for x in v.sources %}<tr><td class="mono">{{ x.id }}</td>
+      <td>{% if x.url %}<a href="{{ x.url }}" target="_blank" rel="noopener">{{ x.title or x.url }}</a>{% else %}{{ x.title }}{% endif %}
+        <div class="small muted">{{ x.author or '' }}{% if x.date %} · {{ x.date }}{% endif %}{% if x.notes %} · {{ x.notes }}{% endif %}</div></td>
+      <td class="small">{{ x.type }}{% if x.reliability %}<div class="muted">{{ x.reliability }}</div>{% endif %}</td></tr>{% endfor %}
+    </tbody></table>
+    {% if v.claims %}<div class="section-title">Khẳng định cần kiểm chứng</div>
+    <table class="table"><tbody>{% for c in v.claims %}<tr>
+      <td><span class="pill {{ 'ok' if c.status == 'verified' else ('err' if c.status == 'disputed' else 'warn') }}">{{ c.status }}</span></td>
+      <td>{{ c.text }}<div class="small muted">{{ (c.sources or [])|join(', ') }}{% if c.note %} · {{ c.note }}{% endif %}</div></td></tr>{% endfor %}</tbody></table>{% endif %}
+  </div>{% endif %}
+  {% if v.research_md %}<div class="tab-pane md scroll box" id="t-research" hidden>{{ v.research_md|md|safe }}</div>{% endif %}
+  {% endif %}
+
+{# ================================================================ 2 · cast #}
+{% elif step.key == 'cast' %}
+  {% if v.characters %}
+  <div class="small muted">Bấm vào ảnh thử vai để chọn (bấm lần nữa để bỏ chọn). Ảnh được chọn thành ảnh gốc của nhân vật ở bước 4.</div>
+  <div class="cast-grid">
+    {% for ch in v.characters %}
+    <div class="box cast-card">
+      <div class="row gap wrap"><h4 class="grow">{{ ch.name }}</h4>
+        {% if ch.role %}<span class="pill">{{ ch.role }}</span>{% endif %}{% if ch.depiction %}<span class="pill gray">{{ ch.depiction }}</span>{% endif %}</div>
+      {% if ch.description %}<div class="small">{{ ch.description }}</div>{% endif %}
+      {% if ch.look %}<div class="look">👤 {{ ch.look }}</div>{% endif %}
+      {% if ch.poses %}<div>{% for po in ch.poses %}<span class="pill gray" title="{{ po.desc if po is mapping else '' }}">{{ po.key if po is mapping else po }}</span>{% endfor %}</div>{% endif %}
+      {% if ch._candidates %}
+      <div class="cands">
+        {% for c in ch._candidates %}
+        <div class="cand {{ 'chosen' if ch._chosen == c.file }}" onclick="chooseCand('{{ ch.id }}', '{{ c.file }}', {{ 'true' if ch._chosen == c.file else 'false' }})" title="{{ c.note or c.model or '' }}">
+          <img src="{{ f(c.file) }}" loading="lazy" alt="">{% if ch._chosen == c.file %}<span class="tick">✓</span>{% endif %}
+          <span class="cap">{{ c.model or '' }}{% if c.usd %} · ${{ c.usd }}{% endif %}</span></div>
+        {% endfor %}
+      </div>
+      {% elif ch.depiction == 'ai_reconstruction' %}<div class="small muted">Chưa có ảnh thử vai.</div>{% endif %}
+      {% if ch.master_prompt %}<details class="small"><summary class="muted">Prompt ảnh gốc</summary><div class="mono" style="white-space:pre-wrap">{{ ch.master_prompt }}</div></details>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% if v.cast and v.cast.style %}<div class="small muted">Phong cách chung: {{ v.cast.style }}</div>{% endif %}
+  {% endif %}
+  {% if v.cast_md %}<details><summary class="small muted">Bản đọc cast.md</summary><div class="md scroll box">{{ v.cast_md|md|safe }}</div></details>{% endif %}
+
+{# ================================================================ 3 · scenes #}
+{% elif step.key == 'scenes' %}
+  {% if v.data %}
+  <div class="tabs">
+    <button class="btn btn-small tab-btn" data-tab="t-scenes" onclick="showTab('t-scenes')">Cảnh ({{ v.scenes|length }} · {{ v.total }})</button>
+    <button class="btn btn-small tab-btn" data-tab="t-locs" onclick="showTab('t-locs')">Bối cảnh ({{ v.locations|length }})</button>
+    <button class="btn btn-small tab-btn" data-tab="t-assets" onclick="showTab('t-assets')">Ảnh cần vẽ ({{ v.assets|length }} · ~{{ '%g'|format(v.est) }} cr)</button>
+    <button class="btn btn-small tab-btn" data-tab="t-needs" onclick="showTab('t-needs')">Footage cần ({{ v.needs|length }})</button>
+    {% if v.scenes_md %}<button class="btn btn-small tab-btn" data-tab="t-smd" onclick="showTab('t-smd')">Bản đọc</button>{% endif %}
+  </div>
+  <div class="tab-pane scroll" id="t-scenes">
+    <table class="table"><thead><tr><th>Cảnh</th><th>Lúc</th><th class="num">Giây</th><th>Dàn dựng</th></tr></thead><tbody>
+    {% for x in v.scenes %}<tr><td class="nowrap"><b>{{ x.id }}</b><div class="small muted">{{ x.title or '' }}</div></td><td class="mono">{{ x._start }}</td><td class="num">{{ x.duration_sec }}</td>
+      <td>{% if x.location %}<span class="pill">📍 {{ x.location }}</span>{% endif %}
+        {% for c in x.characters or [] %}<span class="pill gray">{{ c.id if c is mapping else c }}{% if c is mapping and c.pose %} · {{ c.pose }}{% endif %}</span>{% endfor %}
+        {% if x.camera and x.camera is not mapping %}<div class="small">🎥 {{ x.camera }}</div>{% endif %}
+        {% if x.parallax %}<div class="small">🧊 3D: {{ x.parallax.move }}{% if x.parallax.subject %} · chủ thể {{ x.parallax.subject }}{% endif %}{% if x.parallax.strength %} · biên độ {{ x.parallax.strength }}{% endif %}{% if x.frame %} · ảnh <span class="mono">{{ x.frame }}</span>{% endif %}</div>{% endif %}
+        {% if x.layers and x.layers[0] is mapping %}
+          <div class="small"><b>🧱 {{ x.layers|length }} lớp:</b> {% for l in x.layers %}<span class="pill gray" title="{{ l.prompt }}">{{ l.name }} · {{ l.z }} m{% if l.refs %} · {{ l.refs|length }} ref{% endif %}</span>{% endfor %}</div>
+          {% if x.camera is mapping %}<div class="small">🎥 {{ x.camera.move }}{% if x.camera.strength %} · biên độ {{ x.camera.strength }}{% endif %}</div>{% endif %}
+          {% if x.fx_notes %}<div class="small warn">✨ Hiệu ứng code đề xuất (cần duyệt): {{ x.fx_notes }}</div>{% endif %}
+        {% elif x.layers %}<div class="small muted">Lớp: {{ x.layers|join(' · ') }}</div>{% endif %}
+        {% if x.fx %}<div class="small muted">✨ {{ x.fx|join(', ') }}</div>{% endif %}
+        {% if x.narration %}<div class="small">“{{ x.narration }}”</div>{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>
+  <div class="tab-pane" id="t-locs" hidden>
+    {% for l in v.locations %}<div class="box"><b>📍 {{ l.name or l.id }}</b> <span class="small muted mono">{{ l.id }}</span>
+      {% if l.era %}<span class="pill gray">{{ l.era }}</span>{% endif %}
+      <div class="small">{{ l.description }}</div>
+      {% if l.plates %}<div class="small muted">Nền: {% for pl in l.plates %}{{ pl.key if pl is mapping else pl }}{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}</div>{% endfor %}
+  </div>
+  <div class="tab-pane scroll" id="t-assets" hidden>
+    <div class="small">Tổng ước tính <b>${{ '%.2f'|format(v.est) }}</b> · đã tiêu ${{ '%.2f'|format(costs.total) }} · ngân sách ${{ '%g'|format(p.budget_usd or 0) }}</div>
+    <table class="table"><thead><tr><th>Ảnh</th><th>Loại</th><th>Model</th><th>Tỉ lệ</th><th class="num">Ước tính</th></tr></thead><tbody>
+    {% for a in v.assets %}<tr><td><b class="mono">{{ a.key }}</b>{% if a.base %}<div class="small muted">sửa từ {{ a.base }}</div>{% endif %}
+        {% if a.prompt %}<details class="small"><summary class="muted">prompt</summary><div style="white-space:pre-wrap">{{ a.prompt }}</div></details>{% endif %}</td>
+      <td class="small">{{ a.kind }}{% if a.of %}<div class="muted">{{ a.of }}</div>{% endif %}</td><td class="small">{{ a.model }}{% if a.quality %}<div class="muted">{{ a.quality }}</div>{% endif %}</td>
+      <td class="small">{{ a.aspect }}</td><td class="num">{% if a.est_usd is not none %}${{ a.est_usd }}{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>
+  <div class="tab-pane" id="t-needs" hidden>
+    <table class="table"><tbody>{% for n in v.needs %}<tr><td class="mono">{{ n.id }}</td><td><span class="pill gray">{{ n.type }}</span></td>
+      <td>{{ n.desc }}<div class="small muted">{{ (n.scenes or [])|join(', ') }}</div></td></tr>{% endfor %}</tbody></table></div>
+  {% if v.scenes_md %}<div class="tab-pane md scroll box" id="t-smd" hidden>{{ v.scenes_md|md|safe }}</div>{% endif %}
+  {% elif v.scenes_md %}<div class="md scroll box">{{ v.scenes_md|md|safe }}</div>{% endif %}
+
+{# ================================================================ 4 · images #}
+{% elif step.key == 'images' %}
+  <div class="small">Nguyên liệu đã tiêu cả dự án: <b>${{ '%.2f'|format(costs.total) }}</b> / ${{ '%g'|format(p.budget_usd or 0) }} ({{ costs.events|length }} lần gọi API)
+    {% if film_ready %} · <a href="#" onclick="openSub('film/public/img'); return false;">📂 film/public/img</a>{% endif %}</div>
+  {% if v.sheets %}<div class="sheets">{% for sh in v.sheets %}<div class="sheet"><a href="{{ f(sh) }}" target="_blank"><img src="{{ f(sh) }}" loading="lazy" alt=""></a></div>{% endfor %}</div>{% endif %}
+  {% for kind, kname, items in v.groups %}
+  <div class="section-title">{{ kname }} ({{ items|length }})</div>
+  <div class="gallery">
+    {% for a in items %}
+    <div class="asset">
+      <a class="thumb {{ 'wide' if a.kind in ('plate', 'frame') }}" href="{{ f(a._file) if a._file else '#' }}" target="_blank">
+        {% if a._file %}<img src="{{ f(a._file) }}" loading="lazy" alt="">{% else %}<span class="none">chưa có ảnh</span>{% endif %}</a>
+      <div class="row gap"><span class="key grow">{{ a.key }}</span>
+        <span class="pill {{ 'ok' if a.status == 'done' else ('err' if a.status == 'failed' else 'warn') }}">{{ a.status }}</span></div>
+      <div class="muted">{{ a.model or '' }}{% if a.usd %} · ${{ a.usd }}{% endif %}{% if a.note %} · {{ a.note }}{% endif %}</div>
+      <button class="btn btn-tiny btn-ghost" onclick="redoAsset('{{ a.key }}')" {{ 'disabled' if busy }}>↻ Làm lại…</button>
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+  {% if v.loose %}<div class="section-title">Ảnh trong film/public/img</div>
+  <div class="gallery">{% for x in v.loose %}<div class="asset"><a class="thumb" href="{{ f(x) }}" target="_blank"><img src="{{ f(x) }}" loading="lazy" alt=""></a><span class="key">{{ x|basename }}</span></div>{% endfor %}</div>{% endif %}
+
+{# ================================================================ 5 · footage #}
+{% elif step.key == 'footage' %}
+  {% if v.waiting %}<div class="alert">Có {{ v.waiting }} footage chờ bạn duyệt. Duyệt xong bấm <b>↻ Chạy lại</b> (hoặc nhắn Claude) để tải.</div>{% endif %}
+  {% if v.entries %}
+  <table class="table"><thead><tr><th>Footage</th><th>Nguồn · giấy phép</th><th>Trạng thái</th><th></th></tr></thead><tbody>
+  {% for i in v.entries %}<tr>
+    <td><b>{{ i.title or i.id }}</b> <span class="pill gray">{{ i.type }}</span><div class="small muted mono">{{ i.id }}{% if i.scenes %} · {{ i.scenes|join(', ') }}{% endif %}</div>
+      {% if i.note %}<div class="small muted">{{ i.note }}</div>{% endif %}</td>
+    <td class="small">{% if i.source_page %}<a href="{{ i.source_page }}" target="_blank" rel="noopener">{{ i.source_page|truncate(48) }}</a>{% endif %}
+      <div class="muted">{{ i.license or '' }}{% if i.duration_sec %} · {{ i.duration_sec }} s{% endif %}{% if i.resolution %} · {{ i.resolution }}{% endif %}{% if i.size_mb %} · {{ i.size_mb }} MB{% endif %}</div></td>
+    <td class="small"><span class="pill {{ 'ok' if i.status in ('downloaded','processed','generated') else ('err' if i.status == 'rejected' else 'warn') }}">{{ i.status }}</span>
+      {% if i._decision %}<div class="{{ 'ok' if i._decision == 'approved' else 'error' }}">bạn {{ 'đã duyệt' if i._decision == 'approved' else 'đã bỏ' }}</div>{% endif %}</td>
+    <td class="nowrap">{% if i.status == 'proposed' %}
+        <button class="btn btn-tiny {{ 'btn-success' if i._decision == 'approved' }}" onclick="decide('{{ i.id }}', '{{ '' if i._decision == 'approved' else 'approved' }}')">✓ Duyệt</button>
+        <button class="btn btn-tiny {{ 'btn-danger' if i._decision == 'rejected' }}" onclick="decide('{{ i.id }}', '{{ '' if i._decision == 'rejected' else 'rejected' }}')">✕ Bỏ</button>
+      {% elif i._file %}<a class="btn btn-tiny" href="{{ f(i._file) }}" target="_blank">Xem</a>{% endif %}</td>
+  </tr>{% endfor %}</tbody></table>
+  {% endif %}
+  {% if v.voice %}<div class="section-title">Lời dẫn · {{ v.voice.voice or v.voice.name or '' }}</div>
+    {% for t in v.takes %}<div class="row gap small">{{ '✓' if t.chosen else '·' }} <span class="mono">{{ t.file|basename }}</span>{% if t.usd %}<span class="muted">${{ t.usd }}</span>{% endif %}
+      {% if t._file %}<audio controls preload="none" src="{{ f(t._file) }}" style="height:30px"></audio>{% endif %}</div>{% endfor %}{% endif %}
+  {% if v.music %}<div class="section-title">Nhạc & hiệu ứng âm thanh</div><div class="small">{{ v.music.approach or '' }} {{ v.music.notes or '' }}</div>{% endif %}
+
+{# ================================================================ 6 · render #}
+{% elif step.key == 'render' %}
+  {% for x in v.versions %}
+  <div class="box col">
+    <div class="row gap wrap"><b>{{ x.file|basename }}</b>{% if x.duration_sec %}<span class="muted small">{{ x.duration_sec }} s</span>{% endif %}
+      {% if x.qa %}<span class="pill {{ 'ok' if x.qa.ok else 'err' }}">QA {{ 'OK' if x.qa.ok else 'lỗi' }}</span>
+        <span class="small muted">{% if x.qa.lufs is not none %}{{ x.qa.lufs }} LUFS{% endif %}{% if x.qa.true_peak is not none %} · peak {{ x.qa.true_peak }}{% endif %}{% if x.qa.frames %} · {{ x.qa.frames }} khung{% endif %}</span>{% endif %}
+      <span class="grow"></span>{% if x._file %}<button class="btn btn-tiny btn-ghost" onclick="openSub('{{ x.file }}')">📂</button>{% endif %}</div>
+    {% if x.changes %}<div class="small">{{ x.changes }}</div>{% endif %}
+    {% if x._file and loop.first %}<video class="player" controls preload="metadata" src="{{ f(x._file) }}"></video>
+    {% elif x._file %}<details><summary class="small muted">Xem bản này</summary><video class="player" controls preload="none" src="{{ f(x._file) }}"></video></details>{% endif %}
+    {% if x.qa and x.qa.notes %}<div class="small muted">{{ x.qa.notes }}</div>{% endif %}
+    {% if x._sheet %}<details><summary class="small muted">Bảng ghép từ file MP4</summary><img class="sheet" style="width:100%" src="{{ f(x._sheet) }}" loading="lazy" alt=""></details>{% endif %}
+  </div>
+  {% endfor %}
+  {% if v.videos %}<div class="section-title">File MP4 khác trong out/</div>
+    {% for x in v.videos %}<details class="box"><summary class="small">{{ x.file|basename }} · {{ x.mb }} MB</summary><video class="player" controls preload="none" src="{{ f(x.file) }}"></video></details>{% endfor %}{% endif %}
+  {% if v.stills %}<details><summary class="small muted">Ảnh tĩnh soát gần nhất ({{ v.stills|length }})</summary>
+    <div class="stills">{% for x in v.stills %}<a href="{{ f(x) }}" target="_blank"><img src="{{ f(x) }}" loading="lazy" alt=""></a>{% endfor %}</div></details>{% endif %}
+  {% if v.clips %}<details {{ 'open' if not v.versions }}><summary class="small muted">Clip camera 3D ({{ v.clips|length }}) · đầu / giữa / cuối mỗi clip</summary>
+    <div class="clip-grid">{% for c in v.clips %}<div class="asset">
+      {% if c.sheet %}<a href="{{ f(c.file) }}" target="_blank" title="mở clip"><img src="{{ f(c.sheet) }}" loading="lazy" alt="" style="width:100%;border-radius:6px"></a>{% endif %}
+      <span class="key">{{ c.name }}</span></div>{% endfor %}</div></details>{% endif %}
+
+{# ================================================================ 7 · metadata #}
+{% elif step.key == 'metadata' %}
+  {% if v.data %}{% set m = v.data %}
+  <div class="section-title">Tiêu đề <span class="muted">({{ v.title_len }}/100 ký tự{% if v.title_len > 70 %}, trên 70 bị cắt ở kết quả tìm kiếm{% endif %})</span></div>
+  <div class="box row gap"><b class="grow" id="m-title" style="font-size:16px">{{ m.title }}</b>
+    <button class="btn btn-tiny" onclick="copyEl('m-title')">Chép</button></div>
+  {% if v.options %}<details><summary class="small muted">Các phương án tiêu đề ({{ v.options|length }})</summary>
+    <ol class="does">{% for o in v.options %}<li>{{ o.title if o is mapping else o }}{% if o is mapping and o.why %} <span class="muted small">· {{ o.why }}</span>{% endif %}</li>{% endfor %}</ol></details>{% endif %}
+  {% if m.keywords %}<div class="small"><span class="muted">Từ khóa:</span> {% for k in m.keywords %}<span class="pill">{{ k.term if k is mapping else k }}</span>{% endfor %}</div>{% endif %}
+  <div class="section-title">Mô tả <span class="muted">({{ v.desc_len }}/5000 ký tự)</span></div>
+  <div class="box"><div class="row gap end"><button class="btn btn-tiny" onclick="copyEl('m-desc')">Chép mô tả</button></div>
+    <div id="m-desc" class="scroll" style="white-space:pre-wrap;font-size:13.5px">{{ m.description }}</div></div>
+  <div class="grid2">
+    <div><div class="section-title">Thẻ ({{ v.tags|length }})</div>
+      <div class="box"><div id="m-tags" class="small">{{ v.tags_text }}</div><div class="row gap end"><button class="btn btn-tiny" onclick="copyEl('m-tags')">Chép thẻ</button></div></div></div>
+    <div><div class="section-title">Hashtag · danh mục</div>
+      <div class="box small">{% for h in m.hashtags or [] %}<span class="pill">{{ h }}</span>{% endfor %}
+        <div class="muted" style="margin-top:6px">{{ m.category or '' }}{% if m.language %} · ngôn ngữ {{ m.language }}{% endif %}{% if m.made_for_kids is not none %} · {{ 'cho trẻ em' if m.made_for_kids else 'không dành cho trẻ em' }}{% endif %}{% if m.altered_content is not none %} · nội dung AI/chỉnh sửa: {{ 'có' if m.altered_content else 'không' }}{% endif %}</div></div></div>
+  </div>
+  {% if v.chapters %}<div class="section-title">Chương ({{ v.chapters|length }})</div>
+    <table class="table"><tbody>{% for c in v.chapters %}<tr><td class="mono nowrap">{{ c.time }}</td><td>{{ c.title }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+  {% if v.thumbs %}<div class="section-title">Thumbnail ({{ v.thumbs|length }})</div>
+    <div class="media-grid">{% for t in v.thumbs %}<div class="asset">
+      {% if t._file %}<a class="thumb wide" href="{{ f(t._file) }}" target="_blank"><img src="{{ f(t._file) }}" loading="lazy" alt=""></a>{% else %}<span class="none">chưa có file</span>{% endif %}
+      <div class="small">{{ t.text or '' }}{% if t.chosen %} <span class="pill ok">chọn</span>{% endif %}</div>
+      {% if t.why %}<div class="small muted">{{ t.why }}</div>{% endif %}</div>{% endfor %}</div>{% endif %}
+  {% if v.captions %}<div class="small">Phụ đề: <a href="{{ f(v.captions) }}" target="_blank">{{ v.captions|basename }}</a> (tải lên YouTube Studio → Phụ đề)</div>{% endif %}
+  {% if m.notes %}<div class="small muted">{{ m.notes }}</div>{% endif %}
+  {% endif %}
+  {% if up %}{% include "_upload.html" %}{% endif %}
+  {% if v.md %}<details {{ 'open' if not v.data }}><summary class="small muted">Bản đọc metadata.md</summary><div class="md scroll box">{{ v.md|md|safe }}</div></details>{% endif %}
+{% endif %}
+
+  {% if s in ('ready', 'locked') and not summary %}<div class="small muted">Chưa có kết quả.</div>{% endif %}
+  <div class="row gap small muted wrap">
+    <span>Thư mục:</span>
+    {% for rel in step.outputs %}<a href="#" onclick="openSub('{{ rel }}'); return false;" class="mono">{{ rel }}</a>{% endfor %}
+  </div>
+</div>
+

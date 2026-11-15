@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% set title = "Video tổng hợp #" ~ job.id %}
+{% set running = busy or job.status in ('queued','topic','scanning','arranging','building') %}
+{% macro src_link(it) -%}
+  {%- if it.source_path -%}<a class="small" target="_blank"
+    href="/media?path={{ it.source_path|urlencode }}#t={{ (it.start_sec - (it.source_offset or 0))|int }},{{ (it.end_sec - (it.source_offset or 0))|int }}">▶ xem</a>
+    {%- if it.source_kind == 'clip' %} <span class="pill" title="Video gốc đã xoá: cắt từ clip highlight chứa đoạn này">trong clip</span>{% endif -%}
+  {%- endif -%}
+{%- endmacro %}
+{% block content %}
+<section class="card">
+  <div class="card-header">
+    <h2>#{{ job.id }} · {{ job.title_en or job.topic_en or 'Video tổng hợp' }}</h2>
+    <div class="row gap">
+      <span class="badge cv-st-{{ job.status }}" id="cv-status">{{ job.status }}</span>
+      <span class="small muted">yêu cầu {{ job.target_min }} phút · Claude ${{ '%.2f' % (job.cost_usd or 0) }}</span>
+      {% if running %}<button class="btn btn-small btn-ghost" onclick="act('stop')">Dừng</button>{% endif %}
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="small" id="cv-progress">{{ job.progress_msg or '' }}</div>
+    {% if job.error %}<div class="small error">{{ job.error }}</div>{% endif %}
+    <div class="grid2">
+      <div>
+        <div class="small muted">Chủ đề</div>
+        <div><b>{{ job.topic_en or '…' }}</b>{% if job.topic_vi %} <span class="muted">· {{ job.topic_vi }}</span>{% endif %}</div>
+        {% if job.angle_vi %}<div class="small">{{ job.angle_vi }}</div>{% endif %}
+        {% if job.note %}<div class="small muted">Ghi chú: {{ job.note }}</div>{% endif %}
+      </div>
+      <div>
+        <div class="small muted">Quét transcript</div>
+        <div class="small">{{ job.n_episodes or 0 }} tập · {{ job.n_windows or 0 }} vùng khớp · ~{{ '{:,}'.format(job.est_tokens or 0) }} token ·
+          {{ job.n_candidates or 0 }} ứng viên</div>
+      </div>
+    </div>
+    <details><summary class="small">Từ khoá lọc ({{ (job.keywords or '').split(',')|length if job.keywords else 0 }}) · sửa rồi quét lại</summary>
+      <textarea id="cv-kw" class="input" rows="2">{{ job.keywords or '' }}</textarea>
+      <div class="row gap" style="margin-top:6px"><button class="btn btn-small" {{ 'disabled' if running }} onclick="rescan()"
+        title="Quét lại toàn bộ transcript bằng từ khoá này rồi dựng lại mạch (tốn token như lần đầu)">Quét lại</button></div>
+    </details>
+  </div>
+</section>
+
+{% if job.final_path %}
+<section class="card">
+  <div class="card-header"><h2>🎬 Video đã dựng</h2>
+    <div class="row gap"><span class="small muted">{{ (job.final_sec // 3600)|int }}:{{ '%02d' % ((job.final_sec % 3600) // 60) }}:{{ '%02d' % (job.final_sec % 60) }}</span>
+      <button class="btn btn-small" data-path="{{ job.final_path }}" onclick="openFolder(this.dataset.path)">Mở thư mục</button></div></div>
+  <div class="card-body">
+    <video controls preload="metadata" style="width:100%;max-height:70vh;background:#000" src="/media?path={{ job.final_path|urlencode }}"></video>
+    <div class="small muted">{{ job.final_path }}</div>
+    <div class="row gap wrap" style="margin-top:10px"><b>⏱️ Timestamp cho description YouTube</b>
+      {% if chapters %}<button class="btn btn-small btn-primary" onclick="copyEl('cv-chapters')">Copy timestamp</button>{% endif %}
+      <button class="btn btn-small btn-ghost" {{ 'disabled' if running }} onclick="refreshChapters()"
+        title="Tính lại mốc từ các phần đã ghép (không dựng lại video). Mỗi chương bắt đầu từ lời dẫn giới thiệu clip đó.">Tạo lại mốc</button></div>
+    {% if chapters %}<pre class="transcript" id="cv-chapters">{{ chapters }}</pre>
+      <div class="small muted">Dán nguyên khối vào description. YouTube tự tạo chương khi mốc đầu là 0:00, có từ 3 mốc trở lên và mỗi chương dài ít nhất 10 giây. File: {{ job.out_dir }}\chapters.txt</div>
+    {% else %}<div class="small muted">Chưa có mốc: bấm Tạo lại mốc.</div>{% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% if items %}
+<section class="card">
+  <div class="card-header"><h2>Mạch video</h2>
+    {% set pct = (100 * totals.total_sec / totals.target_sec)|int if totals.target_sec else 0 %}
+    <div class="row gap">
+      <span class="small">{{ totals.clips }} clip · {{ totals.episodes }} tập · clip {{ (totals.clip_sec // 60)|int }}′ + lời dẫn ~{{ (totals.narr_sec // 60)|int }}′{{ '%02d' % (totals.narr_sec % 60) }}″
+        = <b class="{{ 'ok' if 85 <= pct <= 115 else 'error' }}">~{{ (totals.total_sec // 60)|int }} phút</b> / {{ job.target_min }} ({{ pct }}%)</span>
+      <button class="btn btn-small btn-primary" {{ 'disabled' if running }} onclick="build()"
+        title="ElevenLabs đọc lời dẫn, cắt clip, ghép thành 1 file mp4 (phần đã làm ở lần trước được dùng lại)">🎬 {{ 'Dựng lại video' if job.final_path else 'Dựng video' }}</button>
+    </div>
+  </div>
+  <div class="card-body">
+    {% if job.arc_note %}<div class="small">💬 {{ job.arc_note }}</div>{% endif %}
+    <label class="small">Title YouTube<input class="input" value="{{ job.title_en or '' }}" onchange="saveText('title_en', this.value)"></label>
+    <div class="small muted">Lời dẫn là prompt ElevenLabs v3 (tiếng Anh): audio tag như [grave], [whispers] đặt trước câu, "…" để ngắt nhịp, chữ IN HOA để nhấn.
+      Sửa xong bấm ra ngoài ô là lưu. Bỏ tick để loại clip (lời dẫn của clip đó cũng bỏ theo).
+      Mọi clip trong video đều là bản zoom: có sẵn thì dùng, chưa có thì Studio gửi Podcast Zoom trước khi ghép (lâu hơn).</div>
+    <div class="cv-arc">
+    {% for it in items %}
+      <div class="cv-clip {{ 'cv-off' if not it.included }}" id="it-{{ it.id }}">
+        <div class="cv-ord">{{ loop.index }}</div>
+        <div class="cv-main">
+          <div class="row gap wrap">
+            {% if it.kind == 'seed' %}<span class="pill ok">đoạn bạn chọn</span>{% else %}<span class="pill">{{ it.role or 'clip' }}</span>{% endif %}
+            <b>{{ it.title }}</b>
+          </div>
+          <div class="small muted"><a href="/episodes/{{ it.episode_id }}">{{ it.episode_id }}</a> · {{ it.guest or it.src or '' }} ·
+            {{ it.start_hms }} → {{ it.end_hms }} · {{ it.dur // 60 }}:{{ '%02d' % (it.dur % 60) }} · {{ src_link(it) }}
+            {% if it.zoom_how == 'highlight' %}<span class="pill ok" title="Dùng bản zoom có sẵn của clip highlight chứa đoạn này">🔍 có bản zoom</span>
+            {% elif it.zoom_how == 'built' %}<span class="pill ok" title="Đã zoom ở lần dựng trước">🔍 đã zoom</span>
+            {% else %}<span class="pill kw" title="Chưa có bản zoom: khi bấm Dựng video, Studio cắt đoạn này rồi gửi Podcast Zoom trước khi ghép">🔍 sẽ zoom khi dựng</span>{% endif %}</div>
+          {% if it.summary_vi %}<div class="small">{{ it.summary_vi }}</div>{% endif %}
+          {% if it.why_vi %}<div class="small muted">↳ {{ it.why_vi }}</div>{% endif %}
+        </div>
+        <div class="cv-tools">
+          {% if it.kind != 'seed' %}
+            <label class="small row gap"><input type="checkbox" {{ 'checked' if it.included }} onchange="item({{ it.id }},{included:this.checked},true)"> dùng</label>
+            <span class="row gap"><button class="btn btn-tiny" onclick="item({{ it.id }},{move:-1},true)" title="lên">↑</button>
+              <button class="btn btn-tiny" onclick="item({{ it.id }},{move:1},true)" title="xuống">↓</button></span>
+          {% endif %}
+        </div>
+      </div>
+      {% if not loop.last %}
+        {% if loop.first %}
+          <div class="cv-narr"><div class="small muted">🎙️ INTRO (ngay sau đoạn mở đầu)</div>
+            <textarea class="input" rows="3" onchange="saveText('intro_text', this.value)">{{ job.intro_text or '' }}</textarea></div>
+        {% elif it.included %}
+          <div class="cv-narr"><div class="small muted">🎙️ BRIDGE sau clip {{ loop.index }}</div>
+            <textarea class="input" rows="2" onchange="item({{ it.id }},{bridge_text:this.value})">{{ it.bridge_text or '' }}</textarea></div>
+        {% endif %}
+      {% endif %}
+    {% endfor %}
+      <div class="cv-narr"><div class="small muted">🎙️ OUTRO (sau clip cuối)</div>
+        <textarea class="input" rows="2" onchange="saveText('outro_text', this.value)">{{ job.outro_text or '' }}</textarea></div>
+    </div>
+    <label class="small">Yêu cầu sửa mạch cho Claude
+      <textarea id="cv-feedback" class="input" rows="2" placeholder="vd: thêm đoạn tranh luận phản bác, bỏ bớt đoạn của JRE-2530, kết bằng đoạn về trận Đại hồng thuỷ, lời dẫn bớt kịch tính"></textarea></label>
+    <div class="row gap"><button class="btn btn-small" {{ 'disabled' if running }} onclick="rearrange()"
+      title="Claude xếp lại mạch và viết lại toàn bộ lời dẫn từ kho ứng viên đã quét (không quét lại)">Dựng lại mạch</button></div>
+  </div>
+</section>
+{% endif %}
+
+{% if cands %}
+<section class="card">
+  <details><summary class="card-header"><h2>Ứng viên chưa dùng ({{ cands|length }})</h2></summary>
+  <table class="table"><tbody>
+    {% for c in cands %}<tr>
+      <td>{{ c.score|int }}</td>
+      <td><a href="/episodes/{{ c.episode_id }}">{{ c.episode_id }}</a><div class="small muted">{{ c.guest or '' }}</div>
+        {% if c.src and not c.src.startswith(seed_show) %}<div class="small"><span class="pill">bổ trợ</span> {{ c.src[:80] }}</div>{% endif %}</td>
+      <td class="small nowrap">{{ c.start_hms }} → {{ c.end_hms }}<div class="muted">{{ c.dur // 60 }}:{{ '%02d' % (c.dur % 60) }}</div></td>
+      <td><b>{{ c.title }}</b><div class="small">{{ c.summary_vi or '' }}</div>{% if c.point_en %}<div class="small muted">{{ c.point_en }}</div>{% endif %}</td>
+      <td>{{ src_link(c) }}</td>
+      <td><button class="btn btn-tiny" onclick="addCand({{ c.id }})">＋ Thêm cuối mạch</button></td>
+    </tr>{% endfor %}
+  </tbody></table></details>
+</section>
+{% endif %}
+
+<section class="card"><div class="card-body">
+  <div class="small muted">Mở đầu: <a href="/episodes/{{ seed.episode_id }}#seg-{{ seed.id }}">{{ seed.title }}</a> ({{ seed.episode_id }}, {{ seed.guest or '' }})
+    · <a href="/compile?seed={{ seed.id }}">tạo video khác từ đoạn này</a>{% if job.out_dir %} · thư mục: {{ job.out_dir }}{% endif %}</div>
+</div></section>
+{% endblock %}
+{% block scripts %}
+<script>
+const JOB={{ job.id }};
+async function act(a, body){ const r=await api('/api/compile/'+JOB+'/'+a, body||{}); if(r.error){ toast(r.error); return r; }
+  if(r.message) toast(r.message); return r; }
+async function saveText(field, value){ const r=await act('text',{[field]:value}); if(!r.error) toast('Đã lưu'); }
+async function item(id, fields, reload){ const r=await act('item',{id, ...fields}); if(r.error) return;
+  if(reload) location.reload(); else toast('Đã lưu'); }
+async function addCand(id){ const r=await act('add',{cand_id:id}); if(!r.error) location.reload(); }
+async function rearrange(){ const r=await act('rearrange',{feedback:document.getElementById('cv-feedback').value}); if(!r.error) location.reload(); }
+async function rescan(){ if(!confirm('Quét lại toàn bộ transcript và dựng lại mạch? Lời dẫn đã sửa tay sẽ mất.')) return;
+  const r=await act('rescan',{keywords:document.getElementById('cv-kw').value}); if(!r.error) location.reload(); }
+async function build(){ const r=await act('build'); if(!r.error) location.reload(); }
+async function refreshChapters(){ const r=await act('chapters'); if(!r.error) location.reload(); }
+{% if running %}
+let lastUpdate='{{ job.updated_at }}';
+(async function poll(){
+  try{ const s=await (await fetch('/api/compile/'+JOB+'/state')).json();
+    document.getElementById('cv-progress').textContent=s.progress||''; document.getElementById('cv-status').textContent=s.status;
+    if(!s.busy && !['queued','topic','scanning','arranging','building'].includes(s.status)) return location.reload();
+  }catch(e){}
+  setTimeout(poll, 3000); })();
+{% endif %}
+</script>
+{% endblock %}

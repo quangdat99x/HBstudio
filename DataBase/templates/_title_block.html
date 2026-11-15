@@ -1,0 +1,142 @@
+{% set t = s.title_run or none %}
+{% set d = s.title_done or none %}
+{% set busy = t and t.status in ('queued', 'running') %}
+{% set tr = s.thumb_run or none %}
+{% set thumb_busy = tr and tr.status in ('queued', 'running') %}
+<div class="title-block" id="title-{{ s.id }}" data-seg="{{ s.id }}" data-status="{{ 'running' if (busy or thumb_busy) else (t.status if t else '') }}">
+  <div class="title-head">
+    <div class="sec-label">📝 Title &amp; metadata <span class="muted normal">· skill {{ (t.skill if t else none) or title_skill or 'viet-tittle' }} · {{ (t.model if t else none) or title_model or 'opus' }}</span></div>
+    <div class="row gap">
+      {% if busy %}
+        <span class="badge job-running">{{ 'đang viết' if t.status == 'running' else 'đang chờ' }}</span>
+        <button class="btn btn-small btn-ghost" onclick="cancelTitle({{ s.id }})">Hủy</button>
+      {% else %}
+        {% set default_model = title_model or 'opus' %}
+        {% set models = [('opus', 'Claude Opus'), ('fable', 'Claude Fable'), ('sonnet', 'Claude Sonnet'),
+                         ('gemini-3.5-flash', 'Gemini 3.5 Flash'), ('gemini-3-flash-preview', 'Gemini 3 Flash'),
+                         ('gemini-3.1-pro-preview', 'Gemini 3.1 Pro')] %}
+        <select class="input title-model" id="model-{{ s.id }}" style="width:auto;padding:2px 6px;font-size:12px;height:auto" title="AI viết title cho lần bấm này (mặc định lấy ở Cài đặt)">
+          {% if default_model not in models|map('first')|list %}<option value="{{ default_model }}" selected>{{ default_model }}</option>{% endif %}
+          {% for v, label in models %}<option value="{{ v }}" {{ 'selected' if v == default_model }}>{{ label }}</option>{% endfor %}
+        </select>
+        <button class="btn btn-small {{ 'btn-ghost' if d else 'btn-primary' }}" onclick="runTitle({{ s.id }})">{{ 'Viết lại title' if d else 'Viết Title' }}</button>
+      {% endif %}
+    </div>
+  </div>
+  {% if not busy %}
+  <details class="title-focus small" {{ 'open' if d and d.focus }}>
+    <summary class="muted">🎯 Trọng tâm (tùy chọn): viết theo một khúc khác thay cho keyword chính{% if d and d.focus %} · lượt hiện tại: <i>{{ d.focus[:80] }}</i>{% endif %}</summary>
+    <textarea class="input" id="focus-{{ s.id }}" rows="2" placeholder="VD: đoạn Bill cho rằng thần chiến tranh của người Hy Lạp, Chúa và vô thức tập thể là cùng một thứ → key chúa + thần chiến tranh">{{ d.focus if d and d.focus else '' }}</textarea>
+    <div class="muted">Có trọng tâm thì AI bỏ keyword của cutlist, viết title/description/tags/thumbnail theo khúc này và cắt lại <b>HOOK 01</b> của đoạn cho đúng key mới (clip hook cũ vào Thùng rác). Để trống = viết bình thường.</div>
+  </details>
+  {% endif %}
+  {% if busy %}<div class="small muted">{{ t.progress_msg or 'đang chờ tới lượt…' }}</div>{% endif %}
+  {% if t and t.status == 'failed' %}<div class="small error">Lượt gần nhất không xong: {{ t.error }}</div>{% endif %}
+  {% if d %}
+    {% set j = d.data or {} %}
+    {% if d.recommended_title %}
+      <div class="yt-title"><span id="rt-{{ s.id }}">{{ d.recommended_title }}</span>
+        <span class="muted small">{{ d.recommended_title|length }} ký tự</span>
+        <button class="btn btn-tiny" onclick="copyEl('rt-{{ s.id }}')">Copy</button></div>
+    {% endif %}
+    {% if j.titles_format1 or j.titles_format2 %}
+    <div class="title-options">
+      {% for label, key in [('Format 1 · trực diện', 'titles_format1'), ('Format 2 · câu hỏi gợi mở', 'titles_format2')] %}
+        {% if j[key] %}
+        <div><div class="small muted">{{ label }}</div>
+          <ol>{% for tt in j[key] %}<li><span id="t{{ s.id }}-{{ key }}-{{ loop.index }}">{{ tt }}</span>
+            <span class="muted small">{{ tt|length }}</span>
+            <button class="btn btn-tiny" onclick="copyEl('t{{ s.id }}-{{ key }}-{{ loop.index }}')">Copy</button></li>{% endfor %}</ol>
+        </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% for label, key in [('Description', 'description'), ('Timestamps', 'timestamps'), ('Tags', 'tags'), ('Ý tưởng thumbnail', 'thumbnail')] %}
+      {% if j[key] %}
+      <div class="meta-block">
+        <div class="meta-head"><span class="small muted">{{ label }}{% if key == 'tags' and j.tags_chars %} · {{ j.tags_chars }}/500 ký tự{% endif %}</span>
+          <button class="btn btn-tiny" onclick="copyEl('m{{ s.id }}-{{ key }}')">Copy</button></div>
+        <pre class="meta-pre" id="m{{ s.id }}-{{ key }}">{{ j[key] }}</pre>
+      </div>
+      {% endif %}
+    {% endfor %}
+    {% if j.focus_hook_result and not j.focus_hook_result.startswith('⚠️') %}<div class="small ok">✂️ {{ j.focus_hook_result }}</div>{% endif %}
+    {% if j.warnings %}<div class="small warn">⚠️ {{ j.warnings|join(' · ') }}</div>{% endif %}
+    {% set full = s.title_full_md or d.output_md %}
+    {% if full %}<details class="raw"><summary>Toàn bộ kết quả của skill</summary><div class="md">{{ full|md|safe }}</div></details>{% endif %}
+    <div class="small muted">{{ d.progress_msg or '' }}{% if d.finished_at %} · {{ d.finished_at }}{% endif %}</div>
+
+    <div class="title-chat">
+      {% set ai = 'Gemini' if (d.model or '').startswith('gemini') else 'Claude' %}
+      <div class="small muted">💬 Nhắn {{ ai }} để chỉnh metadata của đoạn này. {{ ai }} nhớ transcript, skill và bản vừa viết; mỗi tin nhắn sửa thẳng kết quả ở trên.</div>
+      {% for m in s.title_thread %}
+        <div class="chat-msg user">{{ m.user_message }}</div>
+        {% if m.status == 'done' %}
+          <div class="chat-msg bot"><div class="md">{{ (m.output_md or 'Đã xong.')|md|safe }}</div>
+            <div class="small muted">{{ m.progress_msg or '' }}</div></div>
+        {% elif m.status in ('queued', 'running') %}
+          <div class="chat-msg bot small muted">⏳ {{ m.progress_msg or 'đang chờ tới lượt…' }}</div>
+        {% else %}
+          <div class="chat-msg bot small error">Không xong: {{ m.error or 'lỗi không rõ' }}</div>
+        {% endif %}
+      {% endfor %}
+      <div class="chat-input">
+        <textarea class="input" id="chat-{{ s.id }}" rows="2" {% if busy %}disabled{% endif %}
+          placeholder="VD: title ngắn hơn, đưa “{{ j.core_keyword or 'keyword' }}” lên đầu · thêm tag … · description giọng kịch tính hơn · vì sao chọn keyword này? (Ctrl+Enter để gửi)"
+          onkeydown="if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();sendTitleChat({{ s.id }})}"></textarea>
+        <button class="btn btn-small btn-primary" onclick="sendTitleChat({{ s.id }})" {% if busy %}disabled{% endif %}>Gửi</button>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if s.title_history %}
+  {% macro ai_name(m) %}{{ ('Gemini · ' if (m or '').startswith('gemini') else 'Claude · ') ~ (m or 'mặc định') }}{% endmacro %}
+  <div class="title-history">
+    <div class="sec-label" style="margin-top:12px">🕘 So sánh các lần viết ({{ s.title_history|length + (1 if d else 0) }} bản)</div>
+    <div style="overflow-x:auto">
+    <table class="small" style="width:100%;border-collapse:collapse">
+      <tr class="muted"><th style="text-align:left;padding:4px">Bản</th><th style="text-align:left;padding:4px">AI</th>
+        <th style="text-align:left;padding:4px">Keyword</th><th style="text-align:left;padding:4px">Title khuyên dùng</th></tr>
+      {% if d %}
+      <tr style="border-top:1px solid var(--border, #444)"><td style="padding:4px"><b>Đang hiển thị</b></td>
+        <td style="padding:4px">{{ ai_name(d.model) }}</td><td style="padding:4px">{{ (d.data or {}).core_keyword or '' }}</td>
+        <td style="padding:4px">{{ d.recommended_title or '' }}</td></tr>
+      {% endif %}
+      {% for h in s.title_history %}
+      <tr style="border-top:1px solid var(--border, #444)"><td style="padding:4px"><a href="#hist-{{ h.root.id }}" onclick="document.getElementById('hist-{{ h.root.id }}').open=true">Lần trước {{ loop.index }}</a></td>
+        <td style="padding:4px">{{ ai_name(h.root.model) }}</td><td style="padding:4px">{{ h.data.core_keyword or '' }}</td>
+        <td style="padding:4px">{{ h.run.recommended_title or '' }}</td></tr>
+      {% endfor %}
+    </table>
+    </div>
+    {% for h in s.title_history %}
+    {% set hj = h.data %}
+    <details class="raw" id="hist-{{ h.root.id }}">
+      <summary>Lần trước {{ loop.index }} · {{ ai_name(h.root.model) }} · {{ (h.root.created_at or '')[:16]|replace('T', ' ') }}
+        {% if h.root.focus %} · 🎯 {{ h.root.focus[:50] }}{% endif %}{% if h.edits %} · đã chỉnh {{ h.edits }} lần qua chat{% endif %}</summary>
+      {% if h.run.recommended_title %}<div class="yt-title"><span id="h{{ h.root.id }}-rt">{{ h.run.recommended_title }}</span>
+        <span class="muted small">{{ h.run.recommended_title|length }} ký tự</span>
+        <button class="btn btn-tiny" onclick="copyEl('h{{ h.root.id }}-rt')">Copy</button></div>{% endif %}
+      <div class="title-options">
+        {% for label, key in [('Format 1 · trực diện', 'titles_format1'), ('Format 2 · câu hỏi gợi mở', 'titles_format2')] %}
+          {% if hj[key] %}<div><div class="small muted">{{ label }}</div>
+            <ol>{% for tt in hj[key] %}<li><span id="h{{ h.root.id }}-{{ key }}-{{ loop.index }}">{{ tt }}</span>
+              <span class="muted small">{{ tt|length }}</span>
+              <button class="btn btn-tiny" onclick="copyEl('h{{ h.root.id }}-{{ key }}-{{ loop.index }}')">Copy</button></li>{% endfor %}</ol></div>{% endif %}
+        {% endfor %}
+      </div>
+      {% for label, key in [('Description', 'description'), ('Timestamps', 'timestamps'), ('Tags', 'tags'), ('Thumbnail', 'thumbnail')] %}
+        {% if hj[key] %}<div class="meta-block">
+          <div class="meta-head"><span class="small muted">{{ label }}{% if key == 'tags' and hj.tags_chars %} · {{ hj.tags_chars }}/500 ký tự{% endif %}</span>
+            <button class="btn btn-tiny" onclick="copyEl('h{{ h.root.id }}-{{ key }}')">Copy</button></div>
+          <pre class="meta-pre" id="h{{ h.root.id }}-{{ key }}">{{ hj[key] }}</pre></div>{% endif %}
+      {% endfor %}
+      {% if hj.warnings %}<div class="small warn">⚠️ {{ hj.warnings|join(' · ') }}</div>{% endif %}
+      <div class="small muted">{{ h.run.progress_msg or '' }} · {{ h.run.finished_at or '' }}</div>
+    </details>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% include '_thumb_block.html' %}
+</div>

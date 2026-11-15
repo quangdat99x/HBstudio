@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Podcast Auto-Zoom | Batch Processing</title>
+    <meta name="description" content="Automatically zoom into the active speaker in podcast videos using AI-powered face detection and lip movement analysis.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+    <!-- Background Effects -->
+    <div class="bg-effects">
+        <div class="bg-noise"></div>
+    </div>
+
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="logo">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
+                    </svg>
+                </div>
+                <div>
+                    <h1>Podcast Auto-Zoom</h1>
+                    <p class="tagline">AI-Powered Active Speaker Detection & Zoom</p>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content" id="tab-zoom">
+            <!-- Step 1: Output Folder Selection -->
+            <section id="folder-section" class="section folder-section">
+                <div class="section-header">
+                    <h3 class="section-title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                        </svg>
+                        Output Folder
+                    </h3>
+                </div>
+                <div class="section-body">
+                    <div class="folder-picker">
+                        <div id="folder-display" class="folder-display">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                            </svg>
+                            <span id="folder-path">No folder selected</span>
+                        </div>
+                        <button id="choose-folder-btn" class="btn-folder" title="Choose output folder">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="17 8 12 3 7 8"/>
+                                <line x1="12" y1="3" x2="12" y2="15"/>
+                            </svg>
+                            Browse
+                        </button>
+                    </div>
+                    <p class="folder-hint">Processed videos will be saved here automatically</p>
+                </div>
+            </section>
+
+            <!-- Step 2: Upload / Add Videos -->
+            <section id="upload-section" class="section upload-section">
+                <div id="drop-zone" class="drop-zone">
+                    <div class="drop-zone-content">
+                        <div class="upload-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="17 8 12 3 7 8"/>
+                                <line x1="12" y1="3" x2="12" y2="15"/>
+                            </svg>
+                        </div>
+                        <h2>Drop your podcast videos here</h2>
+                        <p>or click to browse • MP4, MKV, AVI, MOV, WebM • Multiple files supported</p>
+                        <p class="file-limit">Maximum file size: 2GB per file</p>
+                    </div>
+                    <input type="file" id="file-input" accept="video/*" multiple hidden>
+                </div>
+            </section>
+
+            <!-- Step 3: Video Queue List -->
+            <section id="queue-section" class="section queue-section hidden">
+                <div class="queue-header section-header">
+                    <h3 class="section-title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                            <line x1="8" y1="6" x2="21" y2="6"/>
+                            <line x1="8" y1="12" x2="21" y2="12"/>
+                            <line x1="8" y1="18" x2="21" y2="18"/>
+                            <line x1="3" y1="6" x2="3.01" y2="6"/>
+                            <line x1="3" y1="12" x2="3.01" y2="12"/>
+                            <line x1="3" y1="18" x2="3.01" y2="18"/>
+                        </svg>
+                        <span id="queue-title">Video Queue</span>
+                    </h3>
+                    <button id="add-more-btn" class="btn-add-more" title="Add more videos">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                            <line x1="12" y1="5" x2="12" y2="19"/>
+                            <line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                        Add More
+                    </button>
+                </div>
+                <div id="queue-list" class="queue-list">
+                    <!-- Queue items will be inserted here by JS -->
+                </div>
+            </section>
+
+            <!-- Step 4: Settings -->
+            <section id="settings-section" class="section settings-section hidden">
+                <div class="section-header collapsible-header" id="settings-toggle">
+                    <h3 class="section-title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                            <circle cx="12" cy="12" r="3"/>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                        </svg>
+                        Processing Settings
+                    </h3>
+                    <button class="btn-collapse" aria-expanded="true" aria-controls="settings-body">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                            <polyline points="18 15 12 9 6 15"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="section-body" id="settings-body">
+                    <div class="settings-grid">
+                        <div class="setting-item">
+                            <label for="zoom-factor">Zoom Level</label>
+                            <div class="setting-control">
+                                <input type="range" id="zoom-factor" min="1.5" max="3.0" step="0.1" value="2.0">
+                                <span id="zoom-factor-value" class="setting-value">200%</span>
+                            </div>
+                            <p class="setting-desc">Zoom magnification applied to active speaker</p>
+                        </div>
+                        <div class="setting-item">
+                            <label for="smoothing-speed">Camera Smoothing</label>
+                            <div class="setting-control">
+                                <input type="range" id="smoothing-speed" min="0.01" max="0.15" step="0.01" value="0.05">
+                                <span id="smoothing-speed-value" class="setting-value">0.05</span>
+                            </div>
+                            <p class="setting-desc">Lower = smoother pan, Higher = faster tracking</p>
+                        </div>
+                        <div class="setting-item">
+                            <label for="switch-duration">Min Speaker Duration</label>
+                            <div class="setting-control">
+                                <input type="range" id="switch-duration" min="0.2" max="2.0" step="0.1" value="0.5">
+                                <span id="switch-duration-value" class="setting-value">0.5s</span>
+                            </div>
+                            <p class="setting-desc">Minimum time before switching to new speaker</p>
+                        </div>
+                        <div class="setting-item">
+                            <label for="max-faces">Max Faces</label>
+                            <div class="setting-control">
+                                <input type="range" id="max-faces" min="2" max="6" step="1" value="4">
+                                <span id="max-faces-value" class="setting-value">4</span>
+                            </div>
+                            <p class="setting-desc">Maximum number of faces to detect simultaneously</p>
+                        </div>
+                    </div>
+
+                    <button id="start-btn" class="btn-primary" disabled>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                            <polygon points="5 3 19 12 5 21 5 3"/>
+                        </svg>
+                        <span id="start-btn-text">Select output folder first</span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- Summary Section (shown after all done) -->
+            <section id="summary-section" class="section result-section hidden">
+                <div class="result-success">
+                    <div class="success-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                            <polyline points="22 4 12 14.01 9 11.01"/>
+                        </svg>
+                    </div>
+                    <h2 id="summary-title">All Videos Processed!</h2>
+                    <p id="summary-message" class="result-message"></p>
+                    <div class="result-actions">
+                        <button id="new-batch-btn" class="btn-primary">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                                <polyline points="1 4 1 10 7 10"/>
+                                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                            </svg>
+                            Process More Videos
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="app-footer">
+            <p>Powered by MediaPipe Face Landmarker • FFmpeg</p>
+        </footer>
+    </div>
+
+    <div id="confetti-container" aria-hidden="true"></div>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% set title = p.title ~ ' · Tổng quan' %}
+{% block content %}
+<link rel="stylesheet" href="/static/overview.css">
+<div class="ov-top row gap wrap">
+  <a class="btn btn-small btn-ghost" href="/p/{{ p.id }}">← Về dự án</a>
+  <span class="small muted">🗺 Tổng quan phim: bấm vào bất kỳ hồi, nhân vật, bối cảnh, bằng chứng hay cảnh nào để xem chi tiết và chỗ nó xuất hiện trong phim.</span>
+</div>
+
+<section class="card ov-hero" id="ov-hero"></section>
+
+<section class="card">
+  <div class="card-header"><h2>🎬 Mạch phim</h2><div class="small muted" id="ov-tl-legend"></div></div>
+  <div class="card-body">
+    <div class="ov-timeline" id="ov-timeline"></div>
+    <div class="ov-acts" id="ov-acts"></div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-header"><h2>🧰 Nguyên liệu</h2>
+    <div class="row gap" id="ov-asset-tabs"></div></div>
+  <div class="card-body"><div id="ov-assets"></div></div>
+</section>
+
+<section class="card">
+  <div class="card-header"><h2>🎞 Phân cảnh</h2>
+    <div class="row gap"><span class="small muted" id="ov-scene-count"></span>
+      <button class="btn btn-tiny btn-ghost" id="ov-clear" hidden onclick="OV.clear()">✕ Bỏ lọc</button></div></div>
+  <div class="card-body"><div id="ov-scenes"></div></div>
+</section>
+
+<section class="card">
+  <div class="card-header"><h2>🔎 Kiểm chứng &amp; lưu ý</h2></div>
+  <div class="card-body"><div class="ov-checks" id="ov-checks"></div></div>
+</section>
+
+<aside class="ov-drawer" id="ov-drawer" hidden>
+  <div class="ov-drawer-head"><div id="ov-dr-title" class="grow"></div>
+    <button class="btn btn-tiny btn-ghost" onclick="OV.back()" id="ov-back" hidden>← Lùi</button>
+    <button class="btn btn-tiny btn-ghost" onclick="OV.close()">✕</button></div>
+  <div class="ov-drawer-body" id="ov-dr-body"></div>
+  <div class="ov-drawer-foot">
+    <div class="small muted" id="ov-ask-hint"></div>
+    <textarea class="input" id="ov-ask" rows="3"></textarea>
+    <div class="row gap end"><button class="btn btn-small btn-primary" onclick="OV.ask()">✍️ Gửi Claude sửa</button></div>
+  </div>
+</aside>
+
+{% endblock %}
+{% block scripts %}
+<script id="ov-data" type="application/json">{{ data|tojson }}</script>
+<script>window.OV_PID = {{ p.id }};</script>
+<script src="/static/overview.js"></script>
+{% endblock %}

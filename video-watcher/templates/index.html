@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Watcher</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<style>
+  :root {
+    --bg: #0d0e12; --panel: #15171d; --panel2: #1c1f27; --line: #2a2e38;
+    --text: #e7e9ee; --muted: #8b91a0; --accent: #38bdf8; --accent2: #0ea5e9;
+    --ok: #34d399; --err: #f87171; --warn: #fbbf24;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 "Segoe UI", Inter, system-ui, sans-serif; }
+  .app { display: grid; grid-template-columns: 380px 1fr; min-height: 100vh; }
+  aside { background: var(--panel); border-right: 1px solid var(--line); padding: 18px;
+          display: flex; flex-direction: column; gap: 16px; height: 100vh; position: sticky; top: 0; overflow: auto; }
+  main { padding: 22px 28px; min-width: 0; }
+  h1 { font-size: 18px; margin: 0; display: flex; gap: 8px; align-items: center; }
+  h1 small { color: var(--muted); font-weight: 400; font-size: 12px; }
+  h2 { font-size: 15px; margin: 26px 0 10px; color: var(--accent); letter-spacing: .3px; }
+  label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+  input, select { width: 100%; background: var(--panel2); border: 1px solid var(--line); color: var(--text);
+                  padding: 8px 10px; border-radius: 8px; font: inherit; }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); padding: 8px 12px;
+           border-radius: 8px; cursor: pointer; font: inherit; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent2); border-color: var(--accent2); color: #001018; font-weight: 600; }
+  button.primary:hover { background: var(--accent); }
+  .drop { border: 1.5px dashed var(--line); border-radius: 10px; padding: 14px; text-align: center;
+          color: var(--muted); font-size: 13px; cursor: pointer; }
+  .drop.over { border-color: var(--accent); color: var(--accent); background: #0ea5e911; }
+  .chk { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+  .chk input { width: auto; }
+  .job { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; }
+  .job .state { font-weight: 600; }
+  .job pre { margin: 6px 0 0; max-height: 140px; overflow: auto; color: var(--muted); font-size: 11.5px; white-space: pre-wrap; }
+  .hist { display: flex; flex-direction: column; gap: 6px; }
+  .hist .it { display: grid; grid-template-columns: 64px 1fr; gap: 10px; padding: 6px; border-radius: 8px;
+              cursor: pointer; border: 1px solid transparent; }
+  .hist .it:hover { background: var(--panel2); }
+  .hist .it.active { border-color: var(--accent); background: var(--panel2); }
+  .hist img { width: 64px; height: 40px; object-fit: cover; border-radius: 5px; background: #000; }
+  .hist .t { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hist .s { font-size: 11px; color: var(--muted); }
+  .empty { color: var(--muted); text-align: center; margin-top: 18vh; font-size: 15px; }
+  .empty b { color: var(--text); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .stat .v { font-size: 20px; font-weight: 600; }
+  .stat .k { font-size: 11.5px; color: var(--muted); }
+  .claude { background: linear-gradient(135deg, #0ea5e922, #a78bfa22); border: 1px solid #38bdf855;
+            border-radius: 12px; padding: 14px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .claude code { flex: 1; min-width: 300px; background: #0008; padding: 8px 10px; border-radius: 8px;
+                 font-size: 12.5px; word-break: break-all; }
+  .sheets { display: grid; grid-template-columns: repeat(auto-fill, minmax(720px, 1fr)); gap: 12px; }
+  .sheets img, .hook img { width: 100%; border-radius: 8px; border: 1px solid var(--line); cursor: zoom-in; display: block; }
+  .hook img { max-height: 80vh; object-fit: contain; background: #000; }
+  .split { display: grid; grid-template-columns: 1fr; gap: 18px; }
+  @media (min-width: 1900px) { .split { grid-template-columns: 1.4fr 1fr; } }
+  .tbl { overflow: auto; max-height: 75vh; border: 1px solid var(--line); border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th, td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { position: sticky; top: 0; background: var(--panel2); color: var(--muted); font-weight: 500; }
+  td img { width: 120px; border-radius: 4px; display: block; cursor: zoom-in; }
+  .tr { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+        max-height: 75vh; overflow: auto; white-space: pre-wrap; font-size: 13px; }
+  .tr span { color: var(--warn); font-family: Consolas, monospace; font-size: 12px; }
+  .bar { height: 46px; display: flex; align-items: flex-end; gap: 1px; background: var(--panel);
+         border: 1px solid var(--line); border-radius: 8px; padding: 4px; }
+  .bar div { flex: 1; background: var(--accent); min-height: 1px; border-radius: 1px 1px 0 0; opacity: .8; }
+  .swatches { display: flex; gap: 6px; flex-wrap: wrap; }
+  .sw { width: 54px; height: 32px; border-radius: 6px; border: 1px solid var(--line); font-size: 9.5px;
+        display: flex; align-items: flex-end; padding: 2px 4px; color: #fff; text-shadow: 0 0 3px #000; }
+  .md { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 6px 22px; }
+  .md table { margin: 10px 0; }
+  .lb { position: fixed; inset: 0; background: #000e; display: none; align-items: center; justify-content: center; z-index: 9; cursor: zoom-out; }
+  .lb img { max-width: 97vw; max-height: 97vh; }
+  .muted { color: var(--muted); }
+  .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .toolbar h1 { flex: 1; font-size: 20px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <h1>👁️ Video Watcher <small>cho Claude xem video</small></h1>
+
+    <div>
+      <label>Đường dẫn video hoặc URL (YouTube, TikTok, …)</label>
+      <div style="display:flex; gap:6px">
+        <input id="src" placeholder="D:\video.mp4  hoặc  https://youtu.be/...">
+        <button onclick="pick()" title="Chọn file">📁</button>
+      </div>
+    </div>
+    <div class="drop" id="drop">…hoặc kéo-thả file video vào đây</div>
+    <input type="file" id="file" accept="video/*" hidden>
+
+    <div class="row">
+      <div><label>Số khung tối đa</label><input id="max_frames" type="number" value="60" min="8" max="200"></div>
+      <div><label>Hook (giây đầu)</label><input id="hook" type="number" value="15" min="3" max="60"></div>
+    </div>
+    <div class="row">
+      <div><label>Model Whisper</label>
+        <select id="model"><option>tiny</option><option>base</option><option selected>small</option><option>large-v3</option></select></div>
+      <div><label>Ngôn ngữ</label>
+        <select id="lang"><option value="auto">Tự nhận</option><option value="vi">Tiếng Việt</option><option value="en">English</option></select></div>
+    </div>
+    <div class="row">
+      <div><label>Độ nhạy cắt cảnh</label>
+        <select id="scene"><option value="0.2">Nhạy (0.2)</option><option value="0.3" selected>Vừa (0.3)</option><option value="0.45">Ít (0.45)</option></select></div>
+      <div style="display:flex; align-items:end; padding-bottom:8px"><label class="chk"><input type="checkbox" id="transcript" checked> Chép lời</label></div>
+    </div>
+    <button class="primary" onclick="run()">▶ Phân tích video</button>
+
+    <div id="jobs"></div>
+
+    <div>
+      <label>Đã phân tích</label>
+      <div class="hist" id="hist"></div>
+    </div>
+  </aside>
+
+  <main id="main">
+    <div class="empty">
+      <p>Đưa video vào → công cụ cắt cảnh, trích khung, dựng contact sheet, chép lời, đo nhịp dựng.</p>
+      <p>Sau đó copy dòng lệnh và gửi cho <b>Claude</b> — Claude sẽ "xem" và mổ xẻ công thức của video để bắt chước.</p>
+    </div>
+  </main>
+</div>
+<div class="lb" id="lb" onclick="this.style.display='none'"><img></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ts = s => { s = Math.max(0, s); const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = Math.floor(s%60);
+  return (h ? h + ':' : '') + String(m).padStart(2,'0') + ':' + String(x).padStart(2,'0'); };
+let current = null;
+const watching = new Set();
+
+function opts() {
+  return { max_frames: $('#max_frames').value, hook: $('#hook').value, model: $('#model').value,
+           lang: $('#lang').value, scene: $('#scene').value, transcript: $('#transcript').checked };
+}
+async function pick() {
+  const r = await fetch('/api/pick-file', {method: 'POST'}).then(r => r.json());
+  if (r.path) $('#src').value = r.path;
+}
+async function run() {
+  const source = $('#src').value.trim();
+  if (!source) return alert('Nhập đường dẫn video hoặc URL');
+  const r = await fetch('/api/analyze', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({source, ...opts()})}).then(r => r.json());
+  if (r.error) return alert(r.error);
+  $('#src').value = '';
+  watch(r.id, source);
+}
+async function upload(file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  Object.entries(opts()).forEach(([k, v]) => fd.append(k, v));
+  const box = addJobBox('up' + Date.now(), file.name);
+  box.querySelector('.state').textContent = 'Đang tải file lên…';
+  const r = await fetch('/api/upload', {method: 'POST', body: fd}).then(r => r.json());
+  box.remove();
+  if (r.error) return alert(r.error);
+  watch(r.id, file.name);
+}
+function addJobBox(id, label) {
+  const d = document.createElement('div');
+  d.className = 'job'; d.id = 'job-' + id;
+  d.innerHTML = `<div class="state">Đang chờ…</div><div class="muted" style="font-size:11.5px">${esc(label)}</div><pre></pre>`;
+  $('#jobs').prepend(d);
+  return d;
+}
+function watch(id, label) {
+  if (watching.has(id)) return;
+  watching.add(id);
+  const box = addJobBox(id, label);
+  const tick = async () => {
+    const j = await fetch('/api/jobs/' + id).then(r => r.json()).catch(() => null);
+    if (!j) return setTimeout(tick, 2000);
+    const st = box.querySelector('.state');
+    box.querySelector('pre').textContent = j.log.join('\n');
+    box.querySelector('pre').scrollTop = 1e9;
+    if (j.state === 'queued') st.textContent = `⏳ Xếp hàng (#${j.queue_pos + 1})`;
+    if (j.state === 'running') st.textContent = '⚙️ ' + j.msg;
+    if (j.state === 'error') { st.textContent = '❌ ' + j.error; st.style.color = 'var(--err)'; return; }
+    if (j.state === 'done') {
+      st.textContent = '✅ Xong'; st.style.color = 'var(--ok)';
+      await loadHistory(); show(j.result);
+      setTimeout(() => box.remove(), 8000);
+      return;
+    }
+    setTimeout(tick, 1200);
+  };
+  tick();
+}
+async function loadHistory() {
+  const items = await fetch('/api/history').then(r => r.json());
+  $('#hist').innerHTML = items.map(it => `
+    <div class="it ${it.name === current ? 'active' : ''}" data-name="${esc(it.name)}" onclick="show(this.dataset.name)">
+      ${it.thumb ? `<img src="/files/${encodeURIComponent(it.name)}/${it.thumb}" loading="lazy">` : '<img>'}
+      <div style="min-width:0"><div class="t" title="${esc(it.title)}">${it.has_breakdown ? '🧠 ' : ''}${esc(it.title)}</div>
+      <div class="s">${ts(it.duration)} · ${it.shots} shot · ${esc(it.created)}</div></div>
+    </div>`).join('') || '<div class="muted" style="font-size:12px">Chưa có</div>';
+}
+function zoom(src) { const lb = $('#lb'); lb.querySelector('img').src = src; lb.style.display = 'flex'; }
+
+async function show(name) {
+  current = name;
+  document.querySelectorAll('.hist .it').forEach(e => e.classList.toggle('active', e.dataset.name === name));
+  const m = await fetch('/api/result/' + encodeURIComponent(name)).then(r => r.json());
+  const f = rel => `/files/${encodeURIComponent(name)}/${rel}`;
+  const p = m.probe, pc = m.pacing, segs = m.transcript?.segments || [];
+  const words = segs.reduce((a, s) => a + s.text.split(/\s+/).filter(Boolean).length, 0);
+  const speech = segs.reduce((a, s) => a + s.end - s.start, 0);
+  const cmd = `Xem video này và mổ xẻ công thức để bắt chước: ${m.report_path}`;
+  const maxD = Math.max(1, ...pc.cuts_per_window);
+  const loud = m.audio?.per_second_db || [];
+  const step = Math.max(1, Math.ceil(loud.length / 300));
+  const loudDs = []; for (let i = 0; i < loud.length; i += step) loudDs.push(Math.max(...loud.slice(i, i + step)));
+  const shotOf = fr => m.shots[fr.shot];
+
+  $('#main').innerHTML = `
+    <div class="toolbar">
+      <h1>${esc(m.title)}</h1>
+      <button onclick="fetch('/api/open/' + encodeURIComponent(current), {method:'POST'})">📂 Mở thư mục</button>
+    </div>
+    <p class="muted" style="margin:4px 0 14px">${esc(m.source)} · phân tích ${esc(m.created)} (${m.elapsed_sec}s)</p>
+
+    <div class="claude">
+      <span>🤖 Gửi cho Claude:</span>
+      <code id="cmd">${esc(cmd)}</code>
+      <button onclick="navigator.clipboard.writeText($('#cmd').textContent); this.textContent='✓ Đã copy'">Copy</button>
+    </div>
+
+    ${m.breakdown ? `<h2>🧠 Claude đã phân tích (BREAKDOWN.md)</h2><div class="md">${window.marked ? marked.parse(m.breakdown) : '<pre>' + esc(m.breakdown) + '</pre>'}</div>` : ''}
+
+    <h2>Tổng quan</h2>
+    <div class="stats">
+      <div class="stat"><div class="v">${ts(p.duration)}</div><div class="k">Thời lượng</div></div>
+      <div class="stat"><div class="v">${p.width}×${p.height}</div><div class="k">${esc(p.format_label)} · ${p.fps} fps</div></div>
+      <div class="stat"><div class="v">${pc.shot_count}</div><div class="k">Shot</div></div>
+      <div class="stat"><div class="v">${pc.avg_shot_sec}s</div><div class="k">TB mỗi shot (trung vị ${pc.median_shot_sec}s)</div></div>
+      <div class="stat"><div class="v">${pc.cuts_per_min}</div><div class="k">Cắt / phút</div></div>
+      ${segs.length ? `<div class="stat"><div class="v">${speech ? Math.round(words / (speech / 60)) : 0}</div><div class="k">Từ/phút khi nói (${esc(m.transcript.language)})</div></div>
+      <div class="stat"><div class="v">${Math.round(speech / p.duration * 100)}%</div><div class="k">Thời lượng có lời</div></div>` : ''}
+      ${m.audio ? `<div class="stat"><div class="v">${Math.round(m.audio.silence_ratio * 100)}%</div><div class="k">Im lặng</div></div>` : ''}
+    </div>
+
+    <h2>Mật độ cắt (mỗi ${pc.density_window_sec}s)</h2>
+    <div class="bar">${pc.cuts_per_window.map((c, i) => `<div style="height:${Math.max(2, c / maxD * 100)}%" title="${ts(i * pc.density_window_sec)}: ${c} cắt"></div>`).join('')}</div>
+    ${loudDs.length ? `<h2>Năng lượng âm thanh</h2>
+    <div class="bar">${loudDs.map((v, i) => `<div style="height:${Math.max(2, (v + 60) / 60 * 100)}%;background:var(--ok)" title="${ts(i * step)}: ${v} dB"></div>`).join('')}</div>` : ''}
+    ${m.look ? `<h2>Bảng màu</h2><div class="swatches">${m.look.palette.map(c => `<div class="sw" style="background:${c.hex}">${c.hex}</div>`).join('')}</div>
+      <p class="muted">Độ sáng TB ${m.look.brightness.toFixed(2)} · bão hoà TB ${m.look.saturation.toFixed(2)}</p>` : ''}
+
+    <h2>Hook — ${m.hook_seconds}s đầu</h2>
+    <div class="hook"><img src="${f(m.hook_sheet)}" onclick="zoom(this.src)"></div>
+
+    <h2>Contact sheet (${m.frames.length} khung / ${pc.shot_count} shot)</h2>
+    <div class="sheets">${m.sheets.map(s => `<img src="${f(s.file)}" loading="lazy" onclick="zoom(this.src)" title="#${s.first}–#${s.last}">`).join('')}</div>
+
+    <div class="split">
+      <div><h2>Danh sách khung</h2><div class="tbl"><table>
+        <tr><th>#</th><th>Khung</th><th>Thời điểm</th><th>Shot</th><th>Màu</th></tr>
+        ${m.frames.map(fr => `<tr><td>${fr.idx}</td><td><img src="${f(fr.file)}" loading="lazy" onclick="zoom(this.src)"></td>
+          <td>${ts(fr.t)}</td><td>#${fr.shot + 1} · ${ts(shotOf(fr).start)}–${ts(shotOf(fr).end)}<br><span class="muted">${(shotOf(fr).end - shotOf(fr).start).toFixed(1)}s</span></td>
+          <td><div class="swatches">${(fr.palette || []).map(h => `<div class="sw" style="width:16px;height:16px;background:${h}"></div>`).join('')}</div></td></tr>`).join('')}
+      </table></div></div>
+      ${segs.length ? `<div><h2>Transcript</h2><div class="tr">${segs.map(s => `<span>[${ts(s.start)}]</span> ${esc(s.text)}`).join('\n')}</div></div>` : ''}
+    </div>`;
+  window.scrollTo(0, 0);
+}
+
+const drop = $('#drop');
+drop.onclick = () => $('#file').click();
+$('#file').onchange = e => e.target.files[0] && upload(e.target.files[0]);
+['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => e.dataTransfer.files[0] && upload(e.dataTransfer.files[0]));
+$('#src').addEventListener('keydown', e => e.key === 'Enter' && run());
+
+loadHistory().then(() => { const first = document.querySelector('.hist .it'); first && first.click(); });
+</script>
+</body>
+</html>

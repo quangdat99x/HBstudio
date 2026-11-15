@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% set title = 'Hoạt động' %}
+{% macro sname(kind, step) %}{{ step_names.get(kind or 'doc', {}).get(step, step) }}{% endmacro %}
+{% macro desk(kind) %}<span title="{{ KINDS[kind or 'doc'].label }}">{{ KINDS[kind or 'doc'].icon }}</span>{% endmacro %}
+{% block content %}
+<section class="card">
+  <div class="card-header"><h2>📊 Hoạt động</h2><span class="small muted">Chung cho cả hai mảng: tối đa {{ status.parallel if status else 1 }} lượt Claude cùng lúc (mỗi dự án một lượt); việc nặng GPU/CPU (render hình, giọng đọc, dựng & render) chạy từng cái một</span></div>
+  <div class="card-body">
+    <div class="stat-tiles">
+      <div class="tile"><div class="v">{% if status and status.running %}<span class="spin"></span>{{ status.running|length }}{% else %}0{% endif %}</div><div class="l">lượt đang chạy</div></div>
+      <div class="tile"><div class="v">{{ status.queue|length if status else 0 }}</div><div class="l">lượt đang chờ</div></div>
+      <div class="tile"><div class="v">${{ '%.2f'|format(sum_usd) }}</div><div class="l">chi phí Claude mọi dự án</div></div>
+      <div class="tile"><div class="v">${{ '%.2f'|format(sum_assets) }}</div><div class="l">nguyên liệu API đã tiêu (theo notes/costs.json)</div></div>
+    </div>
+    {% for cur in (status.running if status else []) %}
+    <div class="box"><span class="spin"></span>{{ desk(cur.project_kind) }} <b><a href="/p/{{ cur.project_id }}{% if cur.step %}?step={{ cur.step }}{% endif %}">{{ cur.project_title }}</a></b>
+      {% if cur.step and cur.kind == 'step' %} · {{ sname(cur.project_kind, cur.step) }}{% else %} · chat{% endif %}
+      {% if cur.heavy %}<span class="pill warn" title="Việc nặng GPU/CPU: các việc nặng khác chờ nó xong">nặng</span>{% endif %}
+      <div class="small muted">{{ cur.progress_msg or '' }}</div></div>
+    {% endfor %}
+    {% for q in status.queue if status %}
+    <div class="small muted">⏳ {{ desk(q.project_kind) }} {{ q.project_title }} · {{ sname(q.project_kind, q.step) if q.step and q.kind == 'step' else 'chat' }}{% if q.waiting %} · chờ {{ q.waiting }}{% endif %}</div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-header"><h2>Các lượt Claude gần đây</h2></div>
+  <div class="card-body" style="padding:0">
+    <table class="table"><thead><tr><th>Lúc</th><th>Dự án</th><th>Việc</th><th>Trạng thái</th><th>Model</th><th class="num">Thời gian</th><th class="num">Chi phí</th></tr></thead><tbody>
+    {% for t in turns %}<tr>
+      <td class="small muted nowrap">{{ t.created_at.replace('T', ' ')[5:16] }}</td>
+      <td>{{ desk(t.project_kind) }} <a href="/p/{{ t.project_id }}{% if t.step %}?step={{ t.step }}{% endif %}">{{ t.project_title }}</a></td>
+      <td class="small">{{ ('▶ ' ~ sname(t.project_kind, t.step)) if t.kind == 'step' and t.step else 'chat' }}</td>
+      <td class="small"><span class="pill {{ 'ok' if t.status == 'done' else ('err' if t.status == 'failed' else 'warn') }}">{{ t.status }}</span>
+        {% if t.error %}<div class="muted">{{ t.error|truncate(90) }}</div>{% endif %}</td>
+      <td class="small muted">{{ t.models_used or t.model or '' }}{% if t.effort %} · {{ t.effort }}{% endif %}</td>
+      <td class="num small">{% if t.duration_sec %}{{ (t.duration_sec / 60)|round(1) }} ph{% endif %}</td>
+      <td class="num small">{% if t.cost_usd %}${{ '%.2f'|format(t.cost_usd) }}{% endif %}</td>
+    </tr>{% else %}<tr><td colspan="7" class="muted small">Chưa có lượt nào.</td></tr>{% endfor %}
+    </tbody></table>
+  </div>
+</section>
+
+<div class="grid2">
+  <section class="card">
+    <div class="card-header"><h2>Chi phí theo dự án</h2></div>
+    <div class="card-body" style="padding:0">
+      <table class="table"><thead><tr><th>Dự án</th><th class="num">Lượt</th><th class="num">Claude</th><th class="num">Nguyên liệu</th></tr></thead><tbody>
+      {% for t in totals %}<tr><td>{{ desk(t.kind) }} <a href="/p/{{ t.id }}">{{ t.title }}</a>{% if t.archived %} <span class="pill gray">lưu trữ</span>{% endif %}</td>
+        <td class="num">{{ t.turns }}</td><td class="num">${{ '%.2f'|format(t.cost_usd or 0) }}</td><td class="num">${{ '%.2f'|format(t.spent_usd) }}</td></tr>
+      {% else %}<tr><td colspan="4" class="muted small">Chưa có dự án.</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+  </section>
+  <section class="card">
+    <div class="card-header"><h2>Nhật ký</h2></div>
+    <div class="card-body" style="padding:0">
+      <table class="table"><tbody>
+      {% for e in events %}<tr><td class="small muted nowrap">{{ e.created_at.replace('T', ' ')[5:16] }}</td>
+        <td class="small">{% if e.project_id %}<a href="/p/{{ e.project_id }}">{{ e.project_title }}</a>: {% endif %}{{ e.text }}</td></tr>
+      {% else %}<tr><td class="muted small">Chưa có.</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>{% if status and (status.running or status.queue) %}setTimeout(() => location.reload(), 15000);{% endif %}</script>
+{% endblock %}

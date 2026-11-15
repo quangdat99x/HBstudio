@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% set title = 'Kênh YouTube' %}
+{% block content %}
+<section class="card">
+  <div class="card-header">
+    <h2>📺 Kênh YouTube qua GPM Login</h2>
+    <div class="row gap">
+      <button class="btn btn-small" onclick="scanSel()">⟳ Quét các profile đã chọn</button>
+      <button class="btn btn-small btn-ghost" onclick="load()">Tải lại</button>
+    </div>
+  </div>
+  <div class="card-body small muted">
+    App mở profile GPM (đã đăng nhập sẵn, đúng proxy của nó), đọc các kênh YouTube trong profile rồi đóng lại nếu profile chưa mở từ trước.
+    Khi tạo dự án (cả 🎬 Phim tài liệu và 📰 Tin tức), chọn một kênh ở ô <b>Kênh YouTube để đăng</b>; bước Metadata có khung <b>📺 Đăng YouTube</b>.
+    Profile Firefox không điều khiển được (GPM chỉ mở cổng CDP cho Chrome). Quét từng profile mất ~20–40 giây; mỗi lần chỉ quét một profile.
+  </div>
+  <div class="card-body">
+    <div class="grid4">
+      <label>GPM Login API<input class="input" id="s-gpm_api" value="{{ s.gpm_api }}"></label>
+      <label>Chế độ mặc định<select class="input" id="s-yt_visibility">
+        {% for k, label in VISIBILITY.items() %}<option value="{{ k }}" {{ 'selected' if s.yt_visibility == k }}>{{ label }}</option>{% endfor %}</select></label>
+      <label>Giờ đăng mặc định · phim tài liệu<input class="input" id="s-yt_time_doc" type="time" value="{{ s.yt_time_doc }}"></label>
+      <label>Giờ đăng mặc định · tin tức<input class="input" id="s-yt_time_news" type="time" value="{{ s.yt_time_news }}"></label>
+    </div>
+    <div class="row gap end"><span class="small muted grow">Giờ mặc định (giờ máy) chỉ dùng khi metadata không có giờ đăng hợp lệ trong tương lai.</span>
+      <button class="btn btn-small" onclick="saveSettings()">Lưu</button></div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-header"><h2>Profile GPM và kênh</h2>
+    <div class="row gap"><input class="input" id="q" placeholder="Lọc theo tên profile, nhóm, kênh…" style="width:260px" oninput="render()">
+      <label class="check small"><input type="checkbox" id="only-ch" onchange="render()"> Chỉ profile có kênh</label></div></div>
+  <div class="card-body" style="padding:0">
+    <table class="table"><thead><tr><th style="width:28px"><input type="checkbox" id="all" onchange="toggleAll(this.checked)"></th>
+      <th>Profile</th><th>Nhóm</th><th>Kênh YouTube</th><th>Lần quét</th><th></th></tr></thead>
+      <tbody id="rows"><tr><td colspan="6" class="muted small">Đang tải danh sách profile từ GPM…</td></tr></tbody></table>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+let data = {profiles: [], channels: [], scans: {}}, timer = null;
+async function load(){
+  data = await (await fetch('/api/yt/profiles')).json();
+  if(data.error){ document.getElementById('rows').innerHTML = `<tr><td colspan="6" class="error small">${esc(data.error)}</td></tr>`; return; }
+  render();
+  const busy = Object.values(data.scans || {}).some(x => ['running', 'queued'].includes(x.status));
+  clearTimeout(timer); if(busy) timer = setTimeout(load, 4000);
+}
+function render(){
+  const q = document.getElementById('q').value.trim().toLowerCase(), only = document.getElementById('only-ch').checked;
+  const byProfile = {}; for(const c of data.channels) (byProfile[c.profile_id] ||= []).push(c);
+  const rows = data.profiles.filter(p => {
+    const chs = byProfile[p.id] || [];
+    if(only && !chs.length) return false;
+    return !q || [p.name, p.group, ...chs.map(c => c.name + ' ' + (c.handle || ''))].join(' ').toLowerCase().includes(q);
+  }).map(p => {
+    const chs = byProfile[p.id] || [], sc = (data.scans || {})[p.id] || {}, ff = p.browser !== 'chrome';
+    const status = sc.status === 'running' ? '<span class="spin"></span> đang quét' : sc.status === 'queued' ? '⏳ chờ quét'
+      : sc.scanned_at ? (sc.ok ? '✓ ' : '<span class="error">✕ ' + esc(sc.error || '') + '</span> ') + esc(sc.scanned_at.replace('T', ' ').slice(5, 16)) : '<span class="muted">chưa quét</span>';
+    const chHtml = chs.map(c => `<div>${c.photo ? `<img src="${esc(c.photo)}" style="width:20px;height:20px;border-radius:50%;vertical-align:middle">` : ''}
+      <b>${esc(c.name)}</b> <span class="muted">${esc(c.handle || '')} · ${esc(c.subs || '')}</span> <span class="mono small muted">${esc(c.channel_id)}</span></div>`).join('')
+      || (sc.ok ? '<span class="muted">không có kênh</span>' : '');
+    return `<tr><td>${ff ? '' : `<input type="checkbox" class="sel" value="${esc(p.id)}">`}</td>
+      <td>${esc(p.name)}${ff ? ' <span class="pill gray">firefox</span>' : ''}</td><td class="small muted">${esc(p.group || '')}</td>
+      <td class="small">${chHtml}</td><td class="small nowrap">${status}</td>
+      <td>${ff ? '' : `<button class="btn btn-tiny" onclick="scan(['${esc(p.id)}'])">Quét</button>`}</td></tr>`;
+  });
+  document.getElementById('rows').innerHTML = rows.join('') || '<tr><td colspan="6" class="muted small">Không có profile nào khớp.</td></tr>';
+}
+function toggleAll(on){ document.querySelectorAll('.sel').forEach(x => x.checked = on); }
+async function scan(ids){
+  if(!ids.length){ toast('Chưa chọn profile'); return; }
+  const r = await api('/api/yt/scan', {ids}); if(r.error){ toast(r.error); return; } toast(r.message); load();
+}
+function scanSel(){ scan([...document.querySelectorAll('.sel:checked')].map(x => x.value)); }
+async function saveSettings(){
+  const v = id => document.getElementById(id).value;
+  const r = await api('/api/yt/settings', {gpm_api: v('s-gpm_api'), yt_visibility: v('s-yt_visibility'), yt_time_doc: v('s-yt_time_doc'), yt_time_news: v('s-yt_time_news')});
+  toast(r.error || 'Đã lưu'); load();
+}
+load();
+</script>
+{% endblock %}

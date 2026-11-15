@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎥 Creater Vid{% if title %} · {{ title }}{% endif %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/notify.css">
+</head>
+<body>
+<header class="{{ ('desk-' ~ desk) if desk else '' }}">
+  <div class="header-left">
+    <span class="logo">🎥</span>
+    <h1>Creater Vid</h1>
+    <div class="desks" title="Hai mảng riêng: mỗi mảng có dự án, quy trình và bộ quy tắc của riêng nó">
+      {% for k, kd in KINDS.items() %}
+      <a href="{{ kd.home if k == 'news' else '/doc' }}" class="{{ k }} {{ 'on' if desk == k else '' }}">{{ kd.icon }} {{ kd.label }}</a>
+      {% endfor %}
+    </div>
+    {% if desk %}
+    <nav>
+      {% for key, href, label in desk_nav[desk] %}
+      <a href="{{ href }}" class="{{ 'active' if page == key else '' }}">{{ label }}</a>
+      {% endfor %}
+    </nav>
+    {% endif %}
+    <span class="nav-sep"></span>
+    <nav>
+      {% for key, href, label in shared_nav %}
+      <a href="{{ href }}" class="{{ 'active' if page == key else '' }}">{{ label }}</a>
+      {% endfor %}
+    </nav>
+  </div>
+  <div class="header-right-wrap">
+    <div class="header-right" id="header-status"></div>
+    <div id="notif-bell" data-app="Creater Vid" data-peers='[{"name":"Hổ Báo Studio","port":5004}]'></div>
+  </div>
+</header>
+<div id="quota-bar" class="quota-bar" title="Quota: bấm ⟳ để đọc lại ngay"></div>
+<main>
+{% block content %}{% endblock %}
+</main>
+<div id="toast"></div>
+<script src="/static/app.js"></script>
+<script src="/static/notify.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

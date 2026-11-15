@@ -1,0 +1,99 @@
+{# Thumbnail section of a highlight: separate from "Viết Title". Each version has its own folder and mock. #}
+{% set tc = s.thumb_current or none %}
+<div class="thumb-section" style="margin-top:14px;padding-top:10px;border-top:1px dashed var(--border, #444)">
+  <div class="title-head">
+    <div class="sec-label">🖼 Thumbnail <span class="muted normal">· riêng với Viết Title{% if s.thumb_versions %} · {{ s.thumb_versions|length }} bản{% endif %}</span></div>
+    <div class="row gap">
+      {% if thumb_busy %}
+        <span class="badge job-running">{{ 'đang dựng' if tr.status == 'running' else 'đang chờ' }}</span>
+        <button class="btn btn-small btn-ghost" onclick="cancelTitle({{ s.id }})">Hủy</button>
+      {% elif not busy %}
+        <button class="btn btn-small {{ 'btn-ghost' if tc else 'btn-primary' }}" onclick="runThumb({{ s.id }})">{{ 'Tạo bản thumbnail mới' if tc else 'Tạo thumbnail' }}</button>
+      {% endif %}
+    </div>
+  </div>
+  {% if not thumb_busy and not busy %}
+  <textarea class="input small" id="thumbreq-{{ s.id }}" rows="2" placeholder="Yêu cầu cho bản mới (tùy chọn), VD: ô giữa là ảnh AI có cả Chúa và thần chiến tranh · Joe cười lớn · dùng ảnh thật của Goggins. Để trống = theo ý tưởng của kết quả title."></textarea>
+  {% if not d %}<div class="small muted">Chưa có title: thumbnail sẽ dựa vào keyword của cutlist. Nên Viết Title trước để thumbnail khớp keyword.</div>{% endif %}
+  {% endif %}
+  {% if thumb_busy %}<div class="small muted">{{ tr.progress_msg or 'đang chờ tới lượt…' }}</div>{% endif %}
+  {% if tr and tr.status == 'failed' %}<div class="small error">Lượt thumbnail gần nhất không xong: {{ tr.error }}</div>{% endif %}
+
+  {% if tc %}
+  {% set tj = tc.data or {} %}
+  <div class="row gap" style="flex-wrap:wrap;align-items:flex-start;margin-top:6px">
+    {% if tj.thumb_mock %}
+    <div style="flex:1;min-width:280px;max-width:640px">
+      <div class="small muted">Bản #{{ tc.id }} · mock dựng trên máy{{ ' · đã duyệt' if tj.thumbnail_path else (' · đã có trên Canva' if tj.canva_edit_url else ', chưa lưu Canva') }}
+        {% if tj.canva_edit_url %} · <a href="{{ tj.canva_edit_url }}" target="_blank">🎨 Mở trên Canva để sửa tay</a>{% endif %}</div>
+      <a href="/media?path={{ tj.thumb_mock|urlencode }}" target="_blank">
+        <img src="/media?path={{ tj.thumb_mock|urlencode }}&v={{ tc.finished_at|urlencode }}" style="width:100%;border-radius:6px" alt="thumbnail mock"></a>
+      {% if not thumb_busy and not busy %}
+      <button class="btn btn-small btn-primary" onclick="approveThumb({{ s.id }}, {{ tc.id }})">{{ '✅ Duyệt: export bản trên Canva' if tj.canva_design_id else '✅ Duyệt bản này &amp; lưu Canva'|safe }}</button>
+      {% if tj.canva_design_id %}<div class="small muted">Sửa tay trên Canva xong thì bấm Duyệt: tool export đúng design trên Canva (gồm cả phần bạn đã sửa), không dựng lại theo mock.</div>{% endif %}
+      {% endif %}
+    </div>
+    {% endif %}
+    {% if tj.thumbnail_path %}
+    <div style="flex:1;min-width:280px;max-width:640px">
+      <div class="small muted">Đã lưu Canva &amp; export{% if tj.canva_edit_url %} · <a href="{{ tj.canva_edit_url }}" target="_blank">mở Canva</a>{% endif %}</div>
+      <a href="/media?path={{ tj.thumbnail_path|urlencode }}" target="_blank">
+        <img src="/media?path={{ tj.thumbnail_path|urlencode }}&v={{ tc.finished_at|urlencode }}" style="width:100%;border-radius:6px" alt="thumbnail"></a>
+      {% if tj.check_back %}<div class="small">{{ tj.check_back }}</div>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+  {% for label, key in [('Thumbnail', 'thumbnail'), ('Image prompt', 'image_prompt')] %}
+    {% if tj[key] %}<div class="meta-block"><div class="meta-head"><span class="small muted">{{ label }}</span>
+      <button class="btn btn-tiny" onclick="copyEl('tm{{ s.id }}-{{ key }}')">Copy</button></div>
+      <pre class="meta-pre" id="tm{{ s.id }}-{{ key }}">{{ tj[key] }}</pre></div>{% endif %}
+  {% endfor %}
+  {% if tj.warnings %}<div class="small warn">⚠️ {{ tj.warnings|join(' · ') }}</div>{% endif %}
+  <div class="small muted">{{ tc.progress_msg or '' }}{% if tc.finished_at %} · {{ tc.finished_at }}{% endif %}</div>
+  {% endif %}
+
+  {% if s.thumb_chat %}
+  <div class="title-chat">
+    {% for m in s.thumb_chat %}
+      <div class="chat-msg user">{{ '✅ Duyệt bản #' ~ m.parent_id ~ ' lên Canva' if m.approve else m.user_message }}{% if m.parent_id and not m.approve %} <span class="muted small">(sửa bản #{{ m.parent_id }} → bản #{{ m.id }})</span>{% endif %}</div>
+      {% if m.status == 'done' %}
+        <div class="chat-msg bot"><div class="md">{{ (m.output_md or 'Đã xong.')|md|safe }}</div><div class="small muted">{{ m.progress_msg or '' }}</div></div>
+      {% elif m.status in ('queued', 'running') %}
+        <div class="chat-msg bot small muted">⏳ {{ m.progress_msg or 'đang chờ tới lượt…' }}</div>
+      {% else %}
+        <div class="chat-msg bot small error">Không xong: {{ m.error or 'lỗi không rõ' }}</div>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if tc %}
+  <div class="chat-input">
+    <textarea class="input" id="thumbchat-{{ s.id }}" rows="2" {% if thumb_busy or busy %}disabled{% endif %}
+      placeholder="Nhắn để chỉnh bản #{{ tc.id }} (ra bản mới, bản cũ vẫn giữ): phóng to Joe · đổi ảnh giữa sang ảnh AI … (Ctrl+Enter để gửi)"
+      onkeydown="if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();sendThumbChat({{ s.id }})}"></textarea>
+    <button class="btn btn-small btn-primary" onclick="sendThumbChat({{ s.id }})" {% if thumb_busy or busy %}disabled{% endif %}>Gửi</button>
+  </div>
+  {% endif %}
+
+  {% if s.thumb_versions|length > 1 %}
+  <details class="raw">
+    <summary>🕘 Các bản thumbnail trước ({{ s.thumb_versions|length - 1 }})</summary>
+    <div class="row gap" style="flex-wrap:wrap;align-items:flex-start">
+      {% for v in s.thumb_versions[1:] %}
+      {% set vj = v.data or {} %}
+      {% set img = vj.thumbnail_path or vj.thumb_mock %}
+      <div style="width:300px">
+        <div class="small muted">Bản #{{ v.id }} · {{ (v.finished_at or '')[:16]|replace('T', ' ') }}{{ ' · đã duyệt' if vj.thumbnail_path }}{{ ' · từ Viết Title' if vj.from_title_run }}</div>
+        {% if img %}<a href="/media?path={{ img|urlencode }}" target="_blank"><img src="/media?path={{ img|urlencode }}&v={{ v.finished_at|urlencode }}" style="width:100%;border-radius:6px" alt="bản #{{ v.id }}"></a>{% endif %}
+        {% if vj.canva_edit_url %}<div class="small"><a href="{{ vj.canva_edit_url }}" target="_blank">🎨 Mở trên Canva</a></div>{% endif %}
+        {% if v.user_message and not v.approve %}<div class="small">💬 {{ v.user_message[:120] }}</div>{% endif %}
+        {% if not thumb_busy and not busy and vj.thumb_mock %}
+        <button class="btn btn-tiny" onclick="approveThumb({{ s.id }}, {{ v.id }})">✅ Duyệt bản này</button>
+        <button class="btn btn-tiny" onclick="editThumb({{ s.id }}, {{ v.id }})">✏️ Sửa tiếp từ bản này</button>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+</div>

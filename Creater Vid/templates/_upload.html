@@ -1,0 +1,54 @@
+{# ▶ Đăng YouTube box of the metadata step. `up` = {state, job, problems, channel, approved} from app._upload_context #}
+{% macro rel(path) %}{{ path.replace(p.dir ~ '\\', '').replace('\\', '/') if path else '' }}{% endmacro %}
+{% set st = up.state %}{% set job = up.job %}
+<div class="section-title">📺 Đăng YouTube</div>
+<div class="box col" id="upload-box" data-status="{{ st.status or '' }}">
+  <div class="small">
+    {% if up.channel %}Kênh <b>{{ up.channel.name }}</b>{% if up.channel.handle %} {{ up.channel.handle }}{% endif %} · profile GPM <b>{{ up.channel.profile_name }}</b>
+      · {{ 'tự đăng khi duyệt metadata' if p.yt_auto else 'chờ mày bấm Đăng' }}
+    {% else %}<span class="warn">Dự án chưa chọn kênh.</span> Chọn ở ✏️ Thông tin → Kênh YouTube.{% endif %}
+  </div>
+  {% if st.status in ('queued', 'running') %}
+    <div class="small"><span class="spin"></span> {{ 'Đang chờ lượt đăng khác xong' if st.status == 'queued' else 'Đang đăng' }}{% if st.progress %} · {{ st.progress }}{% endif %}</div>
+  {% elif st.status == 'done' %}
+    <div class="alert ok">✓ Đã lên YouTube{% if st.url %}: <a href="{{ st.url }}" target="_blank" rel="noopener">{{ st.url }}</a>{% endif %}
+      {% if st.scheduled_for %} · lên lịch {{ st.scheduled_for }}{% endif %} · kênh {{ st.channel or '' }}</div>
+    {% for w in st.warnings or [] %}<div class="alert">⚠ {{ w }}</div>{% endfor %}
+  {% elif st.status == 'failed' %}
+    <div class="alert err">✕ Đăng lỗi: {{ st.error }}</div>
+    {% if st.draft %}<div class="alert">⚠ File đã gửi lên YouTube trước khi lỗi: có một video nháp trong Studio của kênh. Hoàn tất tay ở Studio, hoặc xoá bản nháp rồi mới bấm Đăng lại.</div>{% endif %}
+  {% endif %}
+
+  {% if st.status not in ('queued', 'running') %}
+    {% if up.problems %}<div class="small warn">Chưa đăng được: {{ up.problems|join('; ') }}</div>{% endif %}
+    <div class="row gap wrap">
+      {# «Đăng ngay» picks Public/Unlisted/Private; «Lên lịch» only needs the time (YouTube keeps it private until then) #}
+      {% set sched = job.visibility == 'schedule' %}
+      <label class="small">Đăng
+        <select class="input" id="up-mode" style="padding:4px 6px" onchange="upSave()">
+          <option value="now" {{ 'selected' if not sched }}>Đăng ngay</option>
+          <option value="schedule" {{ 'selected' if sched }}>Lên lịch</option>
+        </select></label>
+      <label class="small up-now" style="{{ 'display:none' if sched }}">Quyền riêng tư
+        <select class="input" id="up-vis" style="padding:4px 6px" onchange="upSave()">
+          {% for k, label in [('public', 'Public · công khai'), ('unlisted', 'Unlisted · không công khai'), ('private', 'Private · riêng tư')] %}
+          <option value="{{ k }}" {{ 'selected' if job.visibility == k or (sched and k == 'private') }}>{{ label }}</option>{% endfor %}
+        </select></label>
+      <label class="small up-sched" style="{{ 'display:none' if not sched }}">Giờ đăng (giờ máy)
+        <input class="input" id="up-at" type="datetime-local" style="padding:4px 6px" onchange="upSave()" value="{{ (job.publish_at or job.default_at or '')[:16] }}"></label>
+      {% if job.time_note %}<span class="small muted up-sched" style="{{ 'display:none' if not sched }}">{{ job.time_note }}</span>{% endif %}
+      <span class="grow"></span>
+      {% if st.status == 'done' or st.draft %}
+        <button class="btn btn-small btn-ghost" onclick="startUpload(true)" {{ 'disabled' if up.problems }}>↻ Đăng lại (tạo video mới)</button>
+      {% else %}
+        <button class="btn btn-small btn-primary" onclick="startUpload(false)" {{ 'disabled' if up.problems or not up.approved }}
+          title="{{ '' if up.approved else 'Duyệt bước Metadata trước' }}">▶ Đăng YouTube</button>
+      {% endif %}
+    </div>
+    {% if not up.approved and not st.status %}<div class="small muted">Nút Đăng mở khi bước Metadata được duyệt{% if p.yt_auto %}; dự án ở chế độ tự đăng nên duyệt là app đăng luôn{% endif %}.</div>{% endif %}
+  {% endif %}
+
+  {% if st.log %}<details {{ 'open' if st.status in ('running', 'failed') }}><summary class="small muted">Nhật ký đăng ({{ st.log|length }})</summary>
+    <table class="table"><tbody>{% for e in st.log %}<tr><td class="mono small nowrap">{{ e.at }}</td><td class="small">{{ e.msg }}
+      {% if e.shot %} · <a href="/p/{{ p.id }}/file?path={{ rel(e.shot)|urlencode }}" target="_blank">ảnh</a>{% endif %}</td></tr>{% endfor %}</tbody></table></details>{% endif %}
+</div>

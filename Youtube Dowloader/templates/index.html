@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Downloader</title>
+    <meta name="description" content="Tải video YouTube nhanh chóng, ổn định.">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/app.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="app">
+
+        <!-- ═══ Header ═══ -->
+        <header class="header">
+            <div class="header-brand">
+                <div class="header-icon"><i class="fab fa-youtube"></i></div>
+                <h1>YouTube Downloader</h1>
+            </div>
+            <p>Dán link · Lấy info · Chọn chất lượng · Tải video</p>
+        </header>
+
+        <!-- ═══ URL Input ═══ -->
+        <div class="card">
+            <div class="card-title"><i class="fas fa-link"></i> Danh sách link YouTube</div>
+            <textarea class="url-textarea" id="url-input"
+                placeholder="Dán các link YouTube vào đây, mỗi link một dòng...&#10;&#10;Ví dụ:&#10;https://www.youtube.com/watch?v=abc123&#10;https://youtu.be/xyz789"></textarea>
+            <div class="hint"><i class="fas fa-info-circle"></i> Mỗi link một dòng. Hỗ trợ link đầy đủ và link rút gọn (youtu.be).</div>
+        </div>
+
+        <!-- ═══ Download Settings ═══ -->
+        <div class="card">
+            <div class="card-title"><i class="fas fa-sliders-h"></i> Cài đặt</div>
+            <div class="settings-grid">
+                <div class="field-group">
+                    <label class="field-label" for="resolution-select"><i class="fas fa-tv"></i> Độ phân giải tối đa</label>
+                    <select class="select-field" id="resolution-select">
+                        <option value="2160p">4K (2160p)</option>
+                        <option value="1440p">2K (1440p)</option>
+                        <option value="1080p" selected>Full HD (1080p)</option>
+                        <option value="720p">HD (720p)</option>
+                        <option value="480p">SD (480p)</option>
+                        <option value="360p">360p</option>
+                    </select>
+                </div>
+                <div class="field-group">
+                    <label class="field-label" for="download-dir"><i class="fas fa-folder-open"></i> Thư mục lưu trữ</label>
+                    <div class="input-group">
+                        <input class="input-field" type="text" id="download-dir" placeholder="Đang tải...">
+                        <button class="btn btn-ghost btn-sm" type="button" id="btn-browse-dir" onclick="browseFolder()" title="Chọn thư mục">
+                            <i class="fas fa-folder"></i> Chọn
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ Cookie Status ═══ -->
+        <div class="card" id="cookie-card">
+            <div class="card-title">
+                <i class="fas fa-cookie-bite"></i> Cookie YouTube (chống bot)
+                <span id="cookie-status-badge" style="margin-left:auto;font-size:12px"></span>
+            </div>
+            <div class="hint" id="cookie-status-text" style="margin-bottom:10px">
+                <i class="fas fa-info-circle"></i> Đang kiểm tra cookie...
+            </div>
+            <div class="btn-row">
+                <button class="btn btn-primary btn-sm" id="btn-auto-cookie" onclick="autoLoginCookies()">
+                    <i class="fab fa-youtube"></i> Đăng nhập & lấy cookie tự động
+                </button>
+                <button class="btn btn-ghost btn-sm" id="btn-import-cookie" onclick="importCookies()">
+                    <i class="fas fa-file-import"></i> Nhập / Làm mới cookies.txt
+                </button>
+                <button class="btn btn-ghost btn-sm" onclick="toggleCookieHelp()">
+                    <i class="fas fa-circle-question"></i> Cách lấy cookie
+                </button>
+            </div>
+            <div id="cookie-help" class="hint" style="display:none;margin-top:10px;line-height:1.7">
+                <b>Khi nào cần?</b> Khi báo lỗi <i>"Sign in to confirm you're not a bot"</i>
+                hoặc <i>"cookies.txt đã hết hạn"</i>.<br>
+                <b>Cách 1 — tự động (khuyên dùng):</b> bấm <b>"Đăng nhập & lấy cookie tự động"</b>.
+                Tool mở một cửa sổ YouTube riêng, bạn đăng nhập như bình thường, tool tự lưu
+                <code>cookies.txt</code> rồi đóng cửa sổ. Phiên đăng nhập đó không được dùng lại
+                nên cookie giữ được lâu hơn cách xuất tay.<br>
+                <b>Cách 2 — thủ công:</b><br>
+                1. Cài tiện ích <b>"Get cookies.txt LOCALLY"</b> cho Chrome/Edge.<br>
+                2. Mở <b>youtube.com</b>, đảm bảo đã <b>đăng nhập</b>.<br>
+                3. Bấm icon tiện ích → <b>Export</b> (định dạng Netscape) → lưu file <code>cookies.txt</code>.<br>
+                4. Bấm <b>"Nhập / Làm mới cookies.txt"</b> ở trên và chọn file vừa lưu.
+            </div>
+        </div>
+
+        <!-- ═══ Action Buttons ═══ -->
+        <div class="btn-row" style="margin-bottom:18px">
+            <button class="btn btn-ghost" id="btn-fetch" onclick="fetchVideoInfo()">
+                <i class="fas fa-search"></i> Lấy thông tin video
+            </button>
+            <button class="btn btn-primary" id="btn-download" onclick="startDownload()" disabled>
+                <i class="fas fa-download"></i> Tải xuống tất cả
+            </button>
+            <button class="btn btn-ghost btn-sm" onclick="repairTool()" title="Xóa cache yt-dlp">
+                <i class="fas fa-wrench"></i> Sửa lỗi
+            </button>
+        </div>
+
+        <!-- ═══ Video List ═══ -->
+        <div class="card" id="video-list-card" style="display:none">
+            <div class="card-title">
+                <i class="fas fa-list"></i> Danh sách video
+                <span id="video-count" style="margin-left:auto;font-size:12.5px;color:var(--text-muted)"></span>
+            </div>
+            <div class="stats-bar" id="stats-bar" style="display:none">
+                <div class="stat"><i class="fas fa-film"></i> <b id="stat-total">0</b> video</div>
+                <div class="stat"><i class="fas fa-clock"></i> Tổng: <b id="stat-duration">00:00</b></div>
+            </div>
+            <div class="video-list" id="video-list"></div>
+        </div>
+
+        <!-- ═══ Download Progress ═══ -->
+        <div class="card" id="progress-card" style="display:none">
+            <div class="card-title">
+                <i class="fas fa-tasks"></i> Tiến trình tải
+                <span id="progress-summary" style="margin-left:auto;font-size:12.5px;color:var(--text-muted)"></span>
+            </div>
+            <div id="download-list"></div>
+        </div>
+
+        <!-- ═══ History ═══ -->
+        <div class="card" id="history-card" style="display:none">
+            <div class="card-title">
+                <i class="fas fa-history"></i> Lịch sử
+                <span id="history-count" style="margin-left:6px;font-size:12.5px;color:var(--text-muted)"></span>
+                <button class="btn-danger" onclick="clearHistory()" style="margin-left:auto">
+                    <i class="fas fa-trash-alt"></i> Xóa
+                </button>
+            </div>
+            <div id="history-list"></div>
+        </div>
+
+    </div><!-- /app -->
+
+    <div class="toast-container" id="toast-container"></div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

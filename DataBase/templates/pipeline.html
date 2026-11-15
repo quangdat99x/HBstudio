@@ -1,0 +1,298 @@
+{% extends "base.html" %}
+{% set title = "Pipeline" %}
+{% block content %}
+<style>
+  main { max-width: none; }
+  .pl-wrap { display: grid; grid-template-columns: 1fr 380px; gap: 16px; height: calc(100vh - 92px); min-height: 520px; }
+  .pl-canvas { position: relative; overflow: hidden; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+    cursor: grab; touch-action: none; }
+  .pl-canvas.panning { cursor: grabbing; }
+  .pl-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  .pl-edges { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+  .pl-edge { fill: none; stroke: rgba(255,255,255,.18); stroke-width: 2; }
+  .pl-edge.flow { stroke: var(--info); stroke-dasharray: 6 6; animation: pl-dash .8s linear infinite; }
+  .pl-edge.off { stroke-dasharray: 3 6; opacity: .5; }
+  @keyframes pl-dash { to { stroke-dashoffset: -12; } }
+  .pl-node { position: absolute; width: 180px; background: var(--bg-input); border: 1px solid var(--border-hover); border-radius: 10px;
+    padding: 10px 12px; cursor: pointer; user-select: none; box-shadow: 0 4px 18px rgba(0,0,0,.35); transition: border-color .15s, box-shadow .15s; }
+  .pl-node:hover { border-color: var(--accent); }
+  .pl-node.sel { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow), 0 4px 18px rgba(0,0,0,.35); }
+  .pl-node.branch { border-style: dashed; }
+  .pl-node.off { opacity: .55; }
+  .pl-node.busy { border-color: var(--info); }
+  .pl-node.busy::after { content: ""; position: absolute; inset: -4px; border-radius: 13px; border: 2px solid var(--info); opacity: .5; animation: pl-pulse 1.6s ease-out infinite; pointer-events: none; }
+  .pl-node.err { border-color: var(--error); }
+  @keyframes pl-pulse { from { transform: scale(1); opacity: .6; } to { transform: scale(1.06); opacity: 0; } }
+  .pl-head { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+  .pl-head .ic { font-size: 18px; }
+  .pl-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; min-height: 15px; }
+  .pl-chips { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
+  .pl-chip { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-secondary); }
+  .pl-chip.run { border-color: var(--info); color: var(--info); }
+  .pl-chip.wait { border-color: var(--warning); color: var(--warning); }
+  .pl-chip.fail { border-color: var(--error); color: var(--error); }
+  .pl-chip.ok { border-color: rgba(52,211,153,.5); color: var(--success); }
+  .pl-bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+  .pl-bar > i { display: block; height: 100%; background: var(--info); transition: width .4s; }
+  .pl-port { position: absolute; top: 50%; width: 8px; height: 8px; margin-top: -4px; border-radius: 50%; background: var(--bg-card); border: 2px solid var(--border-hover); }
+  .pl-port.in { left: -5px; } .pl-port.out { right: -5px; }
+  .pl-tools { position: absolute; left: 12px; top: 12px; display: flex; gap: 6px; z-index: 5; align-items: center; }
+  .pl-legend { position: absolute; left: 12px; bottom: 10px; z-index: 5; font-size: 12px; color: var(--text-muted); display: flex; gap: 14px; flex-wrap: wrap; }
+  .pl-side { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+  .pl-wrap.chat { grid-template-columns: 1fr minmax(420px, 40%); }
+  .pl-tabs { display: flex; gap: 4px; padding: 8px 10px 0; border-bottom: 1px solid var(--border); flex: none; }
+  .pl-tabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--text-secondary); padding: 6px 10px 8px; font: inherit; font-size: 13px; cursor: pointer; }
+  .pl-tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
+  .pl-tabs button:disabled { opacity: .4; cursor: default; }
+  #pl-info { overflow-y: auto; flex: 1; min-height: 0; }
+  #pl-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  #pl-chat .dc { flex: 1; height: auto; }
+  .pl-side section { padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+  .pl-side h3 { font-size: 13px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
+  .pl-kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }
+  .pl-kv span:nth-child(odd) { color: var(--text-muted); }
+  .pl-ep { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+  .pl-ep:last-child { border-bottom: 0; }
+  .pl-ep .grow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pl-field { flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; }
+  .pl-field .input { width: 150px; padding: 5px 8px; font-size: 13px; }
+  .pl-saved { font-size: 12px; color: var(--success); opacity: 0; transition: opacity .3s; }
+  .pl-saved.show { opacity: 1; }
+  @media (max-width: 900px) { .pl-wrap { grid-template-columns: 1fr; height: auto; } .pl-canvas { height: 70vh; } }
+</style>
+
+<div class="pl-wrap">
+  <div class="pl-canvas" id="canvas">
+    <div class="pl-tools">
+      <button class="btn btn-small" onclick="fit()" title="Đưa toàn bộ sơ đồ vào khung">Vừa khung</button>
+      <button class="btn btn-small btn-ghost" onclick="resetLayout()" title="Trả các node về vị trí mặc định">Bố cục mặc định</button>
+      <button class="btn btn-small btn-ghost" onclick="openChat('_all')" title="Chat với Claude về cả pipeline: thêm node, đổi luồng…">💬 Chat cả pipeline</button>
+      <span class="muted small" id="pl-status"></span>
+    </div>
+    <div class="pl-world" id="world"><svg class="pl-edges" id="edges" width="2000" height="600"></svg></div>
+    <div class="pl-legend">
+      <span>Kéo nền để di chuyển · cuộn để phóng to · kéo node để sắp xếp</span>
+      <span>Viền nét đứt: nhánh chạy tay</span>
+    </div>
+  </div>
+  <aside class="pl-side" id="side">
+    <div class="pl-tabs"><button data-tab="info" class="on">Tổng quan</button><button data-tab="chat" disabled>💬 Chat sửa node</button></div>
+    <div id="pl-info"><section><h3>Chọn một node</h3><div class="muted small">Bấm vào một bước để xem tập đang ở đó, số liệu và chỉnh cài đặt của bước. Tab <b>💬 Chat sửa node</b> để nhắn Claude sửa code của bước hoặc thêm tính năng.</div></section></div>
+    <div id="pl-chat" hidden></div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/devchat.js"></script>
+<script>
+const LS_POS = 'pl-pos-v1', LS_VIEW = 'pl-view-v1';
+const W = 180, H = 96;
+let G = null, selected = null, view = { x: 20, y: 40, k: 0.8 }, pos = {};
+const canvas = document.getElementById('canvas'), world = document.getElementById('world'), svg = document.getElementById('edges');
+try { pos = JSON.parse(localStorage.getItem(LS_POS) || '{}'); } catch (e) { pos = {}; }
+let viewSaved = null; try { viewSaved = JSON.parse(localStorage.getItem(LS_VIEW) || 'null'); } catch (e) {}
+if (viewSaved) view = viewSaved;
+
+function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function applyView() { world.style.transform = `translate(${view.x}px,${view.y}px) scale(${view.k})`; }
+function p(n) { return pos[n.id] || { x: n.x, y: n.y }; }
+function fmtSec(s) { if (s == null) return '—'; if (s < 60) return s + ' giây'; if (s < 3600) return Math.round(s / 60) + ' phút'; return (s / 3600).toFixed(1) + ' giờ'; }
+
+function isRunning(id) { return (G.pipe.running || (G.pipe.current ? [G.pipe.current] : [])).includes(id); }
+
+function nodeState(n) {
+  const st = n.stats, waiting = (G.pipe.queue || []).filter(id => n.episodes.some(e => e.id === id)).length;
+  const runningEp = n.episodes.find(e => isRunning(e.id));
+  return { busy: st.running > 0 || !!runningEp, waiting, failed: n.failed_eps.length, st };
+}
+
+function render() {
+  if (!G) return;
+  // nodes
+  const seen = new Set();
+  for (const n of G.nodes) {
+    seen.add(n.id);
+    let el = document.getElementById('n-' + n.id);
+    if (!el) {
+      el = document.createElement('div'); el.className = 'pl-node'; el.id = 'n-' + n.id; el.dataset.id = n.id;
+      el.innerHTML = '<span class="pl-port in"></span><span class="pl-port out"></span><div class="pl-head"><span class="ic"></span><span class="nm"></span></div><div class="pl-sub"></div><div class="pl-chips"></div><div class="pl-bar"><i></i></div>';
+      world.appendChild(el); bindNodeDrag(el);
+    }
+    const s = nodeState(n), pp = p(n);
+    el.style.left = pp.x + 'px'; el.style.top = pp.y + 'px';
+    el.classList.toggle('sel', selected === n.id); el.classList.toggle('branch', n.branch);
+    el.classList.toggle('off', !n.enabled); el.classList.toggle('busy', s.busy); el.classList.toggle('err', s.failed > 0 && !s.busy);
+    el.querySelector('.ic').textContent = n.icon; el.querySelector('.nm').textContent = n.label;
+    const act = s.st.active[0];
+    el.querySelector('.pl-sub').textContent = !n.enabled ? 'đang tắt · bỏ qua' : act ? `${act.episode_id} · ${(act.message || '').slice(0, 40)}` : (s.st.avg_sec ? 'TB ' + fmtSec(s.st.avg_sec) : n.desc.slice(0, 34) + (n.desc.length > 34 ? '…' : ''));
+    const chips = [];
+    if (s.busy) chips.push(`<span class="pl-chip run">▶ ${Math.max(s.st.running, 1)} đang chạy</span>`);
+    if (n.n_here && n.id !== 'ready' && !s.busy) chips.push(`<span class="pl-chip wait">${n.n_here} tập ở đây</span>`);
+    if (n.id === 'ready') chips.push(`<span class="pl-chip ok">${n.n_here} tập</span>`);
+    if (s.failed) chips.push(`<span class="pl-chip fail">✕ ${s.failed} lỗi</span>`);
+    if (s.st.done && n.id !== 'ready') chips.push(`<span class="pl-chip ok">✓ ${s.st.done}</span>`);
+    el.querySelector('.pl-chips').innerHTML = chips.join('');
+    el.querySelector('.pl-bar').style.visibility = act ? 'visible' : 'hidden';
+    el.querySelector('.pl-bar > i').style.width = (act ? act.progress || 0 : 0) + '%';
+  }
+  world.querySelectorAll('.pl-node').forEach(el => { if (!seen.has(el.dataset.id)) el.remove(); });
+  drawEdges();
+}
+
+function drawEdges() {
+  const byId = Object.fromEntries(G.nodes.map(n => [n.id, n]));
+  let maxX = 0, maxY = 0, html = '';
+  for (const e of G.edges) {
+    const a = byId[e.from], b = byId[e.to]; if (!a || !b) continue;
+    const pa = p(a), pb = p(b), x1 = pa.x + W, y1 = pa.y + H / 2, x2 = pb.x, y2 = pb.y + H / 2, dx = Math.max(40, Math.abs(x2 - x1) / 2);
+    const sb = nodeState(b), flow = sb.busy, off = !b.enabled || !a.enabled;
+    html += `<path class="pl-edge${flow ? ' flow' : ''}${off ? ' off' : ''}" d="M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}"/>`;
+    maxX = Math.max(maxX, x1, x2 + W); maxY = Math.max(maxY, y1, y2 + H);
+  }
+  for (const n of G.nodes) { const pp = p(n); maxX = Math.max(maxX, pp.x + W); maxY = Math.max(maxY, pp.y + H + 40); }
+  svg.setAttribute('width', maxX + 200); svg.setAttribute('height', maxY + 200); svg.innerHTML = html;
+}
+
+// ------------------------------------------------------------ side panel
+function renderSide(rebuildForm) {
+  const n = G && G.nodes.find(x => x.id === selected); if (!n) return;
+  const side = document.getElementById('pl-info'), s = nodeState(n), st = s.st;
+  const kv = [['Đã xong', st.done], ['Bỏ qua (đã có)', st.skipped], ['Lỗi', st.failed], ['Thời gian TB', fmtSec(st.avg_sec)]];
+  if (st.by_status) for (const [k, v] of Object.entries(st.by_status)) if (!['done', 'failed'].includes(k)) kv.push([k, v]);
+  const actives = st.active.map(j => `<div class="pl-ep"><span class="badge job-running">${Math.round(j.progress || 0)}%</span><span class="grow"><a href="/episodes/${esc(j.episode_id)}">${esc(j.episode_id)}</a> <span class="muted">${esc((j.message || '').slice(0, 80))}</span></span></div>`).join('');
+  const epRow = (e, failed) => {
+    const run = isRunning(e.id), q =(G.pipe.queue || []).includes(e.id), btns = [];
+    if (run || q) btns.push(`<span class="badge job-running">${run ? 'đang chạy' : 'đang chờ'}</span><button class="btn btn-tiny btn-ghost" onclick="act('stop','${e.id}')">Dừng</button>`);
+    else {
+      if (e.stage === 'reviewing') btns.push(`<button class="btn btn-tiny btn-primary" onclick="act('approve','${e.id}')">Duyệt</button>`);
+      if (n.run_from && (failed || n.id !== 'ready')) btns.push(`<button class="btn btn-tiny" onclick="act('run','${e.id}','${n.run_from}')" title="Chạy lại từ bước ${esc(n.label)}">Chạy từ đây</button>`);
+      else if (failed || (e.stage !== 'ready' && e.stage !== 'reviewing')) btns.push(`<button class="btn btn-tiny" onclick="act('run','${e.id}')">Chạy tiếp</button>`);
+    }
+    return `<div class="pl-ep"><span class="grow"><a href="/episodes/${esc(e.id)}">${esc(e.id)}</a> <span class="muted">${esc(e.guest || '')}</span>${failed && e.stage_error ? `<div class="error small" style="white-space:normal">${esc(e.stage_error.slice(0, 180))}</div>` : ''}</span>${btns.join('')}</div>`;
+  };
+  const eps = n.episodes.map(e => epRow(e, false)).join(''), fails = n.failed_eps.map(e => epRow(e, true)).join('');
+  const lastErr = st.last_error && st.last_error.error ? `<div class="small"><span class="muted">Lỗi gần nhất (${esc(st.last_error.episode_id)}):</span> <span class="error">${esc(st.last_error.error.slice(0, 240))}</span></div>` : '';
+  const live = `
+    <section><div class="pl-head"><span class="ic">${n.icon}</span><span>${esc(n.label)}</span>${n.enabled ? '' : '<span class="badge">đang tắt</span>'}</div><div class="muted small">${esc(n.desc)}</div></section>
+    <section><h3>Số liệu</h3><div class="pl-kv">${kv.map(([k, v]) => `<span>${esc(k)}</span><span>${esc(v)}</span>`).join('')}</div>${lastErr}</section>
+    ${actives ? `<section><h3>Đang chạy</h3>${actives}</section>` : ''}
+    ${fails ? `<section><h3>Lỗi ở bước này (${n.failed_eps.length})</h3>${fails}</section>` : ''}
+    ${n.branch ? '' : `<section><h3>${n.id === 'ready' ? 'Tập mới xong' : 'Tập đang ở bước này'} (${n.n_here})</h3>${eps || '<div class="muted small">Không có tập nào.</div>'}</section>`}`;
+  let liveEl = document.getElementById('pl-live');
+  if (rebuildForm || !liveEl) {
+    side.innerHTML = `<div id="pl-live"></div>${n.fields.length ? `<section id="pl-form"><div class="row gap"><h3 class="grow">Cài đặt bước</h3><span class="pl-saved" id="pl-saved">đã lưu</span></div>${n.fields.map(fieldHtml).join('')}<div class="muted small">Lưu ngay khi đổi. Áp dụng cho tập chạy sau. <a href="/settings">Tất cả cài đặt</a></div></section>` : ''}`;
+    liveEl = document.getElementById('pl-live');
+    side.querySelectorAll('[data-key]').forEach(inp => inp.addEventListener('change', () => saveField(inp)));
+  }
+  liveEl.innerHTML = live;
+}
+
+function fieldHtml(f) {
+  const id = 'f-' + f.key, v = f.value == null ? '' : String(f.value);
+  let input;
+  if (f.kind === 'bool') input = `<input type="checkbox" id="${id}" data-key="${f.key}" data-kind="bool" ${v === '1' ? 'checked' : ''}>`;
+  else if (Array.isArray(f.kind)) {
+    const opts = f.kind.includes(v) ? f.kind : [v, ...f.kind];
+    input = `<select class="input" id="${id}" data-key="${f.key}">${opts.map(o => `<option value="${esc(o)}" ${o === v ? 'selected' : ''}>${o === '' ? '(mặc định)' : esc(o)}</option>`).join('')}</select>`;
+  } else input = `<input class="input" id="${id}" data-key="${f.key}" type="${f.kind === 'number' ? 'number' : 'text'}" step="any" value="${esc(v)}">`;
+  return `<label class="pl-field" for="${id}"><span>${esc(f.label)}</span>${input}</label>`;
+}
+
+async function saveField(inp) {
+  const val = inp.dataset.kind === 'bool' ? inp.checked : inp.value;
+  const r = await api('/api/pipeline/settings', { [inp.dataset.key]: val });
+  if (r.error) return toast(r.error);
+  const s = document.getElementById('pl-saved'); if (s) { s.classList.add('show'); setTimeout(() => s.classList.remove('show'), 1500); }
+  await load(); renderSide(false);
+}
+
+async function act(kind, id, fromStage) {
+  let r;
+  if (kind === 'stop') r = await api(`/api/episodes/${id}/stop`, {});
+  else if (kind === 'approve') r = await api(`/api/episodes/${id}/approve`, {});
+  else r = await api(`/api/episodes/${id}/run`, fromStage ? { from_stage: fromStage } : {});
+  toast(r.error || r.message || 'Đã gửi');
+  await load(); renderSide(false);
+}
+
+// ------------------------------------------------------------ interaction
+let tab = 'info', chat = null, chatNode = null;
+function nodeLabel(id) { if (id === '_all') return 'Toàn bộ pipeline'; const n = G && G.nodes.find(x => x.id === id); return n ? n.icon + ' ' + n.label : id; }
+function showTab(t) {
+  tab = t;
+  document.querySelectorAll('.pl-tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  document.getElementById('pl-info').hidden = t !== 'info';
+  document.getElementById('pl-chat').hidden = t !== 'chat';
+  document.querySelector('.pl-wrap').classList.toggle('chat', t === 'chat');
+  const target = selected || '_all';
+  if (t === 'chat' && chatNode !== target) {
+    if (chat) chat.destroy();
+    chat = DevChatUI.mount(document.getElementById('pl-chat'), { node: target, label: nodeLabel(target) }); chatNode = target;
+  }
+  if (t === 'chat' && chat) chat.focus();
+}
+document.querySelectorAll('.pl-tabs button').forEach(b => b.addEventListener('click', () => { if (!b.disabled) showTab(b.dataset.tab); }));
+function openChat(id) {
+  selected = id === '_all' ? null : id; render();
+  document.querySelector('[data-tab="chat"]').disabled = false;
+  if (id === '_all') { document.querySelector('[data-tab="info"]').disabled = true; }
+  else { document.querySelector('[data-tab="info"]').disabled = false; renderSide(true); }
+  showTab('chat');
+}
+function select(id) {
+  selected = id; render(); renderSide(true);
+  document.querySelector('[data-tab="chat"]').disabled = false; document.querySelector('[data-tab="info"]').disabled = false;
+  if (tab === 'chat') showTab('chat');
+}
+function bindNodeDrag(el) {
+  el.addEventListener('pointerdown', ev => {
+    ev.stopPropagation(); if (ev.button !== 0) return;
+    const n = G.nodes.find(x => x.id === el.dataset.id), start = p(n), sx = ev.clientX, sy = ev.clientY; let moved = false;
+    el.setPointerCapture(ev.pointerId);
+    const move = e => { const dx = (e.clientX - sx) / view.k, dy = (e.clientY - sy) / view.k;
+      if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
+      if (moved) { pos[n.id] = { x: Math.round(start.x + dx), y: Math.round(start.y + dy) }; el.style.left = pos[n.id].x + 'px'; el.style.top = pos[n.id].y + 'px'; drawEdges(); } };
+    const up = () => { el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up);
+      if (moved) save(LS_POS, pos); else select(n.id); };
+    el.addEventListener('pointermove', move); el.addEventListener('pointerup', up);
+  });
+}
+canvas.addEventListener('pointerdown', ev => {
+  if (ev.target.closest('.pl-tools')) return;
+  const sx = ev.clientX - view.x, sy = ev.clientY - view.y; canvas.classList.add('panning'); canvas.setPointerCapture(ev.pointerId);
+  const move = e => { view.x = e.clientX - sx; view.y = e.clientY - sy; applyView(); };
+  const up = () => { canvas.classList.remove('panning'); canvas.removeEventListener('pointermove', move); canvas.removeEventListener('pointerup', up); save(LS_VIEW, view); };
+  canvas.addEventListener('pointermove', move); canvas.addEventListener('pointerup', up);
+});
+canvas.addEventListener('wheel', ev => {
+  ev.preventDefault(); const r = canvas.getBoundingClientRect(), mx = ev.clientX - r.left, my = ev.clientY - r.top;
+  const k = Math.min(2, Math.max(0.3, view.k * (ev.deltaY < 0 ? 1.1 : 1 / 1.1)));
+  view.x = mx - (mx - view.x) * k / view.k; view.y = my - (my - view.y) * k / view.k; view.k = k; applyView(); save(LS_VIEW, view);
+}, { passive: false });
+
+function fit() {
+  if (!G) return; const r = canvas.getBoundingClientRect();
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const n of G.nodes) { const pp = p(n); x0 = Math.min(x0, pp.x); y0 = Math.min(y0, pp.y); x1 = Math.max(x1, pp.x + W); y1 = Math.max(y1, pp.y + H); }
+  const k = Math.min(1.4, Math.max(0.3, Math.min((r.width - 60) / (x1 - x0), (r.height - 100) / (y1 - y0))));
+  view = { k, x: (r.width - (x1 - x0) * k) / 2 - x0 * k, y: (r.height - (y1 - y0) * k) / 2 - y0 * k + 10 }; applyView(); save(LS_VIEW, view);
+}
+function resetLayout() { pos = {}; save(LS_POS, pos); render(); fit(); }
+
+async function load() {
+  try {
+    const r = await fetch('/api/pipeline/graph'); G = await r.json();
+    const q = G.pipe.queue || [];
+    const lanes = Object.values(G.pipe.lanes || {}).filter(l => l.running).map(l => `${l.label}: ${l.running} (${l.step})`);
+    const cur = lanes.length ? lanes.join(' · ') : G.pipe.current;
+    document.getElementById('pl-status').textContent = !G.worker ? 'Worker không chạy (chỉ xem)' : cur ? `Đang chạy ${cur}${q.length ? ' · chờ: ' + q.join(', ') : ''}` : (q.length ? 'Chờ: ' + q.join(', ') : 'Rảnh');
+    render();
+  } catch (e) { document.getElementById('pl-status').textContent = 'Mất kết nối Studio'; }
+}
+
+applyView();
+load().then(() => { if (!viewSaved) fit(); });
+setInterval(async () => { if (document.hidden) return; await load(); renderSide(false); }, 3000);
+</script>
+{% endblock %}

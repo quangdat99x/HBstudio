@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>✂️ Video Cutter</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <span class="material-icons-round logo-icon">content_cut</span>
+            <h1>Video Cutter</h1>
+        </div>
+        <div class="header-right">
+        <button class="btn btn-ghost" onclick="openOutput()">
+            <span class="material-icons-round">folder_open</span>
+            Mở Output
+        </button>
+        <div class="baby-avatar" title="Motivation ❤️">
+            <img src="/static/baby.jpg" alt="My baby">
+        </div>
+        </div>
+    </header>
+
+    <div class="split-layout">
+        <!-- ==================== LEFT PANEL ==================== -->
+        <aside class="panel-left">
+
+            <!-- BATCH: CUT FROM FOLDER (MULTI-EPISODE COMPILATION) -->
+            <section class="card" id="card-batch">
+                <div class="card-header">
+                    <span class="step-badge">📁</span>
+                    <span class="material-icons-round">dynamic_feed</span>
+                    <h2>Cắt Theo Folder (Đa Tập)</h2>
+                    <span class="badge-optional">Từ /tong-hop-rabbit-hole</span>
+                </div>
+                <div class="card-body">
+                    <p style="color:var(--text-muted);font-size:0.85rem;margin:0 0 12px">
+                        Chọn thư mục chứa các file video tập gốc, rồi import 1 file cutlist đa nguồn
+                        (do skill <code>tong-hop-rabbit-hole</code> xuất ra) — tool tự tìm đúng video
+                        cho từng đoạn và cắt tất cả cùng lúc, không cần chọn từng tập thủ công.
+                    </p>
+
+                    <div class="load-row">
+                        <button class="btn btn-primary" id="btn-select-folder" onclick="selectSourceFolder()">
+                            <span class="material-icons-round">folder_open</span>
+                            Chọn Thư Mục Chứa Các Tập
+                        </button>
+                        <span class="file-info" id="folder-info">Chưa chọn thư mục</span>
+                    </div>
+
+                    <div class="load-row">
+                        <button class="btn btn-ghost btn-add" id="btn-import-cutlist-multi" onclick="importCutlistMulti()" title="Import cutlist đa nguồn từ skill tong-hop-rabbit-hole">
+                            <span class="material-icons-round">file_open</span>
+                            Import Cutlist Đa Nguồn
+                        </button>
+                        <span class="file-info" id="batch-cutlist-info">Chưa import cutlist</span>
+                    </div>
+
+                    <div class="segments-list hidden" id="batch-segments-list"></div>
+
+                    <button class="btn btn-primary btn-export" id="btn-batch-cut" onclick="startBatchCut()" disabled>
+                        <span class="material-icons-round">content_cut</span>
+                        Cắt Tất Cả (Đa Tập)
+                    </button>
+
+                    <div class="progress-area hidden" id="batch-progress">
+                        <div class="export-segment-info" id="batch-segment-info">
+                            <span class="material-icons-round spin">sync</span>
+                            <span id="batch-segment-label">Đang chuẩn bị…</span>
+                        </div>
+                        <div class="progress-bar-track">
+                            <div class="progress-bar-fill" id="batch-fill"></div>
+                        </div>
+                        <div class="progress-label">
+                            <span id="batch-status-text">Đang cắt video…</span>
+                            <span id="batch-pct">0%</span>
+                        </div>
+                        <div class="export-details" id="batch-details">
+                            <span id="batch-speed" class="export-detail-item"></span>
+                            <span id="batch-eta" class="export-detail-item"></span>
+                            <span id="batch-seg-pct" class="export-detail-item"></span>
+                        </div>
+                    </div>
+
+                    <div class="results hidden" id="batch-results">
+                        <h3>
+                            <span class="material-icons-round" style="color:var(--success)">check_circle</span>
+                            Hoàn tất!
+                        </h3>
+                        <div id="batch-results-list"></div>
+                        <button class="btn btn-primary" onclick="openOutputMulti()">
+                            <span class="material-icons-round">folder_open</span>
+                            Mở thư mục Output
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <div class="mode-divider">— hoặc cắt 1 video thủ công —</div>
+
+            <!-- STEP 1: LOAD VIDEO -->
+            <section class="card" id="card-load">
+                <div class="card-header">
+                    <span class="step-badge">1</span>
+                    <span class="material-icons-round">movie</span>
+                    <h2>Chọn Video</h2>
+                </div>
+                <div class="card-body">
+                    <div class="load-row">
+                        <button class="btn btn-primary" id="btn-select-video" onclick="selectVideo()">
+                            <span class="material-icons-round">folder_open</span>
+                            Chọn File Video
+                        </button>
+                        <span class="file-info" id="video-info">Chưa chọn video</span>
+                    </div>
+                    <div class="load-row" id="transcript-row">
+                        <span class="transcript-status" id="transcript-status"></span>
+                        <button class="btn btn-ghost btn-sm" id="btn-load-transcript" onclick="loadTranscript()" style="display:none">
+                            <span class="material-icons-round">description</span>
+                            Chọn transcript khác
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- WHISPER TRANSCRIPT -->
+            <section class="card hidden" id="card-whisper">
+                <div class="card-header">
+                    <span class="step-badge">✦</span>
+                    <span class="material-icons-round">mic</span>
+                    <h2>Tạo Transcript (Whisper)</h2>
+                    <span class="badge-optional">Tùy chọn</span>
+                </div>
+                <div class="card-body">
+                    <div class="whisper-not-installed hidden" id="whisper-not-installed">
+                        <div class="alert alert-warning">
+                            <span class="material-icons-round">warning</span>
+                            <div>
+                                <strong>Chưa cài faster-whisper!</strong>
+                                <p>Chạy: <code>pip install faster-whisper</code></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="whisper-controls">
+                        <div class="whisper-options">
+                            <div class="option-group">
+                                <label>Model:</label>
+                                <select id="whisper-model">
+                                    <option value="tiny">tiny (nhanh)</option>
+                                    <option value="base" selected>base (cân bằng)</option>
+                                    <option value="small">small (tốt)</option>
+                                    <option value="medium">medium (rất tốt)</option>
+                                    <option value="large-v3">large-v3 (tốt nhất)</option>
+                                </select>
+                            </div>
+                            <div class="option-group">
+                                <label>Ngôn ngữ:</label>
+                                <select id="whisper-language">
+                                    <option value="auto" selected>🔍 Tự nhận diện</option>
+                                    <option value="vi">Tiếng Việt</option>
+                                    <option value="en">English</option>
+                                    <option value="ja">Japanese</option>
+                                    <option value="ko">Korean</option>
+                                    <option value="zh">Chinese</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="device-info" id="whisper-device-info">
+                            <span class="material-icons-round">memory</span>
+                            <span id="whisper-device-text">Đang kiểm tra...</span>
+                        </div>
+
+                        <button class="btn btn-accent btn-whisper" id="btn-whisper" onclick="startWhisper()">
+                            <span class="material-icons-round">graphic_eq</span>
+                            Chạy Whisper Transcript
+                        </button>
+                    </div>
+
+                    <div class="whisper-progress hidden" id="whisper-progress">
+                        <div class="progress-bar-track">
+                            <div class="progress-bar-fill whisper-fill" id="whisper-fill"></div>
+                        </div>
+                        <div class="progress-label">
+                            <span id="whisper-status-text">Đang khởi tạo...</span>
+                            <span id="whisper-pct">0%</span>
+                        </div>
+                        <button class="btn btn-stop" id="btn-whisper-stop" onclick="stopWhisper()">
+                            <span class="material-icons-round">stop_circle</span>
+                            Dừng Whisper
+                        </button>
+                    </div>
+
+                    <div class="whisper-result hidden" id="whisper-result">
+                        <div class="alert alert-success" id="whisper-result-alert">
+                            <span class="material-icons-round" id="whisper-result-icon">check_circle</span>
+                            <span id="whisper-result-text"></span>
+                        </div>
+                        <div class="save-transcript-row hidden" id="save-transcript-row">
+                            <span class="save-label">Lưu transcript:</span>
+                            <button class="btn btn-ghost btn-sm" onclick="saveTranscript('json')">
+                                <span class="material-icons-round">data_object</span>
+                                .JSON
+                            </button>
+                            <button class="btn btn-ghost btn-sm" onclick="saveTranscript('txt')">
+                                <span class="material-icons-round">text_snippet</span>
+                                .TXT
+                            </button>
+                            <span class="save-status" id="save-status"></span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- WHISPER QUEUE -->
+            <section class="card" id="card-whisper-queue">
+                <div class="card-header">
+                    <span class="step-badge">✦</span>
+                    <span class="material-icons-round">queue</span>
+                    <h2>Hàng đợi Whisper</h2>
+                    <span class="badge-optional">Batch</span>
+                    <span class="seg-count" id="queue-count">0</span>
+                </div>
+                <div class="card-body">
+                    <p style="color:var(--text-muted);font-size:0.85rem;margin:0 0 10px">
+                        Thêm nhiều video, nhấn <strong>Bắt đầu</strong> — Whisper chạy lần lượt và tự lưu transcript bên cạnh video.
+                    </p>
+
+                    <div class="whisper-options" style="margin-bottom:10px">
+                        <div class="option-group">
+                            <label>Model:</label>
+                            <select id="queue-model">
+                                <option value="tiny">tiny (nhanh)</option>
+                                <option value="base" selected>base (cân bằng)</option>
+                                <option value="small">small (tốt)</option>
+                                <option value="medium">medium (rất tốt)</option>
+                                <option value="large-v3">large-v3 (tốt nhất)</option>
+                            </select>
+                        </div>
+                        <div class="option-group">
+                            <label>Ngôn ngữ:</label>
+                            <select id="queue-language">
+                                <option value="auto" selected>🔍 Tự nhận diện</option>
+                                <option value="vi">Tiếng Việt</option>
+                                <option value="en">English</option>
+                                <option value="ja">Japanese</option>
+                                <option value="ko">Korean</option>
+                                <option value="zh">Chinese</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+                        <button class="btn btn-ghost btn-sm" id="btn-queue-add" onclick="queueAddVideo()">
+                            <span class="material-icons-round">add_circle</span>
+                            Thêm video
+                        </button>
+                        <button class="btn btn-accent btn-sm" id="btn-queue-start" onclick="queueStart()" disabled>
+                            <span class="material-icons-round">play_circle</span>
+                            Bắt đầu xử lý
+                        </button>
+                        <button class="btn btn-ghost btn-sm" id="btn-queue-clear" onclick="queueClear()" disabled>
+                            <span class="material-icons-round">delete_sweep</span>
+                            Xóa hàng
+                        </button>
+                    </div>
+
+                    <div id="queue-list" style="display:flex;flex-direction:column;gap:6px"></div>
+                </div>
+            </section>
+
+            <!-- TRANSCRIPT LIST -->
+            <section class="card hidden" id="card-transcript">
+                <div class="card-header clickable" onclick="toggleTranscript()">
+                    <span class="material-icons-round">description</span>
+                    <h2>Transcript</h2>
+                    <span class="seg-count" id="seg-count"></span>
+                    <span class="material-icons-round chevron" id="transcript-chevron">expand_more</span>
+                </div>
+
+                <!-- ===== TEXT SEARCH BAR ===== -->
+                <div class="transcript-search" id="transcript-search">
+                    <div class="search-input-row">
+                        <span class="material-icons-round search-icon">search</span>
+                        <input type="text" id="transcript-search-input"
+                               placeholder="Nhập text để tìm trong transcript..."
+                               oninput="onTranscriptSearch(this.value)">
+                        <button class="btn-search-clear hidden" id="btn-search-clear" onclick="clearTranscriptSearch()" title="Xoá tìm kiếm">
+                            <span class="material-icons-round">close</span>
+                        </button>
+                    </div>
+                    <div class="search-results-info hidden" id="search-results-info">
+                        <span class="material-icons-round" style="font-size:14px">filter_list</span>
+                        <span id="search-results-count">0 kết quả</span>
+                    </div>
+                    <div class="search-results-list hidden" id="search-results-list"></div>
+                </div>
+
+                <div class="card-body transcript-body" id="transcript-body">
+                    <div class="transcript-list" id="transcript-list"></div>
+                </div>
+                <!-- Save transcript options -->
+                <div class="card-footer" id="transcript-save-bar">
+                    <span class="save-label">💾 Lưu transcript:</span>
+                    <button class="btn btn-ghost btn-sm" onclick="saveTranscript('json')" title="JSON với timestamp">
+                        <span class="material-icons-round">data_object</span>
+                        .JSON
+                    </button>
+                    <button class="btn btn-ghost btn-sm" onclick="saveTranscript('txt')" title="TXT có timestamp [HH:MM:SS]">
+                        <span class="material-icons-round">schedule</span>
+                        .TXT + Timestamp
+                    </button>
+                    <button class="btn btn-ghost btn-sm" onclick="saveTranscript('txt_plain')" title="TXT chỉ text, không timestamp">
+                        <span class="material-icons-round">text_snippet</span>
+                        .TXT thuần
+                    </button>
+                    <span class="save-status" id="save-status"></span>
+                </div>
+            </section>
+
+            <!-- CUT SEGMENTS -->
+            <section class="card hidden" id="card-segments">
+                <div class="card-header">
+                    <span class="step-badge">2</span>
+                    <span class="material-icons-round">content_cut</span>
+                    <h2>Đoạn cắt</h2>
+                    <span class="seg-count" id="segments-count">0</span>
+                </div>
+                <div class="card-body">
+                    <div class="segments-list" id="segments-list"></div>
+
+                    <div style="display:flex;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-ghost btn-add" onclick="addSegment()">
+                            <span class="material-icons-round">add_circle</span>
+                            Thêm đoạn cắt
+                        </button>
+                        <button class="btn btn-ghost btn-add" id="btn-import-cutlist" onclick="importCutlist()" title="Import danh sách cắt từ skill /chon-noi-dung-jre">
+                            <span class="material-icons-round">file_open</span>
+                            Import Cutlist
+                        </button>
+                    </div>
+
+                    <button class="btn btn-primary btn-export" id="btn-export" onclick="exportAll()" disabled>
+                        <span class="material-icons-round">content_cut</span>
+                        Cắt & Xuất tất cả
+                    </button>
+                    <label style="display:flex;align-items:center;gap:8px;font-size:0.85rem;color:var(--text-muted);margin-top:8px;cursor:pointer">
+                        <input type="checkbox" id="chk-sidecars">
+                        Xuất kèm transcript + manifest cho từng clip (chỉ cần cho /viet-prompt-v2)
+                    </label>
+
+                    <div class="progress-area hidden" id="export-progress">
+                        <div class="export-segment-info" id="export-segment-info">
+                            <span class="material-icons-round spin">sync</span>
+                            <span id="export-segment-label">Đang chuẩn bị…</span>
+                        </div>
+                        <div class="progress-bar-track">
+                            <div class="progress-bar-fill" id="export-fill"></div>
+                        </div>
+                        <div class="progress-label">
+                            <span id="export-status-text">Đang cắt video…</span>
+                            <span id="export-pct">0%</span>
+                        </div>
+                        <div class="export-details" id="export-details">
+                            <span id="export-speed" class="export-detail-item"></span>
+                            <span id="export-eta" class="export-detail-item"></span>
+                            <span id="export-seg-pct" class="export-detail-item"></span>
+                        </div>
+                    </div>
+
+                    <div class="results hidden" id="export-results">
+                        <h3>
+                            <span class="material-icons-round" style="color:var(--success)">check_circle</span>
+                            Hoàn tất!
+                        </h3>
+                        <div id="results-list"></div>
+                        <button class="btn btn-primary" onclick="openOutput()">
+                            <span class="material-icons-round">folder_open</span>
+                            Mở thư mục Output
+                        </button>
+                    </div>
+                </div>
+            </section>
+            <!-- EXPORT PROMPTS UTILITY -->
+            <section class="card" id="card-export-prompts">
+                <div class="card-header">
+                    <span class="step-badge">✦</span>
+                    <span class="material-icons-round">table_view</span>
+                    <h2>Xuất Prompts → CSV</h2>
+                    <span class="badge-optional">Sau skill</span>
+                </div>
+                <div class="card-body">
+                    <p class="export-prompts-hint">
+                        Sau khi chạy <code>/viet-prompt-v2</code> xong, chọn file
+                        <code>.manifest.json</code> để xuất ra <code>.txt</code> —
+                        mỗi dòng một prompt, copy thẳng vào flow.
+                    </p>
+
+                    <button class="btn btn-primary btn-export-prompts" id="btn-export-prompts" onclick="exportPrompts()">
+                        <span class="material-icons-round">upload_file</span>
+                        Chọn manifest.json &rarr; Xuất CSV
+                    </button>
+
+                    <div class="export-prompts-result hidden" id="export-prompts-result"></div>
+                </div>
+            </section>
+        </aside>
+
+        <!-- ==================== RESIZE HANDLE ==================== -->
+        <div class="resize-handle" id="resize-handle" title="Kéo để thay đổi kích thước">
+            <div class="resize-dots">
+                <span></span><span></span><span></span>
+            </div>
+        </div>
+
+        <!-- ==================== RIGHT PANEL (VIDEO) ==================== -->
+        <section class="panel-right" id="panel-right">
+            <div class="video-placeholder" id="video-placeholder">
+                <span class="material-icons-round">videocam</span>
+                <p>Chọn video để bắt đầu</p>
+            </div>
+            <div class="video-area hidden" id="video-area">
+                <div class="video-wrapper">
+                    <video id="video-player" controls preload="metadata">
+                        Trình duyệt không hỗ trợ video.
+                    </video>
+                    <div class="video-loading-overlay hidden" id="video-loading-overlay">
+                        <div class="video-loading-spinner"></div>
+                        <div class="video-loading-pct" id="video-loading-pct">0%</div>
+                    </div>
+                </div>
+
+                <!-- ===== CUSTOM TIMELINE WITH MARKERS ===== -->
+                <div class="timeline-container" id="timeline-container">
+                    <div class="timeline-viewport" id="timeline-viewport">
+                        <div class="timeline-bar" id="timeline-bar">
+                            <!-- Segment regions + markers rendered by JS -->
+                            <div class="timeline-playhead" id="timeline-playhead"></div>
+                        </div>
+                    </div>
+                    <div class="timeline-bottom">
+                        <span class="timeline-time" id="timeline-time-start">00:00:00</span>
+                        <div class="timeline-zoom-controls">
+                            <button class="btn-zoom" onclick="timelineZoom(-1)" title="Thu nhỏ">−</button>
+                            <input type="range" id="timeline-zoom-slider" min="1" max="20" step="0.5" value="1"
+                                   oninput="timelineSetZoom(parseFloat(this.value))" title="Zoom">
+                            <button class="btn-zoom" onclick="timelineZoom(1)" title="Phóng to">+</button>
+                            <button class="btn-zoom btn-zoom-reset" onclick="timelineSetZoom(1)" title="Reset zoom">1x</button>
+                            <span class="zoom-label" id="zoom-label">1x</span>
+                        </div>
+                        <span class="timeline-time" id="timeline-time-end">00:00:00</span>
+                    </div>
+                </div>
+
+                <div class="player-controls">
+                    <button class="btn btn-icon" onclick="skip(-30)" title="Lùi 30s">
+                        <span class="material-icons-round">replay_30</span>
+                    </button>
+                    <button class="btn btn-icon" onclick="skip(-5)" title="Lùi 5s">
+                        <span class="material-icons-round">replay_5</span>
+                    </button>
+                    <button class="btn btn-icon btn-play" onclick="togglePlay()" title="Phát/Dừng">
+                        <span class="material-icons-round" id="play-icon">play_arrow</span>
+                    </button>
+                    <button class="btn btn-icon" onclick="skip(5)" title="Tới 5s">
+                        <span class="material-icons-round">forward_5</span>
+                    </button>
+                    <button class="btn btn-icon" onclick="skip(30)" title="Tới 30s">
+                        <span class="material-icons-round">forward_30</span>
+                    </button>
+                    <span class="current-time" id="current-time">00:00:00</span>
+                </div>
+                <div class="shortcuts-hint">Phím tắt: Space=▶⏸  ←→=±5s  Shift+←→=±30s</div>
+            </div>
+        </section>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

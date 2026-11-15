@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+{% from "_yt.html" import yt_picker %}
+{% set title = p.title %}
+{% block content %}
+<section class="card">
+  <div class="card-header">
+    <div class="col" style="gap:2px">
+      <h2>{{ KINDS[kind].icon }} {{ p.title }} <a class="small muted" style="font-weight:400" href="{{ '/news/projects' if kind == 'news' else '/doc' }}">← dự án {{ KINDS[kind].label|lower }}</a>{% if p.archived %} <span class="pill gray">đã lưu trữ</span>{% endif %}</h2>
+      <div class="small muted">{{ p.topic }} · {{ p.format }}{% if p.target_sec %} · ≥ {{ (p.target_sec // 60) }}:{{ '%02d'|format(p.target_sec % 60) }}{% endif %}
+        · {{ p.language }} · nguyên liệu <b>${{ '%.2f'|format(costs.total) }}</b>/${{ '%g'|format(p.budget_usd or 0) }}
+        · Claude <span id="cost">${{ '%.2f'|format(p.cost_usd or 0) }}</span>
+        {% if p.use_jre %}· nguồn JRE{% endif %}{% if p.auto_advance %} · <span class="warn">tự chạy</span>{% endif %}
+        {% if kind == 'doc' %}· {% if p.pipeline == 'fullframe' %}<span class="pill ok">ảnh liền khối → 3D</span>{% elif p.pipeline == 'stacked' %}<span class="pill ok">xếp lớp GPT → camera 3D</span>{% elif p.pipeline == 'dossier' %}<span class="pill ok">hồ sơ tư liệu thật</span>{% else %}<span class="pill gray">ghép lớp</span>{% endif %}{% endif %}</div>
+    </div>
+    <div class="row gap wrap">
+      {% if kind == 'doc' %}<a class="btn btn-small btn-primary" href="/p/{{ p.id }}/blueprint" title="Bản thiết kế lập ở bước 1: khung xương các hồi, nguyên liệu cần, kế hoạch các bước, ngân sách">🧭 Sơ đồ dự án</a>{% endif %}
+      {% if kind == 'doc' %}<a class="btn btn-small btn-ghost" href="/p/{{ p.id }}/overview" title="Cả phim trên một trang: nội dung, nhân vật, bối cảnh, bằng chứng, phân cảnh">🗺 Tổng quan</a>{% endif %}
+      <button class="btn btn-small btn-ghost" onclick="openSub('')">📂 Thư mục</button>
+      <a class="btn btn-small btn-ghost" href="{{ rules_url }}" title="Bộ quy tắc của riêng mảng {{ KINDS[kind].label|lower }}">📘 Quy tắc {{ KINDS[kind].label|lower }} v{{ rules.num }}</a>
+      <button class="btn btn-small btn-ghost" onclick="document.getElementById('edit-dialog').showModal()">✏️ Thông tin</button>
+      <button class="btn btn-small btn-ghost" onclick="archive({{ 0 if p.archived else 1 }})">{{ 'Bỏ lưu trữ' if p.archived else 'Lưu trữ' }}</button>
+      <button class="btn btn-small btn-ghost btn-danger" onclick="document.getElementById('del-dialog').showModal()">Xóa</button>
+    </div>
+  </div>
+  <div class="card-body">
+    <div id="stepper">{% include "_stepper.html" %}</div>
+    {% if p.brief %}<div class="small"><span class="muted">Yêu cầu:</span> {{ p.brief }}</div>{% endif %}
+  </div>
+</section>
+
+<section class="card" id="media-card" {{ 'hidden' if not mitems }}>{% include "_media.html" %}</section>
+
+<div class="proj-grid-main">
+  <section class="card" id="panel">{% include "_step_panel.html" %}</section>
+  <div class="col" style="gap:16px">
+    <section class="card">
+      <div class="card-header"><h2>💬 Claude</h2>
+        <div class="row gap"><span class="small muted">Ctrl+Enter để gửi</span>
+          <button class="btn btn-small btn-ghost" id="stop-btn" onclick="stopTurn()" {{ 'hidden' if not busy }}>■ Dừng</button></div></div>
+      <div class="card-body">
+        <div class="chat-thread" id="chat">{% include "_chat.html" %}</div>
+        <div class="chat-input">
+          <textarea class="input" id="msg" rows="3" {{ 'disabled' if busy }}
+            placeholder="{{ 'Nhắn để sửa bước đang xem. VD: bỏ tin Белгород · tin 3 thêm phản hồi của phía Ukraina · ảnh cảnh 5 sai sự kiện, thay bằng bản đồ · cập nhật quy tắc: …' if kind == 'news' else 'Nhắn để sửa bước đang xem. VD: thêm một hồi về Dead Sea Scrolls · Azazel trông già hơn, áo đỏ sẫm · cảnh 4 máy quay chậm lại · cập nhật quy tắc: …' }}"
+            onkeydown="if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();sendMsg()}"></textarea>
+          <button class="btn btn-small btn-primary" id="send-btn" onclick="sendMsg()" {{ 'disabled' if busy }}>Gửi</button>
+        </div>
+        <div class="small muted" id="chat-hint">Tin nhắn gửi kèm bước bạn đang xem (<span id="chat-step">{{ step.num }} · {{ step.name }}</span>).</div>
+      </div>
+    </section>
+    <section class="card">
+      <details>
+        <summary class="card-header" style="border:none"><h2>🕘 Nhật ký dự án</h2></summary>
+        <div class="card-body" style="padding-top:0">
+          <table class="table"><tbody>
+          {% for e in events %}<tr><td class="small muted nowrap">{{ e.created_at.replace('T', ' ')[5:16] }}</td><td class="small">{{ e.text }}</td></tr>
+          {% else %}<tr><td class="small muted">Chưa có.</td></tr>{% endfor %}
+          </tbody></table>
+        </div>
+      </details>
+    </section>
+  </div>
+</div>
+
+<dialog id="edit-dialog" class="modal wide">
+  <h3>Thông tin dự án</h3>
+  <div class="grid2">
+    <label>Tên {{ 'video' if kind == 'news' else 'phim' }}<input class="input" id="ed-title" value="{{ p.title }}"></label>
+    <label>Chủ đề<input class="input" id="ed-topic" value="{{ p.topic }}"></label>
+  </div>
+  <label style="margin-top:10px">Yêu cầu riêng<textarea class="input" id="ed-brief" rows="4">{{ p.brief or '' }}</textarea></label>
+  <div class="grid4" style="margin-top:10px">
+    <label>Ngôn ngữ<input class="input" id="ed-language" value="{{ p.language or 'en' }}"></label>
+    <label>Định dạng<select class="input" id="ed-format">
+      <option value="16:9" {{ 'selected' if p.format == '16:9' }}>16:9</option><option value="9:16" {{ 'selected' if p.format == '9:16' }}>9:16</option></select></label>
+    <label>Thời lượng tối thiểu (giây)<input class="input" id="ed-target" type="number" value="{{ p.target_sec or '' }}"></label>
+    <label>Ngân sách nguyên liệu (USD)<input class="input" id="ed-budget" type="number" min="0" step="0.5" value="{{ '%g'|format(p.budget_usd or 0) }}"></label>
+  </div>
+  <div class="grid2" style="margin-top:10px">
+    <label>Khán giả<input class="input" id="ed-audience" value="{{ p.audience or '' }}"></label>
+    {% if kind == 'doc' %}<label>Phong cách hình ảnh<input class="input" id="ed-style" value="{{ p.style or '' }}"></label>{% endif %}
+  </div>
+  <div class="row gap" style="margin-top:10px">
+    {% if kind == 'doc' %}<label class="check"><input type="checkbox" id="ed-jre" {{ 'checked' if p.use_jre }}> Dùng kho highlight JRE</label>{% endif %}
+    <label class="check"><input type="checkbox" id="ed-auto" {{ 'checked' if p.auto_advance }}> Tự chạy các bước, không chờ duyệt</label>
+    {% if kind == 'doc' %}<label class="check" title="Ghép lớp: nhân vật tách nền ghép lên nền vẽ (cũ) · Ảnh liền khối: mỗi cảnh một ảnh hoàn chỉnh, camera 3D nhẹ · Xếp lớp: GPT vẽ 2–4 lớp riêng của mỗi cảnh, engine xếp lớp và đi camera thật · Hồ sơ tư liệu: ảnh, trang tài liệu, footage thật dựng như vật chứng trên bàn, highlight chạy theo lời dẫn; AI chỉ tái hiện cảnh không có ảnh">Cách dựng hình <select class="input" id="ed-pipeline" style="padding:4px 6px"><option value="layered" {{ 'selected' if p.pipeline == 'layered' }}>Ghép lớp (cũ)</option><option value="fullframe" {{ 'selected' if p.pipeline == 'fullframe' }}>Ảnh liền khối → 3D</option><option value="stacked" {{ 'selected' if p.pipeline == 'stacked' }}>Xếp lớp: GPT vẽ từng lớp → camera 3D</option><option value="dossier" {{ 'selected' if p.pipeline == 'dossier' }}>Hồ sơ tư liệu: ảnh, tài liệu thật (mới)</option></select></label>{% endif %}
+  </div>
+  <div style="margin-top:10px">{{ yt_picker('ed', (p.yt_profile ~ '|' ~ p.yt_channel) if p.yt_channel else '', p.yt_auto, p.yt_vis or '') }}</div>
+  {% if kind == 'doc' %}<p class="small muted">Đổi cách dựng hình khi đã qua bước 3 thì cần chạy lại bước 3, 4 và 6.</p>{% endif %}
+  <p class="small muted">Claude đọc project.json ở lượt kế tiếp, nên thay đổi áp dụng từ lượt sau.</p>
+  <div class="row gap end">
+    <button class="btn btn-small btn-ghost" onclick="document.getElementById('edit-dialog').close()">Huỷ</button>
+    <button class="btn btn-small btn-primary" onclick="saveInfo()">Lưu</button>
+  </div>
+</dialog>
+
+<dialog id="redo-dialog" class="modal">
+  <h3>Làm lại ảnh <span class="mono" id="redo-key"></span></h3>
+  <label>Muốn sửa gì? (Claude sẽ tạo lại ảnh này và cập nhật manifest)
+    <textarea class="input" id="redo-note" rows="3" placeholder="VD: mặt trông già hơn, cánh xòe rộng hơn, bỏ hoa văn trên áo"></textarea></label>
+  <div class="row gap end">
+    <button class="btn btn-small btn-ghost" onclick="document.getElementById('redo-dialog').close()">Huỷ</button>
+    <button class="btn btn-small btn-primary" onclick="sendRedo()">Gửi cho Claude</button>
+  </div>
+</dialog>
+
+<dialog id="del-dialog" class="modal">
+  <h3>Xóa dự án "{{ p.title }}"?</h3>
+  <p class="small">Xóa dự án và toàn bộ cuộc trò chuyện khỏi app. Bộ quy tắc {{ KINDS[kind].label|lower }} giữ nguyên.</p>
+  <label class="check small"><input type="checkbox" id="del-folder"> Chuyển cả thư mục dự án vào Thùng rác ({{ p.dir }})</label>
+  <label style="margin-top:10px">Gõ XOA để xác nhận<input class="input" id="del-confirm"></label>
+  <div class="row gap end">
+    <button class="btn btn-small btn-ghost" onclick="document.getElementById('del-dialog').close()">Huỷ</button>
+    <button class="btn btn-small btn-danger-solid" onclick="deleteProject()">Xóa</button>
+  </div>
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script>
+const PID = {{ p.id }};
+const STEP_NAMES = {{ flow.names()|tojson }};
+let step = '{{ step.key }}', polling = null, lastSig = null, currentTab = null;
+
+function setBusy(b){
+  document.getElementById('msg').disabled = b; document.getElementById('send-btn').disabled = b;
+  document.getElementById('stop-btn').hidden = !b;
+}
+function scrollChat(){ const c = document.getElementById('chat'); c.scrollTop = c.scrollHeight; }
+function showTab(id){
+  const panes = document.querySelectorAll('#panel .tab-pane'); if(!panes.length) return;
+  if(!id || !document.getElementById(id)) id = panes[0].id;
+  panes.forEach(el => el.hidden = el.id !== id);
+  document.querySelectorAll('#panel .tab-btn').forEach(b => b.classList.toggle('btn-primary', b.dataset.tab === id));
+  currentTab = id;
+}
+async function refreshPanel(){
+  const note = document.getElementById('step-note'); const keep = note ? note.value : '';
+  const html = await (await fetch(`/p/${PID}/panel/${step}`)).text();
+  document.getElementById('panel').innerHTML = html; showTab(currentTab);
+  const n2 = document.getElementById('step-note'); if(n2 && keep) n2.value = keep;
+  watchUpload();
+}
+// ▶ Đăng YouTube (metadata step): the upload runs in the app, the box refreshes until it is done
+let upTimer = null;
+function watchUpload(){
+  const b = document.getElementById('upload-box');
+  if(b && ['queued', 'running'].includes(b.dataset.status) && !upTimer) upTimer = setTimeout(() => { upTimer = null; refreshPanel(); }, 5000);
+}
+async function startUpload(force){
+  if(force && !confirm('Đăng thêm một lần nữa sẽ tạo một video MỚI trên kênh (bản cũ vẫn còn). Tiếp tục?')) return;
+  const sched = document.getElementById('up-mode').value === 'schedule';
+  const at = sched ? document.getElementById('up-at').value : '';
+  const r = await api(`/api/p/${PID}/upload`, {visibility: sched ? 'schedule' : document.getElementById('up-vis').value, publish_at: at || null, force});
+  if(r.error){ toast(r.error); return; } toast(r.message || 'đã xếp hàng'); refreshPanel();
+}
+function upMode(){   // «Đăng ngay» shows Public/Unlisted/Private, «Lên lịch» shows only the date and time
+  const sched = document.getElementById('up-mode').value === 'schedule';
+  document.querySelectorAll('#upload-box .up-now').forEach(el => el.style.display = sched ? 'none' : '');
+  document.querySelectorAll('#upload-box .up-sched').forEach(el => el.style.display = sched ? '' : 'none');
+}
+const YT_VIS0 = {{ (p.yt_vis or '')|tojson }};
+async function upSave(){   // the choice is saved on the project: panel refreshes and the automatic upload keep it
+  upMode();
+  const sched = document.getElementById('up-mode').value === 'schedule';
+  const r = await api(`/api/p/${PID}/update`, {yt_vis: sched ? 'schedule' : document.getElementById('up-vis').value,
+                                              yt_at: sched ? document.getElementById('up-at').value : ''});
+  toast(r.error || (sched ? 'đã lưu: lên lịch' : 'đã lưu: đăng ngay · ' + document.getElementById('up-vis').value));
+}
+async function refreshStepper(){
+  document.getElementById('stepper').innerHTML = await (await fetch(`/p/${PID}/stepper?step=${step}`)).text();
+}
+async function refreshChat(){ document.getElementById('chat').innerHTML = await (await fetch(`/p/${PID}/chat`)).text(); scrollChat(); }
+async function selectStep(key){
+  if(key === step) return;
+  step = key; currentTab = null;
+  history.replaceState(null, '', `?step=${key}`);
+  document.getElementById('chat-step').textContent = STEP_NAMES[key];
+  await Promise.all([refreshPanel(), refreshStepper()]);
+}
+async function poll(){
+  let s; try { s = await (await fetch(`/api/p/${PID}/state`)).json(); } catch (e) { return; }
+  const sig = [s.last_id, s.done, s.progress, s.steps].join('|');
+  if(sig !== lastSig){
+    const prev = lastSig; lastSig = sig;
+    await refreshChat();
+    if(prev === null || prev.split('|')[1] !== String(s.done) || prev.split('|')[3] !== s.steps){
+      await Promise.all([refreshStepper(), refreshPanel()]);
+      document.getElementById('cost').textContent = '$' + (s.cost_usd || 0).toFixed(2);
+    }
+  }
+  setBusy(s.busy);
+  if(!s.busy && polling){ clearInterval(polling); polling = null; await Promise.all([refreshStepper(), refreshPanel()]); }
+}
+function startPolling(){ if(!polling){ polling = setInterval(poll, 3000); } poll(); }
+
+async function runStep(key){
+  if({{ (['footage'] if kind == 'news' else ['images', 'footage'])|tojson }}.includes(key) && !confirm('Bước này sẽ trả tiền API ({{ 'giọng ElevenLabs' if kind == 'news' else 'ảnh fal.ai, giọng ElevenLabs' }}) trong ngân sách của dự án. Chạy?')) return;
+  const note = (document.getElementById('step-note') || {}).value || '';
+  const r = await api(`/api/p/${PID}/run`, {step: key, note: note.trim()});
+  if(r.error){ toast(r.error); return; }
+  toast(r.message || 'đã gửi'); setBusy(true); startPolling();
+}
+async function approveStep(key){
+  const r = await api(`/api/p/${PID}/approve`, {step: key});
+  if(r.error){ toast(r.error); return; }
+  toast('Đã duyệt' + (r.next ? ': sang bước ' + STEP_NAMES[r.next] : ', {{ 'video' if kind == 'news' else 'phim' }} hoàn thành')
+        + (r.upload ? (r.upload.error ? ' · không tự đăng YouTube được: ' + r.upload.error : ' · đã xếp hàng đăng YouTube') : ''));
+  if(r.next){ await selectStep(r.next); } await Promise.all([refreshStepper(), refreshPanel()]);
+}
+async function reopenStep(key){ const r = await api(`/api/p/${PID}/reopen`, {step: key}); if(r.error){ toast(r.error); return; } await Promise.all([refreshStepper(), refreshPanel()]); }
+async function sendMsg(){
+  const t = document.getElementById('msg').value.trim(); if(!t){ toast('Chưa nhập nội dung'); return; }
+  const r = await api(`/api/p/${PID}/message`, {text: t, step});
+  if(r.error){ toast(r.error); return; }
+  document.getElementById('msg').value = ''; toast(r.message || 'đã gửi'); setBusy(true); startPolling();
+}
+async function stopTurn(){ const r = await api(`/api/p/${PID}/cancel`, {}); toast(r.message || r.error); startPolling(); }
+async function openSub(sub){ const r = await api(`/api/p/${PID}/open`, {sub}); if(r.error) toast(r.error); }
+
+// sources (step 1)
+async function uploadSources(files){
+  if(!files || !files.length) return;
+  const fd = new FormData(); for(const f of files) fd.append('files', f);
+  toast('Đang tải lên ' + files.length + ' file…');
+  const r = await (await fetch(`/api/p/${PID}/sources`, {method: 'POST', body: fd})).json().catch(() => ({error: 'tải lên lỗi'}));
+  if(r.error){ toast(r.error); return; } toast('Đã thêm: ' + r.names.join(', ')); refreshPanel();
+}
+async function saveLinks(){ const r = await api(`/api/p/${PID}/links`, {text: document.getElementById('links').value}); toast(r.error || 'Đã lưu link'); }
+async function deleteSource(name){ if(!confirm('Chuyển ' + name + ' vào Thùng rác?')) return; const r = await api(`/api/p/${PID}/sources/delete`, {name}); if(r.error) toast(r.error); refreshPanel(); }
+document.addEventListener('dragover', e => { const d = e.target.closest && e.target.closest('#drop'); if(d){ e.preventDefault(); d.classList.add('over'); } });
+document.addEventListener('dragleave', e => { const d = e.target.closest && e.target.closest('#drop'); if(d) d.classList.remove('over'); });
+document.addEventListener('drop', e => { const d = e.target.closest && e.target.closest('#drop'); if(d){ e.preventDefault(); d.classList.remove('over'); uploadSources(e.dataTransfer.files); } });
+
+// cast (step 2), footage (step 5), images (step 4)
+async function chooseCand(ch, file, chosen){ const r = await api(`/api/p/${PID}/cast/choose`, {character: ch, file: chosen ? '' : file}); if(r.error) toast(r.error); refreshPanel(); }
+async function decide(item, decision){ const r = await api(`/api/p/${PID}/footage/decide`, {item, decision: decision || null}); if(r.error) toast(r.error); refreshPanel(); }
+let redoKey = null;
+function redoAsset(key){ redoKey = key; document.getElementById('redo-key').textContent = key; document.getElementById('redo-note').value = ''; document.getElementById('redo-dialog').showModal(); }
+async function sendRedo(){
+  const r = await api(`/api/p/${PID}/redo`, {key: redoKey, note: document.getElementById('redo-note').value});
+  document.getElementById('redo-dialog').close();
+  if(r.error){ toast(r.error); return; } toast(r.message || 'đã gửi'); setBusy(true); startPolling();
+}
+
+// materials from the news (sources/media.json)
+let mediaTimer = null;
+async function refreshMedia(){
+  const card = document.getElementById('media-card'), open = card.querySelector('details') && card.querySelector('details').open;
+  card.innerHTML = await (await fetch(`/p/${PID}/media`)).text();
+  const d = card.querySelector('details'); if(d && open) d.open = true;
+  const busy = card.querySelector('.ms-approved, .ms-downloading');
+  if(busy && !mediaTimer) mediaTimer = setInterval(refreshMedia, 3000);
+  if(!busy && mediaTimer){ clearInterval(mediaTimer); mediaTimer = null; }
+}
+async function mediaDecide(id, decision){
+  const r = await api(`/api/p/${PID}/media/decide`, {id, decision}); if(r.error){ toast(r.error); return; } refreshMedia();
+}
+async function mediaApproveClean(){
+  if(!confirm('Duyệt mọi ảnh/video không có cảnh báo ⚠ ⛔? Các mục này sẽ được tải về để Claude dùng.')) return;
+  const r = await api(`/api/p/${PID}/media/approve-clean`, {}); if(r.error){ toast(r.error); return; } refreshMedia();
+}
+async function mediaRetry(id){ const r = await api(`/api/p/${PID}/media/retry`, {id}); if(r.error){ toast(r.error); return; } refreshMedia(); }
+if(document.querySelector('#media-card .ms-approved, #media-card .ms-downloading')) refreshMedia();
+
+// project info
+async function saveInfo(){
+  const v = id => document.getElementById(id).value, ck = id => document.getElementById(id).checked;
+  const r = await api(`/api/p/${PID}/update`, {title: v('ed-title'), topic: v('ed-topic'), brief: v('ed-brief'), language: v('ed-language'),
+    format: v('ed-format'), target_sec: v('ed-target'), budget_usd: v('ed-budget'), audience: v('ed-audience'),
+    {% if kind == 'doc' %}style: v('ed-style'), use_jre: ck('ed-jre'), pipeline: v('ed-pipeline'),{% endif %} auto_advance: ck('ed-auto'),
+    yt: v('ed-yt'), yt_auto: v('ed-ytauto') === '1', ...(v('ed-ytvis') !== (YT_VIS0 === 'schedule' ? '' : YT_VIS0) ? {yt_vis: v('ed-ytvis'), yt_at: ''} : {})});
+  if(r.error){ toast(r.error); return; } location.reload();
+}
+async function archive(on){ const r = await api(`/api/p/${PID}/update`, {archived: on}); if(r.error){ toast(r.error); return; } location.reload(); }
+async function deleteProject(){
+  const r = await api(`/api/p/${PID}/delete`, {confirm: document.getElementById('del-confirm').value, trash_folder: document.getElementById('del-folder').checked});
+  if(r.error){ toast(r.error); return; } if(r.warning) alert(r.warning); location.href = {{ ('/news/projects' if kind == 'news' else '/doc')|tojson }};
+}
+showTab(null); scrollChat(); watchUpload();
+{% if busy %}setBusy(true); startPolling();{% endif %}
+</script>
+{% endblock %}

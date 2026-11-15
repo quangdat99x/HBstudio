@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% set title = "Tìm kiếm" %}
+{% block content %}
+<section class="card">
+  <form class="card-body" method="get" action="/search">
+    <div class="row gap">
+      <input class="input grow" name="q" value="{{ q }}" placeholder="Từ khoá, có dấu hay không dấu đều được: giants, cover-up, người khổng lồ…" autofocus>
+      <button class="btn btn-primary">Tìm</button>
+    </div>
+    <div class="row gap wrap small">
+      <select class="input" name="episode"><option value="">Mọi tập</option>{% for e in episodes %}<option value="{{ e.id }}" {{ 'selected' if f.get('episode')==e.id }}>{{ e.id }} · {{ e.guest }}</option>{% endfor %}</select>
+      <input class="input" name="guest" value="{{ f.get('guest','') }}" placeholder="Khách mời">
+      <select class="input" name="group"><option value="">Mọi nhóm khách</option>{% for g in guest_groups %}<option value="{{ g.slug }}" {{ 'selected' if f.get('group')==g.slug }}>{{ g.name_vi }}</option>{% endfor %}</select>
+      <select class="input" name="kind"><option value="">Highlight + hook</option><option value="highlight" {{ 'selected' if f.get('kind')=='highlight' }}>Chỉ highlight</option><option value="hook" {{ 'selected' if f.get('kind')=='hook' }}>Chỉ hook</option></select>
+      <input class="input narrow" name="min_intensity" value="{{ f.get('min_intensity','') }}" placeholder="intensity ≥">
+      <input class="input narrow" name="min_gtf" value="{{ f.get('min_gtf','') }}" placeholder="GTF ≥">
+      <select class="input" name="reach"><option value="">Reach</option>{% for r in ['R3','R2','R1'] %}<option {{ 'selected' if f.get('reach')==r }}>{{ r }}</option>{% endfor %}</select>
+      <select class="input" name="status"><option value="">Mọi trạng thái</option>{% for st in ['selected','cut','zoomed','ready','published'] %}<option {{ 'selected' if f.get('status')==st }}>{{ st }}</option>{% endfor %}</select>
+      <select class="input" name="theme"><option value="">Theme</option>{% for t in themes %}<option value="{{ t.slug }}" {{ 'selected' if f.get('theme')==t.slug }}>{{ t.slug }}</option>{% endfor %}</select>
+      <input class="input" name="topic" value="{{ f.get('topic','') }}" placeholder="Topic chứa…">
+      <label class="check"><input type="checkbox" name="unused" value="1" {{ 'checked' if f.get('unused')=='1' }}> chưa dùng trong compilation</label>
+      <input class="input narrow" name="limit" value="{{ f.get('limit','50') }}" placeholder="limit">
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  <div class="card-header"><h2>Kết quả ({{ results|length }})</h2>
+    <div class="row gap">
+      <input id="export-theme" class="input" placeholder="Tên chủ đề / compilation">
+      <button class="btn btn-small" onclick="exportSel('pool')">Xuất pool cho rabbit hole</button>
+      <button class="btn btn-small" onclick="exportSel('multi')">Xuất cut_multi cho Cutter</button>
+      <button class="btn btn-small btn-ghost" onclick="recordSel()">Đánh dấu đã dùng</button>
+    </div>
+  </div>
+  <table class="table">
+    <thead><tr><th><input type="checkbox" onclick="toggleAll(this)"></th><th>Tập</th><th>#</th><th>Thời gian</th><th>Tiêu đề</th><th>i</th><th>score</th><th>keyword</th><th>trạng thái</th></tr></thead>
+    <tbody>
+    {% for r in results %}
+      <tr class="{{ 'is-hook' if r.kind=='hook' }}">
+        <td><input type="checkbox" class="sel" value="{{ r.id }}"></td>
+        <td><a href="/episodes/{{ r.episode_id }}#seg-{{ r.id }}">{{ r.episode_id }}</a><div class="muted small">{{ r.guest }}</div></td>
+        <td>{{ r.rank or '' }}{% if r.kind=='hook' %} <span class="pill">hook</span>{% endif %}</td>
+        <td class="nowrap">{{ r.start_hms }}<br><span class="muted">{{ r.end_hms }}</span></td>
+        <td><a href="/episodes/{{ r.episode_id }}#seg-{{ r.id }}">{{ r.title }}</a>
+            {% set pv = r.summary_vi or r.tom_tat_preview or r.summary_en %}
+            {% if pv %}<div class="muted small">{{ pv[:260] }}{% if pv|length > 260 %}…{% endif %}</div>{% endif %}</td>
+        <td>{{ r.intensity or '' }}</td><td>{{ r.final_score or '' }}</td>
+        <td class="small">{{ r.core_keyword or '' }}{% if r.keyword_reach %} · {{ r.keyword_reach }}{% endif %}</td>
+        <td><span class="badge st-{{ r.status }}">{{ r.status }}</span>
+          {% if r.kind == 'highlight' %}<div><a class="btn btn-tiny" href="/compile?seed={{ r.id }}" title="Tạo video tổng hợp mở đầu bằng đoạn này">🧩 Tổng hợp</a></div>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+function selected(){ return [...document.querySelectorAll('.sel:checked')].map(c=>c.value); }
+function toggleAll(cb){ document.querySelectorAll('.sel').forEach(c=>c.checked=cb.checked); }
+async function exportSel(fmt){ const ids=selected(); if(!ids.length) return toast('Chưa chọn đoạn nào');
+  const r=await api('/api/export',{ids, format:fmt, theme:document.getElementById('export-theme').value}); toast(r.error||('Đã ghi: '+r.path)); }
+async function recordSel(){ const ids=selected(); if(!ids.length) return toast('Chưa chọn đoạn nào');
+  const theme=document.getElementById('export-theme').value||'compilation'; const r=await api('/api/compilations/record',{ids, theme}); toast(r.error||('Đã ghi compilation #'+r.id)); }
+</script>
+{% endblock %}

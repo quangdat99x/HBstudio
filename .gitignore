@@ -1,0 +1,64 @@
+# Đồng bộ code bộ tool giữa các máy. Chỉ code đi qua Git; dữ liệu, môi trường và file bí mật ở lại từng máy.
+# Các thư mục con còn có .gitignore riêng (DataBase, Creater Vid, Creater Vid/engine), Git áp dụng cả hai.
+
+# ---- môi trường Python / Node, cache (mỗi máy tự tạo)
+.venv/
+.venv_old/
+__pycache__/
+*.pyc
+node_modules/
+.remotion/
+.pytest_cache/
+.mypy_cache/
+
+# ---- dữ liệu riêng từng máy: database, sao lưu, log, file làm việc, kết quả
+*.db
+*.db-shm
+*.db-wal
+*.db.bak*
+*.db.pre-*
+backups/
+logs/
+*.log
+log_pro.txt
+work/
+output/
+outputs/
+uploads/
+tmp/
+Youtube Dowloader/history.csv
+Youtube Dowloader/.ytdlp_update_check
+Creater Vid/engine/out/
+
+# ---- bí mật (key, cookie, proxy): không bao giờ lên GitHub
+.env
+.env.*
+cookies.txt
+proxies.txt
+*.pem
+*.key
+.claude/settings.local.json
+**/.claude/settings.local.json
+
+# ---- file lớn tải lại được: ffmpeg, model AI, bộ cài
+ffmpeg/
+whisper_models/
+podcast-zoom-tool/models/whisper/
+bgremove/hf/
+_setup/*.exe
+_setup/*.msi
+claude-cli/node_modules/
+
+# ---- lịch sử Git cũ của từng tool (đã nhập vào repo này dưới refs/archive/*)
+.git-cu/
+
+# ---- rác hệ điều hành / bản sao lưu tạm
+Thumbs.db
+desktop.ini
+*.tmp
+*.bak
+*.old
+*.old-*
+*.orig
+_claude_tmp/
+_sync_backup/
