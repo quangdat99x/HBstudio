@@ -114,6 +114,10 @@ def tx(conn: Optional[sqlite3.Connection] = None):
 
 # ---------------------------------------------------------------- settings
 def get_setting(key: str, default: Any = None) -> str:
+    if key == "projects_root":
+        locked = config.projects_root_locked()
+        if locked:
+            return locked
     row_ = get_conn().execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
     if row_ is not None:
         return row_["value"]
@@ -133,6 +137,8 @@ def all_settings() -> dict:
     merged = dict(config.DEFAULT_SETTINGS)
     for r in get_conn().execute("SELECT key, value FROM settings"):
         merged[r["key"]] = r["value"]
+    if config.projects_root_locked():
+        merged["projects_root"] = config.projects_root_locked()
     for k in config.SECRET_KEYS:
         value = merged.pop(k, "") or ""
         merged[k + "_hint"] = ("••••" + value[-4:]) if value else ""

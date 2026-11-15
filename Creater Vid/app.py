@@ -58,6 +58,9 @@ app.jinja_env.globals.update(flow_of=workflow.flow, KINDS=config.KINDS, VISIBILI
 db.init_db()
 notify.register(app)     # 🔔 /api/notifications (bell in the header)
 store.ensure_step_rows()          # a step added to a workflow (7 · metadata) reaches older projects
+if os.environ.get("CREATER_NO_WORKER") != "1":
+    from creater.portable import ProjectScanner     # project folders copied in from another machine register themselves
+    ProjectScanner().start()
 
 _worker = None
 _worker_lock = threading.Lock()
@@ -362,7 +365,8 @@ def settings_page():
     return render_template("settings.html", page="settings", s=db.all_settings(), saved=request.args.get("saved"),
                            checks=items, health=health.summary(items),
                            voices=providers.voices_map(), tts_models=providers.TTS_MODELS, aliases=providers.ALIASES,
-                           tg_status=providers.status().get("telegram"))
+                           tg_status=providers.status().get("telegram"),
+                           projects_locked=bool(config.projects_root_locked()))
 
 
 # ---------------------------------------------------------------- project API

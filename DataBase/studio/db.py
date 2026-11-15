@@ -40,9 +40,10 @@ def init_db(db_path: Optional[Path] = None) -> None:
         with conn:
             conn.executescript(_SCHEMA.read_text(encoding="utf-8"))
         _migrate(conn)
-        from . import channel_watch, podcasts
+        from . import channel_watch, podcasts, portable
         podcasts.ensure_schema(conn)
         channel_watch.ensure_schema(conn)
+        portable.ensure_schema(conn)
     finally:
         conn.close()
 
@@ -88,6 +89,10 @@ def tx(conn: Optional[sqlite3.Connection] = None):
 
 # ---------------------------------------------------------------- settings
 def get_setting(key: str, default: Any = None) -> str:
+    if key == "media_root":
+        locked = config.media_root_locked()
+        if locked:
+            return locked
     row = get_conn().execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
     if row is not None:
         return row["value"]
@@ -106,6 +111,8 @@ def all_settings() -> dict:
     merged = dict(config.DEFAULT_SETTINGS)
     for r in get_conn().execute("SELECT key, value FROM settings"):
         merged[r["key"]] = r["value"]
+    if config.media_root_locked():
+        merged["media_root"] = config.media_root_locked()
     return merged
 
 

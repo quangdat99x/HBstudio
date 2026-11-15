@@ -32,6 +32,31 @@ PORT_STUDIO = 5004
 PORT_CREATER = 5010                                           # Creater Vid (phim tài liệu)
 CREATER_DIR = TOOLS_ROOT / "Creater Vid"
 
+
+def _load_data_root_module():
+    """<Tool>\\_data_root.py: the data folder of this machine (data_root.local.json) and the layout shared by every
+    machine. Loaded by file path because each tool runs in its own interpreter."""
+    import importlib.util
+    f = TOOLS_ROOT / "_data_root.py"
+    if not f.exists():
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location("tool_data_root", f)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception:  # noqa: BLE001
+        return None
+
+
+DATA_ROOT = _load_data_root_module()
+
+
+def media_root_locked() -> str | None:
+    """<data_root>\\YouTube when this machine has a data folder: it wins over the media_root setting."""
+    p = DATA_ROOT.path("studio_media") if DATA_ROOT else None
+    return str(p) if p else None
+
 # Interpreter that has faster-whisper + CUDA runtime wheels (the one Tool Manager uses for the Cutter).
 PY_CUTTER = Path(r"C:\Python314\python.exe")
 PY_ZOOM = ZOOM_DIR / ".venv" / "Scripts" / "python.exe"

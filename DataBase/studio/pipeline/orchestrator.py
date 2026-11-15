@@ -104,7 +104,7 @@ class Orchestrator:
         self.stop_requested: set[str] = set()
         self.threads = [threading.Thread(target=self._lane_loop, args=(ln,), name=f"studio-{ln}", daemon=True)
                         for ln in LANES]
-        self.watcher = intake.FolderWatcher(self.intake_file)
+        self.watcher = intake.FolderWatcher(self.intake_file, on_copied=self.intake_copied)
         self._downloads: dict[str, threading.Thread] = {}
 
     # ------------------------------------------------------------ lifecycle
@@ -116,6 +116,9 @@ class Orchestrator:
         from ..channel_watch import ChannelWatcher
         self.channel_watcher = ChannelWatcher(self)
         self.channel_watcher.start()
+        from ..portable import DataIndexer
+        self.data_indexer = DataIndexer()
+        self.data_indexer.start()
         log.info("orchestrator started (lanes: %s)", ", ".join(LANES))
 
     def _resume(self) -> None:
@@ -277,6 +280,17 @@ class Orchestrator:
             if info.get("title"):
                 c.execute("UPDATE episodes SET title=COALESCE(title, ?) WHERE id=?", (info["title"], info["episode_id"]))
         return self.enqueue_episode(info["episode_id"])
+
+    def intake_copied(self, path: Path) -> dict:
+        """A video dropped into Full together with its transcript: data copied from another machine (or restored).
+        Index it with what came along, never start Whisper/Claude for it: "Chạy" on the episode page still can."""
+        from .. import portable
+        res = portable.index_copied_video(Path(path))
+        if res.get("episode_id"):
+            notify.notify("done", f"Đã index video chép vào: {ep_label(res['episode_id'])}",
+                          "có sẵn transcript nên không chạy pipeline" + ("" if res.get("cutlist") else
+                          "; chưa có cutlist: muốn chọn đoạn thì bấm Chạy ở trang tập"), ep_link(res["episode_id"]))
+        return res
 
     def intake_url(self, url: str, podcast_id: str | None = None) -> dict:
         key = url.strip()

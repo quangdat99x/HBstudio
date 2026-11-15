@@ -448,7 +448,7 @@ def settings_page():
     from studio.pipeline import gemini_runner
     return render_template("settings.html", page="settings", podcasts=podcasts.overview(), watch=channel_watch.all_configs(),hook_transitions=hook_join.TRANSITIONS, sfx_files=hook_join.sfx_choices(), s=db.all_settings(), saved=request.args.get("saved"),
                            claude=_claude_status(), gt_configured=translate.configured(),
-                           gemini_configured=gemini_runner.configured())
+                           gemini_configured=gemini_runner.configured(), media_locked=bool(config.media_root_locked()))
 
 
 def _claude_status() -> dict:
@@ -590,6 +590,24 @@ def api_import_analysis(episode_id):
 @app.route("/api/scan", methods=["POST"])
 def api_scan():
     res = ingest.scan_media_root(force=bool((request.json or {}).get("force")))
+    return jsonify(res)
+
+
+@app.route("/api/portable", methods=["GET", "POST"])
+def api_portable():
+    """GET: last round of the data indexer. POST: index what was copied in right now (no waiting for the next round),
+    and import every _studio.json written by another machine."""
+    from studio import portable
+    if request.method == "GET":
+        orch = orchestrator()
+        return jsonify({"media_root": db.get_setting("media_root"), "machine": portable.MACHINE,
+                        "last": getattr(getattr(orch, "data_indexer", None), "last", None)})
+    portable.relocate_db()
+    snap = portable.snapshot()
+    res = portable.index_changes({k: sorted(v) for k, v in snap.items()})
+    res["exported"] = len(portable.export_all())
+    db.set_setting("portable_indexed", json.dumps({"_root": str(portable.paths.root()), **portable.snapshot()},
+                                                  ensure_ascii=False))
     return jsonify(res)
 
 

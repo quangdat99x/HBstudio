@@ -5,9 +5,35 @@ database (`studio.db`, `creater.db`), `.venv`, model Whisper/AI, ffmpeg, log, `w
 (`.env`, `cookies.txt`, `proxies.txt`) ở lại từng máy (xem `.gitignore`). Vì vậy mỗi máy có dữ liệu, kho highlight và
 cài đặt (vd `media_root`) riêng.
 
+## Thư mục data: chỗ để khác nhau, format giống nhau
+Mỗi máy chọn một thư mục data (Tool Manager → **📁 Thư mục data**, lưu trong `data_root.local.json`, không lên Git).
+Bên trong luôn cùng một format trên mọi máy:
+
+```
+<thư mục data>\YouTube\Full\              video tập đầy đủ + <tên video>.transcript.json
+<thư mục data>\YouTube\Cutlists\          cutlist_<TẬP>.json
+<thư mục data>\YouTube\Clips\<tập>\       clip, bản zoom, thumbnail, _studio.json
+<thư mục data>\YouTube\Tong-hop\          video tổng hợp
+<thư mục data>\VideoLab\creater-projects\<dự án>\   dự án Creater Vid (có project.json)
+```
+
+Chuyển data sang máy kia: chép đúng thư mục con sang thư mục data của máy kia (ví dụ chép
+`D:\DATA TOOL\YouTube\Clips\Joe Rogan Experience #2562 - …` vào `<data máy kia>\YouTube\Clips\`). Không cần bấm gì:
+- **Studio** (mỗi phút, chờ chép xong): nạp cutlist, transcript và thư mục clip vào Kho highlight. File `_studio.json`
+  trong thư mục clip mang theo những thứ chỉ database biết: Title / metadata đã viết, các bản thumbnail, trạng thái
+  từng đoạn, phần phân tích, cả show podcast nếu máy kia chưa có. Gộp kiểu cộng dồn: máy nhận giữ nguyên cái nó đã có,
+  thêm cái còn thiếu. Chép ngược lại cũng được.
+- Video thả vào `Full\` mà có sẵn transcript bên cạnh thì **chỉ được index**, không chạy Whisper / Claude (không tốn
+  tiền). Muốn chọn đoạn thì bấm Chạy ở trang tập.
+- **Creater Vid**: thư mục dự án chép vào `creater-projects\` tự thành dự án (tiêu đề, cài đặt, trạng thái các bước
+  lấy từ `project.json`). Lịch sử chat với Claude của dự án ở lại máy cũ.
+- Đổi ổ / chuyển thư mục data: chép hoặc chuyển cả thư mục, chọn lại ở Tool Manager. Đường dẫn trong database tự trỏ
+  sang chỗ mới lúc tool khởi động.
+- Muốn nạp ngay không chờ: Studio, gửi `POST /api/portable` (hoặc nhờ Claude "index data chép vào Studio").
+
 ## Cài đặt riêng từng máy
-- Đường dẫn dữ liệu (`media_root` của DataBase, `projects_root` của Creater Vid) lưu trong database của từng máy:
-  sửa ở trang Cài đặt của tool. Mặc định trong code chỉ dùng khi máy đó chưa từng lưu.
+- Có thư mục data thì `media_root` (Studio) và `projects_root` (Creater Vid) đi theo nó, trang Cài đặt chỉ hiện để xem.
+  Máy chưa chọn thư mục data thì vẫn dùng đường dẫn trong Cài đặt như cũ.
 - File cài đặt chung (`cpu_budget.json`, `voice-dub/settings.json`, `news-digest/config.json`) chỉ là mặc định.
   Máy nào cần khác thì tạo `<tên>.local.json` cạnh nó, chỉ ghi các khoá muốn đổi (vd `cpu_budget.local.json`:
   `{"render_concurrency": 6}`). File `.local.json` không lên GitHub. voice-dub tự ghi giọng đã chọn vào đó.
@@ -30,6 +56,8 @@ cài đặt (vd `media_root`) riêng.
 3. Máy mới tinh: `git clone <link> C:\Tool`, chạy `_setup\cai-dat.bat`, tạo `.venv` cho từng tool từ
    `requirements.txt`, `npm install` trong `Creater Vid\engine`, chép ffmpeg và model (`video-cutter-portable\whisper_models`,
    `podcast-zoom-tool\models\whisper`, `bgremove\hf`) từ máy cũ, tạo lại `.env` / `cookies.txt` / `proxies.txt`.
+4. Mở Tool Manager, bấm **📁 Thư mục data**, chọn thư mục data của máy đó (tool tự tạo `YouTube\…` và
+   `VideoLab\creater-projects` bên trong).
 
 Lần đầu đẩy hoặc kéo, Git mở trình duyệt để đăng nhập GitHub (Git Credential Manager), sau đó nhớ luôn.
 Lịch sử Git cũ của DataBase và Creater Vid được giữ trong repo dưới `refs/archive/*`.

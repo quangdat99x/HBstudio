@@ -483,9 +483,35 @@ class Api:
         res['status'] = self.sync_status(fetch=False)
         return res
 
+    # ------------------------------------------------------------ thư mục data của máy này (_data_root.py)
+    def data_root_info(self):
+        import _data_root
+        return _data_root.describe()
+
+    def choose_data_root(self):
+        """Chọn thư mục data của máy này. Bên trong luôn theo một format (YouTube\\..., VideoLab\\creater-projects),
+        Studio và Creater Vid đọc lại ngay, không cần khởi động lại."""
+        import _data_root
+        cur = _data_root.data_root()
+        path = _open_folder_dialog(str(cur) if cur else '')
+        if not path:
+            return {'success': False, 'error': 'Không chọn thư mục nào'}
+        p = os.path.normpath(path)
+        note = ''
+        # chọn nhầm thư mục media của Studio (...\YouTube có Full/Clips) hay thư mục dự án: lấy thư mục data chứa nó
+        if os.path.basename(p).lower() == 'youtube' and os.path.isdir(os.path.join(p, 'Clips')):
+            p, note = os.path.dirname(p), 'đã lấy thư mục cha của YouTube'
+        elif os.path.basename(p).lower() == 'creater-projects':
+            p, note = os.path.dirname(os.path.dirname(p)), 'đã lấy thư mục chứa VideoLab'
+        try:
+            root = _data_root.set_data_root(p)
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+        return {'success': True, 'note': note, **_data_root.describe(), 'data_root': str(root)}
+
     @staticmethod
     def _manager_changed(files):
-        return any(f in ('run.pyw', '_sync.py', '_tool_server.py') for f in files)
+        return any(f in ('run.pyw', '_sync.py', '_tool_server.py', '_data_root.py') for f in files)
 
     def cleanup(self):
         """Stop all tools on exit."""
@@ -925,6 +951,11 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
         <span class="spinner"></span><span class="label">🔄 Đồng bộ code</span></button>
       <span class="sync-info" id="sync-info">đang kiểm tra bản mới…</span>
     </div>
+    <div class="sync-bar">
+      <button class="sync-btn" id="data-btn" onclick="chooseDataRoot()" title="Thư mục chứa data của máy này (video, clip, cutlist, dự án). Bên trong luôn cùng một format trên mọi máy">
+        <span class="spinner"></span><span class="label">📁 Thư mục data</span></button>
+      <span class="sync-info" id="data-info">…</span>
+    </div>
   </div>
 
   <div class="cards">
@@ -1105,7 +1136,32 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     initQuickFolder();
     syncStartup();
     setInterval(() => syncCheck(true), 15 * 60 * 1000);   // 15 phút xem máy kia có bản mới không
+    showDataRoot();
   });
+
+  // ---------------------------------------------------------------- thư mục data của máy này
+  function setDataInfo(d, extra) {
+    const el = document.getElementById('data-info');
+    if (!d || !d.data_root) {
+      el.textContent = '⚠ chưa chọn thư mục data cho máy này: Studio và Creater Vid đang dùng đường dẫn trong Cài đặt của chúng';
+      el.className = 'sync-info warn'; return;
+    }
+    el.textContent = (d.exists ? '' : '⚠ không thấy thư mục · ') + d.data_root + '  →  YouTube\\Full · Cutlists · Clips · Tong-hop  ·  VideoLab\\creater-projects' + (extra ? ' · ' + extra : '');
+    el.className = 'sync-info' + (d.exists ? '' : ' err');
+  }
+  async function showDataRoot() {
+    try { setDataInfo(await window.pywebview.api.data_root_info()); } catch (e) {}
+  }
+  async function chooseDataRoot() {
+    const btn = document.getElementById('data-btn');
+    btn.disabled = true;
+    try {
+      const r = await window.pywebview.api.choose_data_root();
+      if (r.success) setDataInfo(r, (r.note ? r.note + ' · ' : '') + 'đã lưu, Studio/Creater Vid dùng ngay');
+      else if (r.error !== 'Không chọn thư mục nào') alert('Lỗi: ' + r.error);
+    } catch (e) { alert('Lỗi: ' + e); }
+    finally { btn.disabled = false; }
+  }
 
   // ---------------------------------------------------------------- đồng bộ code giữa các máy
   function setSyncInfo(text, cls) {

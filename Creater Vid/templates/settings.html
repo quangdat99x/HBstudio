@@ -38,7 +38,12 @@
 <section class="card">
   <div class="card-header"><h2>🎥 Mặc định cho dự án mới</h2></div>
   <div class="card-body">
+    {% if projects_locked %}
+    <label>Thư mục chứa dự án<input class="input" value="{{ s.projects_root }}" readonly>
+      <span class="muted">Theo thư mục data của máy này, đổi ở Tool Manager → 📁 Thư mục data. Chép thư mục dự án từ máy khác vào đây là app tự nhận.</span></label>
+    {% else %}
     <label>Thư mục chứa dự án (ảnh, footage, render: nên đặt ở ổ còn trống nhiều)<input class="input" name="projects_root" value="{{ s.projects_root }}"></label>
+    {% endif %}
     <div class="grid4">
       <label>Ngân sách nguyên liệu / dự án (USD)<input class="input" name="budget_usd" type="number" min="0" step="0.5" value="{{ s.budget_usd }}"></label>
       <label>Ngôn ngữ trên phim<input class="input" name="language" value="{{ s.language }}"></label>

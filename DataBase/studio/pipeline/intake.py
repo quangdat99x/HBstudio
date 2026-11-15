@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 from .. import config, db, paths
-from ..util import parse_episode_name
+from ..util import find_transcript, parse_episode_name
 from . import tools
 
 log = logging.getLogger("studio.intake")
@@ -19,9 +19,10 @@ _RE_YTDLP_PART = re.compile(r"\.f\d{2,4}$")
 class FolderWatcher(threading.Thread):
     """Polls the media root (simple, robust on Windows) and reports files once their size is stable."""
 
-    def __init__(self, on_new_file, interval: int = 15):
+    def __init__(self, on_new_file, interval: int = 15, on_copied=None):
         super().__init__(name="studio-watcher", daemon=True)
         self.on_new_file = on_new_file
+        self.on_copied = on_copied          # video that arrives with its transcript: index only (portable.py)
         self.interval = interval
         self._seen: set[str] = set()
         self._sizes: dict[str, tuple[int, float]] = {}
@@ -79,7 +80,10 @@ class FolderWatcher(threading.Thread):
                 self._sizes.pop(key, None)
                 log.info("new video detected: %s", p.name)
                 try:
-                    self.on_new_file(p)
+                    if self.on_copied and find_transcript(p):
+                        self.on_copied(p)
+                    else:
+                        self.on_new_file(p)
                 except Exception as e:  # noqa: BLE001
                     log.exception("intake failed for %s: %s", p, e)
 

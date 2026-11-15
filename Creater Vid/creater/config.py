@@ -35,6 +35,31 @@ CLAUDE_CLI_DIR = TOOLS_ROOT / "claude-cli"
 FFMPEG_FALLBACK = TOOLS_ROOT / "video-cutter-portable" / "ffmpeg" / "ffmpeg.exe"
 FFPROBE_FALLBACK = TOOLS_ROOT / "video-cutter-portable" / "ffmpeg" / "ffprobe.exe"
 
+
+def _load_data_root_module():
+    """<Tool>\\_data_root.py: this machine's data folder (data_root.local.json) and the layout every machine shares.
+    Loaded by file path because each tool runs in its own interpreter."""
+    import importlib.util
+    f = TOOLS_ROOT / "_data_root.py"
+    if not f.exists():
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location("tool_data_root", f)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception:  # noqa: BLE001
+        return None
+
+
+DATA_ROOT = _load_data_root_module()
+
+
+def projects_root_locked() -> str | None:
+    """<data_root>\\VideoLab\\creater-projects when this machine has a data folder: it wins over the setting."""
+    p = DATA_ROOT.path("creater_projects") if DATA_ROOT else None
+    return str(p) if p else None
+
 DEFAULT_SETTINGS = {
     # projects (renders, images and footage are heavy: E: is nearly full, D: has room)
     "projects_root": r"K:\VideoLab\creater-projects",

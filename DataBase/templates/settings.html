@@ -5,7 +5,12 @@
 <form method="post" action="/settings">
 <section class="card"><div class="card-header"><h2>Đường dẫn và pipeline</h2></div>
   <div class="card-body grid2">
+    {% if media_locked %}
+    <label>Thư mục media (video, transcript, cutlist, clip)<input class="input" value="{{ s.media_root }}" readonly
+      title="Theo thư mục data của máy này (Tool Manager → 📁 Thư mục data)"><span class="muted">Theo thư mục data của máy này, đổi ở Tool Manager → 📁 Thư mục data.</span></label>
+    {% else %}
     <label>Thư mục media (video, transcript, cutlist, clip)<input class="input" name="media_root" value="{{ s.media_root }}"></label>
+    {% endif %}
     <label>Model Whisper<input class="input" name="whisper_model" value="{{ s.whisper_model }}"></label>
     <label>Ngôn ngữ Whisper<input class="input" name="whisper_language" value="{{ s.whisper_language }}"></label>
     <label>Số đoạn tối đa mỗi tập<input class="input" name="max_segments" value="{{ s.max_segments }}"></label>
