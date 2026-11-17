@@ -39,14 +39,24 @@ Chuyển data sang máy kia: chép đúng thư mục con sang thư mục data c�
   `{"render_concurrency": 6}`). File `.local.json` không lên GitHub. voice-dub tự ghi giọng đã chọn vào đó.
 - Video / âm thanh (`*.mp4`, `*.wav`, `*.mp3`...) không bao giờ đi qua Git; file mới trên 50 MB bị nút Đồng bộ bỏ qua.
 
+## Máy chính / máy phụ
+Chỉ **máy chính** (tên máy ghi trong `_sync_main.json`, hiện là `KINGOFPENTACLES`) được commit và đẩy code lên GitHub.
+Mọi máy khác là **máy phụ**: chỉ lấy code của máy chính về, không bao giờ đẩy ngược lên, nên không còn xung đột.
+- Trên máy phụ, Tool Manager tự khoá Git của máy đó: `git commit` bị hook chặn, `git push` trỏ vào địa chỉ giả nên
+  không đi đâu được (kể cả Claude hay người gõ lệnh tay trên máy phụ).
+- Muốn sửa tool thì sửa trên máy chính. Lỡ sửa trên máy phụ: bấm **⬇ Lấy code máy chính**, các file sửa được sao lưu
+  vào `C:\Tool\_sync_backup\<thời gian>-may-phu\` rồi bỏ, code về đúng bản GitHub. Cần giữ thì chép file sao lưu sang
+  máy chính, sửa ở đó rồi đồng bộ.
+- Đổi máy chính: trên máy chính hiện tại sửa `main_machine` trong `_sync_main.json` thành tên máy mới (`COMPUTERNAME`),
+  bấm Đồng bộ, rồi mở lại Tool Manager ở hai máy.
+
 ## Dùng hằng ngày
-- Sửa code ở máy nào (tự sửa, hoặc nhờ Claude sửa) thì mở Tool Manager trên máy đó, bấm **🔄 Đồng bộ code**: commit
-  thay đổi của máy này → kéo bản mới của máy kia → đẩy lên GitHub. Tool đang chạy mà có code mới thì tự khởi động lại.
-  Có `requirements.txt` mới thì tự `pip install` vào đúng venv của tool.
-- Mở Tool Manager ở máy kia là tự kéo bản mới (khi máy đó không có sửa dở dang); 15 phút kiểm tra lại một lần.
+- Máy chính: sửa code (tự sửa, hoặc nhờ Claude sửa) rồi bấm **🔄 Đồng bộ code (máy chính)**: commit thay đổi → đẩy
+  lên GitHub.
+- Máy phụ: mở Tool Manager là tự kéo bản mới (khi máy đó không có sửa dở dang); 15 phút kiểm tra lại một lần. Hoặc bấm
+  **⬇ Lấy code máy chính**. Tool đang chạy mà có code mới thì tự khởi động lại. Có `requirements.txt` mới thì tự
+  `pip install` vào đúng venv của tool.
 - Đổi `run.pyw` / `_sync.py` thì đóng và mở lại Tool Manager để dùng bản mới.
-- Hai máy sửa cùng một chỗ trong cùng một file: Đồng bộ dừng lại, báo tên file, code máy này vẫn nguyên (đã commit).
-  Nhờ Claude: "gộp xung đột Git trong C:\Tool" rồi bấm Đồng bộ lại. Thói quen tránh xung đột: bấm Đồng bộ trước khi bắt đầu sửa.
 
 ## Nối một máy vào repo (một lần)
 1. Cài Git nếu chưa có: `_setup\cai-git.bat`.

@@ -6,12 +6,18 @@ Tool Manager gọi:
   startup_pull()  lúc mở Tool Manager: kéo bản mới nếu máy này không có thay đổi dở dang
 
 Chỉ code đi qua Git (.gitignore loại database, venv, model, log, output, file bí mật), nên mỗi máy giữ
-dữ liệu và cài đặt riêng. Khi hai máy sửa cùng một chỗ, rebase dừng lại: module huỷ rebase (không mất gì,
-commit của máy này vẫn còn) và báo danh sách file xung đột để gộp tay.
+dữ liệu và cài đặt riêng.
+
+MÁY CHÍNH / MÁY PHỤ (_sync_main.json, có trên GitHub): chỉ máy chính được commit và đẩy code. Máy phụ:
+  - Git của máy đó bị khoá đẩy (remote.origin.pushurl giả) và khoá commit (hook pre-commit), kể cả gõ tay;
+  - nút Đồng bộ = "lấy code máy chính": file sửa trên máy phụ được sao lưu vào _sync_backup\\<thời gian>\\
+    rồi bỏ, code về đúng bản GitHub. Không bao giờ có xung đột vì chỉ một máy viết.
 """
 from __future__ import annotations
 
+import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -20,6 +26,9 @@ import time
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BRANCH = "main"
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+ROLE_FILE = os.path.join(BASE_DIR, "_sync_main.json")
+NO_PUSH_URL = "KHONG-DUOC-DAY--chi-may-chinh-moi-day-code-len-GitHub"
+_HOOK_TAG = "# _sync.py: may phu khong duoc commit"
 
 
 def _git(*args, timeout=120):
@@ -40,6 +49,55 @@ def machine() -> str:
 
 def is_repo() -> bool:
     return os.path.isdir(os.path.join(BASE_DIR, ".git"))
+
+
+# ---------------------------------------------------------------- máy chính / máy phụ
+def main_machine() -> str:
+    try:
+        with open(ROLE_FILE, encoding="utf-8") as f:
+            return str(json.load(f).get("main_machine") or "").strip()
+    except (OSError, ValueError):
+        return ""
+
+
+def is_main() -> bool:
+    """No _sync_main.json (old checkout) → every machine may push, as before."""
+    main = main_machine()
+    return not main or main.upper() == machine().upper()
+
+
+def _hook_path() -> str:
+    return os.path.join(BASE_DIR, ".git", "hooks", "pre-commit")
+
+
+def enforce_role() -> None:
+    """Lock pushing and committing in this machine's Git when it is not the main machine (unlock on the main one).
+    Local Git config only, so it also stops a manual `git push` / `git commit` typed on the secondary machine."""
+    if not is_repo():
+        return
+    code, cur = _git("config", "--get", "remote.origin.pushurl")
+    hook = _hook_path()
+    ours = False
+    try:
+        with open(hook, encoding="utf-8") as f:
+            ours = _HOOK_TAG in f.read()
+    except OSError:
+        pass
+    if is_main():
+        if code == 0 and cur.strip() == NO_PUSH_URL:
+            _git("config", "--unset", "remote.origin.pushurl")
+        if ours:
+            os.remove(hook)
+        return
+    if cur.strip() != NO_PUSH_URL:
+        _git("config", "remote.origin.pushurl", NO_PUSH_URL)
+    if not ours and not os.path.exists(hook):
+        os.makedirs(os.path.dirname(hook), exist_ok=True)
+        with open(hook, "w", encoding="utf-8", newline="\n") as f:
+            f.write("#!/bin/sh\n" + _HOOK_TAG + "\n"
+                    f"echo 'May nay la may phu: chi may chinh ({main_machine()}) duoc commit code.' >&2\n"
+                    "echo 'Sua code tren may chinh roi bam Dong bo; may nay bam Dong bo de lay ban moi.' >&2\n"
+                    "exit 1\n")
 
 
 def remote_url() -> str:
@@ -77,6 +135,7 @@ def _head() -> str:
 def status(fetch: bool = True) -> dict:
     if not is_repo():
         return {"ok": False, "error": "C:\\Tool chưa là repo Git"}
+    enforce_role()
     url = remote_url()
     if not url:
         return {"ok": False, "error": "chưa nối GitHub (chưa có remote origin)", "changes": local_changes()}
@@ -91,7 +150,8 @@ def status(fetch: bool = True) -> dict:
     _, last = _git("log", "-1", "--format=%h %cd · %an · %s", "--date=format:%d/%m %H:%M")
     _, last_remote = _git("log", "-1", "--format=%cd · %an", "--date=format:%d/%m %H:%M", f"origin/{BRANCH}") \
         if has_remote_branch else (0, "")
-    return {"ok": True, "machine": machine(), "remote": url, "changes": local_changes(), "ahead": ahead,
+    return {"ok": True, "machine": machine(), "main_machine": main_machine(), "is_main": is_main(),
+            "remote": url, "changes": local_changes(), "ahead": ahead,
             "behind": behind, "last": last, "last_remote": last_remote, "fetch_error": fetch_err}
 
 
@@ -139,10 +199,13 @@ def _conflicts() -> list[str]:
 
 
 def sync() -> dict:
-    """Commit → pull --rebase → push. Returns {ok, message, pulled: [files], pushed: n} or {ok: False, error}."""
+    """Main machine: commit → pull --rebase → push. Secondary machine: follow_main().
+    Returns {ok, message, pulled: [files], pushed: n} or {ok: False, error}."""
     st = status(fetch=False)
     if not st.get("ok"):
         return st
+    if not st["is_main"]:
+        return follow_main()
     committed = 0
     skipped_big: list[str] = []
     if st["changes"]:
@@ -187,6 +250,52 @@ def sync() -> dict:
                      + ", ".join(os.path.basename(f) for f in skipped_big[:3]))
     return {"ok": True, "message": "; ".join(parts) or "đã đồng bộ, không có gì mới", "pulled": pulled,
             "pushed": pushed, "committed": committed, "requirements": reqs, "skipped_big": skipped_big}
+
+
+def _backup(files: list[str], move_untracked: set[str]) -> str:
+    """Copy this machine's version of `files` to _sync_backup\\<time>\\ (untracked ones are moved there)."""
+    dest = os.path.join(BASE_DIR, "_sync_backup", time.strftime("%Y%m%d-%H%M%S") + "-may-phu")
+    for f in files:
+        src = os.path.join(BASE_DIR, f)
+        if not os.path.isfile(src):
+            continue
+        dst = os.path.join(dest, f)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        if f in move_untracked:
+            shutil.move(src, dst)
+        else:
+            shutil.copy2(src, dst)
+    return dest if os.path.isdir(dest) else ""
+
+
+def follow_main() -> dict:
+    """Secondary machine: make the code exactly the main machine's version on GitHub.
+    Whatever was edited or committed here is backed up first, then dropped."""
+    code, out = _git("fetch", "origin", timeout=120)
+    if code != 0:
+        return {"ok": False, "error": "không kết nối được GitHub: " + (out.splitlines()[-1] if out else str(code))}
+    if _git("rev-parse", "--verify", "-q", f"origin/{BRANCH}")[0] != 0:
+        return {"ok": False, "error": "GitHub chưa có nhánh main (máy chính chưa đẩy code lần nào)"}
+    _git("rebase", "--abort")   # a rebase left half-done by the old sync would block the reset
+    _, untracked_out = _git("ls-files", "--others", "--exclude-standard")
+    untracked = {ln.strip() for ln in untracked_out.splitlines() if ln.strip()}
+    changes = local_changes()
+    _, committed_out = _git("diff", "--name-only", f"origin/{BRANCH}...HEAD")   # files of local commits not on GitHub
+    files = sorted(set(changes) | {ln.strip() for ln in committed_out.splitlines() if ln.strip()})
+    backup = _backup(files, {f for f in files if f in untracked}) if files else ""
+    old = _head()
+    code, out = _git("reset", "--hard", "-q", f"origin/{BRANCH}")
+    if code != 0:
+        return {"ok": False, "error": "không lấy được code máy chính: " + out[-400:], "backup": backup}
+    pulled = _changed_between(old, _head())
+    parts = []
+    if pulled:
+        parts.append(f"đã lấy {len(pulled)} file mới từ máy chính ({main_machine()})")
+    if files:
+        parts.append(f"bỏ {len(files)} file sửa trên máy phụ (đã sao lưu vào {os.path.relpath(backup, BASE_DIR)})"
+                     if backup else f"bỏ {len(files)} thay đổi trên máy phụ")
+    return {"ok": True, "message": "; ".join(parts) or "code đã khớp máy chính", "pulled": pulled, "pushed": 0,
+            "committed": 0, "discarded": files, "backup": backup, "requirements": _install_requirements(pulled)}
 
 
 def startup_pull() -> dict:

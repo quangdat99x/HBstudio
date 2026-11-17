@@ -511,7 +511,7 @@ class Api:
 
     @staticmethod
     def _manager_changed(files):
-        return any(f in ('run.pyw', '_sync.py', '_tool_server.py', '_data_root.py') for f in files)
+        return any(f in ('run.pyw', '_sync.py', '_sync_main.json', '_tool_server.py', '_data_root.py') for f in files)
 
     def cleanup(self):
         """Stop all tools on exit."""
@@ -947,7 +947,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     <h1>🎬 Tool Manager</h1>
     <p>Quản lý YouTube Downloader · Video Cutter · Podcast Zoom · Hổ Báo Studio · Creater Vid · Video Watcher</p>
     <div class="sync-bar">
-      <button class="sync-btn" id="sync-btn" onclick="syncNow()" title="Đẩy code sửa trên máy này lên GitHub và kéo bản mới của máy kia về">
+      <button class="sync-btn" id="sync-btn" onclick="syncNow()" title="Chỉ máy chính được đẩy code lên GitHub; máy khác chỉ kéo bản của máy chính về">
         <span class="spinner"></span><span class="label">🔄 Đồng bộ code</span></button>
       <span class="sync-info" id="sync-info">đang kiểm tra bản mới…</span>
     </div>
@@ -1170,13 +1170,33 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   }
   function describeSync(st) {
     if (!st || !st.ok) return [(st && st.error) || 'không đọc được trạng thái Git', 'err'];
+    setSyncRole(st);
     const bits = [];
-    if (st.behind) bits.push('⬇ máy khác có ' + st.behind + ' cập nhật mới');
+    if (st.is_main === false) {   // máy phụ: chỉ kéo code máy chính, không đẩy
+      if (st.behind) bits.push('⬇ máy chính có ' + st.behind + ' cập nhật mới');
+      const n = (st.changes || []).length;
+      if (n) bits.push('✏ ' + n + ' file bị sửa trên máy phụ (sẽ sao lưu rồi bỏ, không đẩy lên được)');
+      else if (st.ahead) bits.push(st.ahead + ' commit trên máy phụ (sẽ sao lưu rồi bỏ)');
+      if (st.fetch_error) bits.push('không kết nối được GitHub: ' + st.fetch_error);
+      if (!bits.length) return ['✓ code đã khớp máy chính ' + st.main_machine + (st.last_remote ? ' (bản ' + st.last_remote + ')' : ''), 'ok'];
+      return [bits.join(' · ') + ' → bấm Lấy code máy chính', st.fetch_error ? 'err' : 'warn'];
+    }
+    if (st.behind) bits.push('⬇ GitHub có ' + st.behind + ' cập nhật mới');
     if (st.changes && st.changes.length) bits.push('✏ ' + st.changes.length + ' file sửa trên máy này chưa đẩy');
     else if (st.ahead) bits.push('⬆ ' + st.ahead + ' commit chưa đẩy');
     if (st.fetch_error) bits.push('không kết nối được GitHub: ' + st.fetch_error);
     if (!bits.length) return ['✓ code đã khớp GitHub' + (st.last_remote ? ' (bản mới nhất ' + st.last_remote + ')' : ''), 'ok'];
     return [bits.join(' · ') + ' → bấm Đồng bộ', st.fetch_error ? 'err' : 'warn'];
+  }
+  let syncIsMain = true, syncLast = null;
+  function setSyncRole(st) {
+    syncLast = st;
+    syncIsMain = st.is_main !== false;
+    const btn = document.getElementById('sync-btn');
+    btn.querySelector('.label').textContent = syncIsMain ? '🔄 Đồng bộ code (máy chính)' : '⬇ Lấy code máy chính';
+    btn.title = syncIsMain
+      ? 'Máy chính: commit code sửa trên máy này và đẩy lên GitHub. Máy khác chỉ kéo bản này về'
+      : 'Máy phụ: lấy đúng code của máy chính ' + st.main_machine + ' từ GitHub. File sửa trên máy này được sao lưu vào _sync_backup rồi bỏ';
   }
   async function syncCheck(fetch) {
     try { const st = await window.pywebview.api.sync_status(fetch); const [t, c] = describeSync(st); setSyncInfo(t, c); }
@@ -1186,18 +1206,23 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     try {
       const r = await window.pywebview.api.sync_startup();
       if (r.pulled && r.pulled.length) {
-        setSyncInfo('⬇ đã tự cập nhật ' + r.pulled.length + ' file từ máy khác' +
+        if (r.status && r.status.ok) setSyncRole(r.status);
+        setSyncInfo('⬇ đã tự cập nhật ' + r.pulled.length + ' file từ máy chính' +
           (r.restart_manager ? ' · đóng và mở lại Tool Manager để dùng bản mới' : ''), 'ok');
       } else { const [t, c] = describeSync(r.status || r); setSyncInfo(t, c); }
     } catch (e) { setSyncInfo('lỗi kiểm tra: ' + e, 'err'); }
   }
   async function syncNow() {
     const btn = document.getElementById('sync-btn');
+    if (!syncIsMain && syncLast && ((syncLast.changes || []).length || syncLast.ahead) &&
+        !confirm('Máy này là máy phụ, không được đẩy code lên GitHub.\n\nCác file sửa trên máy này sẽ được sao lưu vào ' +
+                 'C:\\Tool\\_sync_backup\\ rồi bỏ, code về đúng bản của máy chính ' + syncLast.main_machine + '.\n\nTiếp tục?')) return;
     btn.disabled = true; btn.classList.add('loading');
     setSyncInfo('đang đồng bộ (lần đầu có thể mở trình duyệt để đăng nhập GitHub)…');
     try {
       const r = await window.pywebview.api.sync_now();
       if (!r.ok) { setSyncInfo('✗ ' + r.error, 'err'); return; }
+      if (r.status && r.status.ok) setSyncRole(r.status);
       let t = '✓ ' + r.message;
       if (r.restarted && r.restarted.length) t += ' · đã khởi động lại: ' + r.restarted.join(', ');
       const badReq = (r.requirements || []).filter(x => !x.ok);
