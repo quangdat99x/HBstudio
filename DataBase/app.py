@@ -14,7 +14,7 @@ from flask import Flask, abort, jsonify, redirect, render_template, request, sen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from studio import channel_watch, config, db, devchat, export as export_mod, flow, guests, ingest, maintenance, notify, paths, podcasts, search, tagging  # noqa: E402
+from studio import channel_watch, config, db, devchat, export as export_mod, flow, guests, ingest, link_queue, maintenance, notify, paths, podcasts, search, tagging  # noqa: E402
 from studio.analysis import import_markdown, sections_for_display  # noqa: E402
 from studio.textfmt import md_to_html  # noqa: E402
 from studio.util import now_iso, parse_episode_name  # noqa: E402
@@ -966,6 +966,49 @@ def api_channel_watch_download(podcast_id):
         return jsonify({"error": "pipeline chưa sẵn sàng"}), 503
     res = channel_watch.download_one(podcast_id, (request.json or {}).get("video_id") or "", orch)
     return jsonify(res), (400 if res.get("error") else 200)
+
+
+# ---------------------------------------------------------------- danh sách chờ (trang Hàng đợi)
+@app.route("/api/link-queue", methods=["GET"])
+def api_link_queue():
+    return jsonify({"items": link_queue.items()})
+
+
+@app.route("/api/link-queue/import", methods=["POST"])
+def api_link_queue_import():
+    """Dán cả loạt link (mỗi dòng một link) kèm show; không gọi YouTube ở bước này."""
+    data = request.json or {}
+    res = link_queue.add(data.get("text") or "", data.get("podcast_id"))
+    if res.get("error"):
+        return jsonify(res), 400
+    return jsonify({**res, "items": link_queue.items()})
+
+
+@app.route("/api/link-queue/<item_id>/download", methods=["POST"])
+def api_link_queue_download(item_id):
+    """Tải một mục qua Youtube Downloader rồi chạy pipeline; xong tự đánh dấu."""
+    orch = orchestrator()
+    if not orch:
+        return jsonify({"error": "pipeline chưa sẵn sàng"}), 503
+    res = link_queue.start(item_id, orch, (request.json or {}).get("podcast_id"))
+    return jsonify(res), (400 if res.get("error") else 200)
+
+
+@app.route("/api/link-queue/<item_id>/mark", methods=["POST"])
+def api_link_queue_mark(item_id):
+    status = (request.json or {}).get("status", "done")
+    item = link_queue.mark(item_id, "done" if status == "done" else "pending")
+    return jsonify({"item": item} if item else {"error": "Mục này không còn trong danh sách."}), (200 if item else 400)
+
+
+@app.route("/api/link-queue/<item_id>/delete", methods=["POST"])
+def api_link_queue_delete(item_id):
+    return jsonify({"ok": link_queue.remove(item_id)})
+
+
+@app.route("/api/link-queue/clear-done", methods=["POST"])
+def api_link_queue_clear_done():
+    return jsonify({"removed": link_queue.remove_done()})
 
 
 @app.route("/api/intake", methods=["POST"])

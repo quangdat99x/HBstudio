@@ -40,10 +40,11 @@ def init_db(db_path: Optional[Path] = None) -> None:
         with conn:
             conn.executescript(_SCHEMA.read_text(encoding="utf-8"))
         _migrate(conn)
-        from . import channel_watch, podcasts, portable
+        from . import channel_watch, link_queue, podcasts, portable
         podcasts.ensure_schema(conn)
         channel_watch.ensure_schema(conn)
         portable.ensure_schema(conn)
+        link_queue.ensure_schema(conn)
     finally:
         conn.close()
 

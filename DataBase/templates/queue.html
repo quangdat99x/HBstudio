@@ -20,6 +20,39 @@
   </div>
 </section>
 
+<section class="card" id="link-queue-card">
+  <div class="card-header"><h2>Danh sách chờ <span class="muted" id="lq-count"></span></h2>
+    <div class="row gap">
+      <span class="muted small">Dán sẵn cả loạt link, mỗi lần chỉ bấm <b>Tải và chạy</b> một tập để không bị YouTube chặn. Xong tự đánh dấu.</span>
+      <button class="btn btn-small" onclick="lqToggleImport()">Nhập link</button>
+      <button class="btn btn-small btn-ghost" onclick="lqClearDone()" title="Bỏ các mục đã Xong khỏi danh sách">Dọn mục xong</button>
+    </div>
+  </div>
+  <div class="card-body" id="lq-import" style="display:none">
+    <div class="row gap">
+      <label class="small">Show <select id="lq-show" class="input" style="width:auto">
+        <option value="">Tự nhận theo tên file</option>
+        {% for p in podcasts %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+      </select></label>
+      <span class="muted small">Show chọn ở đây áp cho các link dán lần này (video tải vào thư mục Full của show đó).</span>
+    </div>
+    <textarea id="lq-text" class="input" rows="6" placeholder="Mỗi dòng một link YouTube. Có chữ thừa quanh link cũng được."></textarea>
+    <div class="row gap">
+      <button class="btn btn-primary" id="lq-import-btn" onclick="lqImport()">Thêm vào danh sách</button>
+      <button class="btn btn-ghost" onclick="lqToggleImport(false)">Đóng</button>
+    </div>
+  </div>
+  <div class="row gap" style="padding:10px 16px 0">
+    <button class="btn btn-tiny lq-f active" data-f="all" onclick="lqFilter('all')">Tất cả</button>
+    <button class="btn btn-tiny lq-f" data-f="pending" onclick="lqFilter('pending')">Chưa tải</button>
+    <button class="btn btn-tiny lq-f" data-f="done" onclick="lqFilter('done')">Xong</button>
+  </div>
+  <table class="table" id="lq-table">
+    <thead><tr><th>#</th><th>Video</th><th>Show</th><th>Trạng thái</th><th></th></tr></thead>
+    <tbody><tr><td colspan="5" class="muted">Đang tải…</td></tr></tbody>
+  </table>
+</section>
+
 {% if pipe.lanes %}
 <section class="card">
   <div class="card-header"><h2>Làn xử lý</h2><span class="muted">mỗi làn chạy một việc, các làn chạy song song</span></div>
@@ -103,5 +136,47 @@ async function stopEpisode(id){ const r=await api('/api/episodes/'+id+'/stop',{}
 async function rescan(){ toast('Đang quét…'); const r=await api('/api/scan',{}); toast('Quét xong: '+(r.cutlists||[]).length+' cutlist, '+(r.folders||[]).length+' thư mục'); setTimeout(()=>location.reload(),1500); }
 setInterval(async()=>{ try{ const jobs=await (await fetch('/api/jobs')).json(); const tb=document.querySelector('#jobs-table tbody');
   tb.innerHTML=jobs.slice(0,60).map(j=>`<tr><td>${j.id}</td><td>${j.episode_id}</td><td>${j.stage}</td><td><span class="badge job-${j.status}">${j.status}</span></td><td>${Math.round(j.progress||0)}%</td><td class="small">${esc((j.error||j.message||'').slice(0,200))}</td><td class="muted small">${j.started_at||''}</td></tr>`).join(''); }catch(e){} }, 5000);
+
+// ---------------------------------------------------------------- danh sách chờ
+let lqItems = [], lqFilterKey = 'all';
+const LQ_BADGE = { pending: 'stage-new', downloading: 'job-running', done: 'job-done', error: 'job-failed' };
+function lqToggleImport(show){ const b=document.getElementById('lq-import'); const open = show!==undefined ? show : b.style.display==='none';
+  b.style.display = open ? '' : 'none'; if(open) document.getElementById('lq-text').focus(); }
+function lqFilter(f){ lqFilterKey=f; document.querySelectorAll('.lq-f').forEach(b=>b.classList.toggle('active', b.dataset.f===f)); lqRender(); }
+let lqLast='';
+async function lqLoad(){ try{ const r=await (await fetch('/api/link-queue')).json(); const j=JSON.stringify(r.items||[]); if(j===lqLast) return; lqLast=j; lqItems=r.items||[]; lqRender(); }catch(e){} }
+function lqRender(){
+  const tb=document.querySelector('#lq-table tbody'); const done=lqItems.filter(i=>i.status==='done').length;
+  document.getElementById('lq-count').textContent = lqItems.length ? `(${done}/${lqItems.length} xong)` : '';
+  const shown = lqItems.filter(i => lqFilterKey==='all' ? true : lqFilterKey==='done' ? i.status==='done' : i.status!=='done');
+  if(!shown.length){ tb.innerHTML=`<tr><td colspan="5" class="muted">${lqItems.length ? 'Không có mục nào ở mục lọc này.' : 'Chưa có link nào. Bấm <b>Nhập link</b> để dán danh sách.'}</td></tr>`; return; }
+  tb.innerHTML = shown.map(it => {
+    const idx = lqItems.indexOf(it)+1, busy = it.status==='downloading';
+    const name = it.title ? `<b>${esc(it.title)}</b><div class="muted small">${esc(it.url)}</div>` : `<a href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.url)}</a>`;
+    let st = `<span class="badge ${LQ_BADGE[it.status]||''}">${esc(it.status_vi||it.status)}</span>`;
+    if(busy) st += `<div class="small muted">${Math.round(it.job_progress||0)}% ${esc(it.job_message||'')}</div>`;
+    if(it.status==='done'){ if(it.done_at) st += `<div class="small muted">${esc(String(it.done_at).slice(0,16).replace('T',' '))}</div>`;
+      if(it.episode_id) st += `<div class="small"><a href="/episodes/${esc(it.episode_id)}">${esc(it.episode_id)}</a></div>`; }
+    if(it.status==='error' && it.error) st += `<div class="error small">${esc(it.error.slice(0,200))}</div>`;
+    const main = it.status==='done'
+      ? `<button class="btn btn-small btn-ghost" onclick="lqMark('${it.id}','pending')" title="Đưa về Chưa tải">↶ Chưa tải</button>`
+      : `<button class="btn btn-small btn-primary" onclick="lqDownload('${it.id}')" ${busy?'disabled':''}>${busy ? 'Đang tải…' : (it.status==='error' ? 'Tải lại' : 'Tải và chạy')}</button>`;
+    const mark = (it.status==='done'||busy) ? '' : `<button class="btn btn-small" onclick="lqMark('${it.id}','done')" title="Đánh dấu Xong (đã tải bằng cách khác)">✓</button>`;
+    return `<tr><td class="muted small">${idx}</td><td>${name}</td><td class="small">${esc(it.podcast_id||'tự nhận')}</td><td>${st}</td>
+      <td class="actions nowrap">${main} ${mark} <button class="btn btn-small btn-ghost" onclick="lqRemove('${it.id}')" title="Bỏ khỏi danh sách" ${busy?'disabled':''}>×</button></td></tr>`;
+  }).join('');
+}
+async function lqImport(){ const text=document.getElementById('lq-text').value.trim(); if(!text) return toast('Dán ít nhất một link trước');
+  const btn=document.getElementById('lq-import-btn'); btn.disabled=true;
+  const r=await api('/api/link-queue/import',{text, podcast_id:document.getElementById('lq-show').value}); btn.disabled=false;
+  if(r.error) return toast(r.error);
+  lqItems=r.items||[]; lqLast=JSON.stringify(lqItems); lqRender(); document.getElementById('lq-text').value=''; lqToggleImport(false);
+  let m=`Đã thêm ${r.added} link.`; if(r.already_done) m+=` ${r.already_done} link đã tải trước đó → Xong.`; if(r.skipped) m+=` ${r.skipped} link đã có, bỏ qua.`; toast(m); }
+async function lqDownload(id){ const r=await api('/api/link-queue/'+id+'/download',{}); toast(r.error||r.message||'Đang tải'); lqLast=''; lqLoad(); }
+async function lqMark(id,status){ const r=await api('/api/link-queue/'+id+'/mark',{status}); if(r.error) toast(r.error); lqLast=''; lqLoad(); }
+async function lqRemove(id){ await api('/api/link-queue/'+id+'/delete',{}); lqLast=''; lqLoad(); }
+async function lqClearDone(){ const n=lqItems.filter(i=>i.status==='done').length; if(!n) return toast('Không có mục nào đã Xong');
+  if(!confirm(`Bỏ ${n} mục đã Xong khỏi danh sách chờ?`)) return; await api('/api/link-queue/clear-done',{}); lqLast=''; lqLoad(); }
+lqLoad(); setInterval(lqLoad, 5000);
 </script>
 {% endblock %}

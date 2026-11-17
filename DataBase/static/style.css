@@ -228,3 +228,6 @@ a.pill { text-decoration: none; }
 .pill.active { background: var(--accent, #8b5cf6); color: #fff; }
 .pod-form { border: 1px solid var(--border, #333); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; }
 .pod-form summary { cursor: pointer; }
+
+/* Danh sách chờ (trang Hàng đợi): nút lọc Tất cả / Chưa tải / Xong */
+.btn.lq-f.active { background: var(--accent-glow); color: #ddd6fe; border-color: var(--accent, #8b5cf6); }

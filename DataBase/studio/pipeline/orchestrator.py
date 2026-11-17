@@ -292,34 +292,47 @@ class Orchestrator:
                           "; chưa có cutlist: muốn chọn đoạn thì bấm Chạy ở trang tập"), ep_link(res["episode_id"]))
         return res
 
-    def intake_url(self, url: str, podcast_id: str | None = None) -> dict:
+    def intake_url(self, url: str, podcast_id: str | None = None, on_result=None) -> dict:
+        """Download a YouTube URL through the Downloader and run the file. on_result(path, res, error) is called when
+        it is over (the link queue on the Queue page uses it to mark its item done / failed)."""
         key = url.strip()
         if key in self._downloads and self._downloads[key].is_alive():
-            return {"message": "link này đang tải"}
+            return {"error": "link này đang tải"}
         job_id = self._job("download:" + key[-40:], "download", "running")
+
+        def _report(path, res, error):
+            if on_result:
+                try:
+                    on_result(path, res, error)
+                except Exception:  # noqa: BLE001
+                    log.exception("intake_url on_result failed")
 
         def _run():
             try:
-                path = intake.download_url(key, progress_cb=lambda p, m: self._job_update(job_id, p, m))
+                path = intake.download_url(key, progress_cb=lambda p, m: self._job_update(job_id, p, m),
+                                           podcast_id=podcast_id)
                 self.watcher._seen.add(str(path))
                 res = self.intake_file(path, podcast_id)
                 if res.get("error"):
                     self._job_update(job_id, 100, None, status="failed",
                                      error=f"đã tải {path.name} nhưng không đưa vào pipeline: {res['error']}")
                     notify.notify("error", f"Tải xong nhưng không vào pipeline: {path.name}", res["error"], "/queue")
+                    _report(path, res, f"đã tải {path.name} nhưng không đưa vào pipeline: {res['error']}")
                 else:
                     self._job_update(job_id, 100, f"đã tải {path.name} → {res.get('episode_id')}", status="done")
                     notify.notify("done", f"Tải video xong: {path.name}", f"{res.get('episode_id')} đã vào hàng đợi",
                                   ep_link(res["episode_id"]) if res.get("episode_id") else "/queue")
+                    _report(path, res, None)
             except Exception as e:  # noqa: BLE001
                 log.exception("download failed")
                 self._job_update(job_id, None, None, status="failed", error=str(e))
                 notify.notify("error", "Tải video lỗi", f"{key[:120]}: {e}", "/queue")
+                _report(None, None, e)
 
         t = threading.Thread(target=_run, name="studio-download", daemon=True)
         self._downloads[key] = t
         t.start()
-        return {"message": "đang tải, tập sẽ tự vào pipeline khi tải xong"}
+        return {"message": "đang tải, tập sẽ tự vào pipeline khi tải xong", "job_id": job_id}
 
     def request_stop(self, episode_id: str) -> dict:
         """Drop a queued episode, or ask the running one to stop at the next safe point."""
