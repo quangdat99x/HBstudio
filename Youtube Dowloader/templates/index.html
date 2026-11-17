@@ -105,6 +105,41 @@
             </button>
         </div>
 
+        <!-- ═══ Danh sách chờ ═══ -->
+        <div class="card" id="queue-card">
+            <div class="card-title">
+                <i class="fas fa-list-check"></i> Danh sách chờ
+                <span id="queue-count" style="margin-left:6px;font-size:12.5px;color:var(--text-muted)"></span>
+                <button class="btn btn-ghost btn-sm" onclick="toggleQueueImport()" style="margin-left:auto" title="Dán thêm link vào danh sách">
+                    <i class="fas fa-file-import"></i> Nhập link
+                </button>
+                <button class="btn-danger" onclick="clearQueueDone()" title="Bỏ các mục đã tải xong khỏi danh sách">
+                    <i class="fas fa-broom"></i> Dọn mục xong
+                </button>
+            </div>
+            <div class="hint" style="margin-bottom:10px;align-items:flex-start">
+                <i class="fas fa-info-circle" style="margin-top:3px"></i>
+                <span>Nhập sẵn cả loạt link, rồi mỗi lần chỉ bấm <b>Tải</b> một video để không bị YouTube chặn.
+                Tải xong tự đánh dấu <b>Xong</b>; link đã có trong lịch sử cũng được đánh dấu Xong ngay khi nhập.</span>
+            </div>
+            <div id="queue-import" style="display:none;margin-bottom:12px">
+                <textarea class="url-textarea" id="queue-input" style="min-height:120px"
+                    placeholder="Dán link vào đây, mỗi link một dòng. Có chữ thừa quanh link cũng được."></textarea>
+                <div class="btn-row" style="margin-top:8px">
+                    <button class="btn btn-primary btn-sm" id="btn-queue-import" onclick="importQueue()">
+                        <i class="fas fa-plus"></i> Thêm vào danh sách
+                    </button>
+                    <button class="btn btn-ghost btn-sm" onclick="toggleQueueImport()">Đóng</button>
+                </div>
+            </div>
+            <div class="queue-filter" id="queue-filter">
+                <button class="chip active" data-f="all" onclick="setQueueFilter('all')">Tất cả</button>
+                <button class="chip" data-f="pending" onclick="setQueueFilter('pending')">Chưa tải</button>
+                <button class="chip" data-f="done" onclick="setQueueFilter('done')">Xong</button>
+            </div>
+            <div id="queue-list"></div>
+        </div>
+
         <!-- ═══ Video List ═══ -->
         <div class="card" id="video-list-card" style="display:none">
             <div class="card-title">

@@ -17,10 +17,12 @@ from config import (
     SECRET_KEY, DEFAULT_DOWNLOAD_DIR, MAX_CONCURRENT_DOWNLOADS,
     WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_MIN_SIZE,
 )
-from core import engine, history
+from core import engine, history, queue_store
 
 # YouTube breaks yt-dlp every few weeks; pick up the fix without a restart.
 engine.start_background_update()
+# Mục trong danh sách chờ đang tải lúc server tắt thì quay về "chưa tải".
+queue_store.reset_stuck()
 
 # ── Flask app ─────────────────────────────────────────────────────────────
 app = Flask(__name__, static_folder='static', template_folder='templates')
@@ -53,10 +55,10 @@ def _emit_progress(task_id, status, percent, speed='', eta=0, **extra):
     socketio.emit('download_progress', data)
 
 
-def _download_worker(task_id, url, download_dir, max_res, title):
+def _download_worker(task_id, url, download_dir, max_res, title, queue_id=None):
     """Worker that downloads a video, reporting any crash back to the UI."""
     try:
-        _run_download(task_id, url, download_dir, max_res, title)
+        _run_download(task_id, url, download_dir, max_res, title, queue_id)
     except Exception as e:
         # Without this the exception is swallowed by the Future and the task
         # sits at "Đang chờ" forever with nothing shown to the user.
@@ -66,9 +68,25 @@ def _download_worker(task_id, url, download_dir, max_res, title):
                 download_tasks[task_id]['status'] = 'error'
                 download_tasks[task_id]['error'] = str(e)
         _emit_progress(task_id, 'error', 0, error=f'Lỗi nội bộ: {e}')
+        if queue_id:
+            _queue_finished(queue_id, None, f'Lỗi nội bộ: {e}')
 
 
-def _run_download(task_id, url, download_dir, max_res, title):
+def _queue_finished(queue_id, result, error=None):
+    """Ghi kết quả tải vào mục danh sách chờ và báo cho giao diện."""
+    if result and result.get('success'):
+        item = queue_store.update(
+            queue_id, status='done', error=None,
+            title=result.get('title') or (queue_store.get(queue_id) or {}).get('title') or '',
+            filepath=result['filepath'], done_at=queue_store.now(),
+        )
+    else:
+        item = queue_store.update(queue_id, status='error', error=error or (result or {}).get('error'))
+    if item:
+        socketio.emit('queue_item', item)
+
+
+def _run_download(task_id, url, download_dir, max_res, title, queue_id=None):
     """Download one video and emit its progress events."""
     result = engine.download_video(
         task_id=task_id,
@@ -105,6 +123,9 @@ def _run_download(task_id, url, download_dir, max_res, title):
                 download_tasks[task_id]['error'] = result['error']
 
         _emit_progress(task_id, 'error', 0, error=result['error'])
+
+    if queue_id:
+        _queue_finished(queue_id, result)
 
 
 # ── Routes ────────────────────────────────────────────────────────────────
@@ -414,6 +435,76 @@ def cookies_import():
         if ln.strip() and not ln.startswith('#') and 'youtube' in ln.lower()
     )
     return jsonify({'success': True, 'count': count})
+
+
+# ── Danh sách chờ ─────────────────────────────────────────────────────────
+# Link nhập sẵn, mỗi link tải riêng khi bấm "Tải" (tải cả loạt một lúc dễ bị YouTube chặn).
+def _history_check(url):
+    return history.check(url, engine.extract_video_id)
+
+
+@app.route('/api/queue', methods=['GET'])
+def queue_list():
+    return jsonify({'items': queue_store.load()})
+
+
+@app.route('/api/queue/import', methods=['POST'])
+def queue_import():
+    """Nhập danh sách link (mỗi dòng một link). Không gọi YouTube ở bước này."""
+    data = request.json or {}
+    urls = queue_store.extract_urls(data.get('text', ''))
+    if not urls:
+        return jsonify({'success': False, 'error': 'Không thấy link nào trong nội dung dán vào.'})
+    stats = queue_store.add(urls, engine.extract_video_id, _history_check)
+    stats.update(success=True, items=queue_store.load())
+    return jsonify(stats)
+
+
+@app.route('/api/queue/<item_id>/download', methods=['POST'])
+def queue_download(item_id):
+    """Tải một mục trong danh sách chờ; xong thì tự đánh dấu 'done'."""
+    item = queue_store.get(item_id)
+    if not item:
+        return jsonify({'success': False, 'error': 'Mục này không còn trong danh sách.'})
+    if item['status'] == 'downloading':
+        return jsonify({'success': False, 'error': 'Mục này đang tải.'})
+
+    data = request.json or {}
+    download_dir = data.get('download_dir') or DEFAULT_DOWNLOAD_DIR
+    max_resolution = data.get('max_resolution', '1080p')
+    os.makedirs(download_dir, exist_ok=True)
+
+    task_id = str(uuid.uuid4())[:8]
+    with tasks_lock:
+        download_tasks[task_id] = {
+            'url': item['url'], 'title': item.get('title') or '', 'status': 'queued',
+            'progress': 0, 'speed': '', 'error': None, 'filename': None, 'queue_id': item_id,
+        }
+    item = queue_store.update(item_id, status='downloading', error=None, task_id=task_id)
+    socketio.emit('queue_item', item)
+    executor.submit(_download_worker, task_id, item['url'], download_dir, max_resolution,
+                    item.get('title') or '', item_id)
+    return jsonify({'success': True, 'task_id': task_id, 'item': item})
+
+
+@app.route('/api/queue/<item_id>/mark', methods=['POST'])
+def queue_mark(item_id):
+    """Người dùng tự đánh dấu: {"status": "done"} hoặc {"status": "pending"}."""
+    status = (request.json or {}).get('status', 'done')
+    item = queue_store.mark(item_id, 'done' if status == 'done' else 'pending')
+    if not item:
+        return jsonify({'success': False, 'error': 'Mục này không còn trong danh sách.'})
+    return jsonify({'success': True, 'item': item})
+
+
+@app.route('/api/queue/<item_id>', methods=['DELETE'])
+def queue_remove(item_id):
+    return jsonify({'success': queue_store.remove(item_id)})
+
+
+@app.route('/api/queue/clear-done', methods=['POST'])
+def queue_clear_done():
+    return jsonify({'success': True, 'removed': queue_store.remove_done()})
 
 
 # ── Entry point ──────────────────────────────────────────────────────────

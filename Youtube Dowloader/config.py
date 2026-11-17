@@ -8,6 +8,7 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FFMPEG_DIR = os.path.join(BASE_DIR, 'ffmpeg')
 HISTORY_FILE = os.path.join(BASE_DIR, 'history.csv')
+QUEUE_FILE = os.path.join(BASE_DIR, 'download_queue.json')   # danh sách chờ (riêng từng máy)
 DEFAULT_DOWNLOAD_DIR = r"K:\Downloads\YouTube"
 
 # ── Download settings ────────────────────────────────────────────────────

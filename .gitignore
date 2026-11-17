@@ -27,6 +27,7 @@ outputs/
 uploads/
 tmp/
 Youtube Dowloader/history.csv
+Youtube Dowloader/download_queue.json
 Youtube Dowloader/.ytdlp_update_check
 Creater Vid/engine/out/
 news-digest/state.json

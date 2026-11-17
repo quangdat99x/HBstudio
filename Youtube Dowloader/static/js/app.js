@@ -65,6 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
         socket = io();
         socket.on('download_progress', handleProgress);
+        socket.on('queue_item', handleQueueItem);
         socket.on('connect', () => setServerOffline(false));
         socket.on('disconnect', () => setServerOffline(true));
     } catch (e) {
@@ -74,6 +75,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Load initial state
     loadHistory();
+    loadQueue();
     refreshCookieStatus();
 });
 
@@ -335,7 +337,7 @@ function handleProgress(data) {
     const pct = document.getElementById(`dl-pct-${task_id}`);
     const spd = document.getElementById(`dl-spd-${task_id}`);
     const item = document.getElementById(`dl-${task_id}`);
-    if (!bar) return;
+    if (!bar) { handleQueueProgress(data); return; }
 
     bar.style.width = `${percent}%`;
     pct.textContent = `${percent}%`;
@@ -475,4 +477,215 @@ async function repairTool() {
     } catch (e) {
         showToast('Lỗi: ' + e.message, 'error');
     }
+}
+
+// ── Danh sách chờ ────────────────────────────────────────────────────
+//  Link nhập sẵn, mỗi link một nút "Tải". Trạng thái lưu ở server
+//  (download_queue.json) nên mở lại tool vẫn còn.
+let queueItems = [];
+let queueFilter = 'all';
+const queueTaskToItem = {};   // task_id -> item id (để vẽ tiến trình vào đúng dòng)
+
+async function loadQueue() {
+    try {
+        const res = await api('/api/queue');
+        const d = await res.json();
+        queueItems = d.items || [];
+        queueItems.forEach(it => { if (it.task_id && it.status === 'downloading') queueTaskToItem[it.task_id] = it.id; });
+        renderQueue();
+    } catch (e) { /* banner already shown by api() */ }
+}
+
+function toggleQueueImport(show) {
+    const box = document.getElementById('queue-import');
+    const open = show !== undefined ? show : box.style.display === 'none';
+    box.style.display = open ? '' : 'none';
+    if (open) document.getElementById('queue-input').focus();
+}
+
+async function importQueue() {
+    const ta = document.getElementById('queue-input');
+    const text = ta.value.trim();
+    if (!text) { showToast('Dán ít nhất một link trước.', 'error'); return; }
+    const btn = document.getElementById('btn-queue-import');
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Đang thêm...';
+    try {
+        const res = await api('/api/queue/import', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text }),
+        });
+        const d = await res.json();
+        if (!d.success) { showToast(d.error || 'Không nhập được.', 'error'); return; }
+        queueItems = d.items || [];
+        renderQueue();
+        ta.value = '';
+        toggleQueueImport(false);
+        let msg = `Đã thêm ${d.added} link.`;
+        if (d.already_done) msg += ` ${d.already_done} link đã tải trước đó → đánh dấu Xong.`;
+        if (d.skipped) msg += ` ${d.skipped} link đã có trong danh sách, bỏ qua.`;
+        showToast(msg, d.added ? 'success' : 'warning');
+    } catch (e) {
+        showToast('Lỗi: ' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+    }
+}
+
+function setQueueFilter(f) {
+    queueFilter = f;
+    document.querySelectorAll('#queue-filter .chip').forEach(c => c.classList.toggle('active', c.dataset.f === f));
+    renderQueue();
+}
+
+function queueStatusBadge(it) {
+    switch (it.status) {
+        case 'done':        return '<span class="dl-badge badge-done"><i class="fas fa-check-circle"></i> Xong' + (it.done_at ? ` · ${esc(it.done_at)}` : '') + '</span>';
+        case 'downloading': return '<span class="dl-badge badge-active"><span class="spinner"></span> Đang tải</span>';
+        case 'error':       return '<span class="dl-badge badge-error"><i class="fas fa-exclamation-triangle"></i> Lỗi</span>';
+        default:            return '<span class="dl-badge badge-queued"><i class="far fa-circle"></i> Chưa tải</span>';
+    }
+}
+
+function renderQueue() {
+    const list = document.getElementById('queue-list');
+    const count = document.getElementById('queue-count');
+    const done = queueItems.filter(i => i.status === 'done').length;
+    count.textContent = queueItems.length ? `(${done}/${queueItems.length} xong)` : '';
+
+    const shown = queueItems.filter(it =>
+        queueFilter === 'all' ? true :
+        queueFilter === 'done' ? it.status === 'done' : it.status !== 'done');
+
+    if (!shown.length) {
+        list.innerHTML = `<div class="q-empty"><i class="fas fa-inbox"></i>${
+            queueItems.length ? 'Không có mục nào ở mục lọc này.' : 'Chưa có link nào. Bấm <b>Nhập link</b> để dán danh sách.'}</div>`;
+        return;
+    }
+
+    list.innerHTML = shown.map(it => {
+        const idx = queueItems.indexOf(it) + 1;
+        const title = it.title ? esc(it.title) : esc(it.url);
+        const busy = it.status === 'downloading';
+        const mainBtn = it.status === 'done'
+            ? `<button class="btn btn-ghost" onclick="markQueue('${it.id}','pending')" title="Đưa về Chưa tải"><i class="fas fa-rotate-left"></i> Chưa tải</button>`
+            : `<button class="btn btn-primary" onclick="downloadQueueItem('${it.id}')" ${busy ? 'disabled' : ''}>
+                   ${busy ? '<span class="spinner"></span> Đang tải' : `<i class="fas fa-download"></i> ${it.status === 'error' ? 'Tải lại' : 'Tải'}`}
+               </button>`;
+        const markDone = it.status === 'done' || busy ? '' :
+            `<button class="btn-icon" onclick="markQueue('${it.id}','done')" title="Đánh dấu Xong (đã tải bằng cách khác)"><i class="fas fa-check"></i></button>`;
+        const fileName = it.filepath ? it.filepath.split(/[\\/]/).pop() : '';
+        return `
+        <div class="q-item is-${it.status}" id="q-${it.id}">
+            <div class="q-idx">${idx}</div>
+            <div class="q-main">
+                <div class="q-title"><a href="${esc(it.url)}" target="_blank" rel="noopener" title="${esc(it.url)}">${title}</a></div>
+                ${it.title ? `<div class="q-url">${esc(it.url)}</div>` : ''}
+                <div class="q-sub">${queueStatusBadge(it)}${fileName ? `<span title="${esc(it.filepath)}"><i class="fas fa-file-video"></i> ${esc(fileName)}</span>` : ''}</div>
+                ${it.error && it.status === 'error' ? `<div class="q-err">${esc(it.error)}</div>` : ''}
+                <div class="q-progress" id="qp-${it.id}" style="display:${busy ? '' : 'none'}">
+                    <div class="progress-track"><div class="progress-fill" id="qp-bar-${it.id}" style="width:0%"></div></div>
+                    <div class="dl-meta"><span id="qp-pct-${it.id}">0%</span><span id="qp-spd-${it.id}"></span></div>
+                </div>
+            </div>
+            <div class="q-actions">
+                ${mainBtn}
+                ${markDone}
+                <button class="btn-icon danger" onclick="removeQueueItem('${it.id}')" title="Bỏ khỏi danh sách" ${busy ? 'disabled' : ''}><i class="fas fa-times"></i></button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+async function downloadQueueItem(id) {
+    const downloadDir = document.getElementById('download-dir').value.trim();
+    const maxRes = document.getElementById('resolution-select').value;
+    if (!downloadDir) { showToast('Vui lòng chọn thư mục lưu trữ.', 'error'); return; }
+    try {
+        const res = await api(`/api/queue/${id}/download`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ download_dir: downloadDir, max_resolution: maxRes }),
+        });
+        const d = await res.json();
+        if (!d.success) { showToast(d.error || 'Không tải được.', 'error'); return; }
+        queueTaskToItem[d.task_id] = id;
+        handleQueueItem(d.item);
+        showToast('Bắt đầu tải. Xong sẽ tự đánh dấu.', 'success');
+    } catch (e) {
+        showToast('Lỗi: ' + e.message, 'error');
+    }
+}
+
+async function markQueue(id, status) {
+    try {
+        const res = await api(`/api/queue/${id}/mark`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status }),
+        });
+        const d = await res.json();
+        if (d.success) handleQueueItem(d.item);
+        else showToast(d.error || 'Không đánh dấu được.', 'error');
+    } catch (e) {
+        showToast('Lỗi: ' + e.message, 'error');
+    }
+}
+
+async function removeQueueItem(id) {
+    try {
+        await api(`/api/queue/${id}`, { method: 'DELETE' });
+        queueItems = queueItems.filter(it => it.id !== id);
+        renderQueue();
+    } catch (e) {
+        showToast('Lỗi: ' + e.message, 'error');
+    }
+}
+
+async function clearQueueDone() {
+    const n = queueItems.filter(i => i.status === 'done').length;
+    if (!n) { showToast('Không có mục nào đã xong.', 'warning'); return; }
+    if (!confirm(`Bỏ ${n} mục đã tải xong khỏi danh sách chờ? (Lịch sử tải vẫn giữ.)`)) return;
+    try {
+        await api('/api/queue/clear-done', { method: 'POST' });
+        loadQueue();
+    } catch (e) {
+        showToast('Lỗi: ' + e.message, 'error');
+    }
+}
+
+/** Server báo một mục đổi trạng thái (bắt đầu tải, xong, lỗi). */
+function handleQueueItem(item) {
+    if (!item) return;
+    const i = queueItems.findIndex(it => it.id === item.id);
+    const wasDone = i >= 0 && queueItems[i].status === 'done';
+    if (i >= 0) queueItems[i] = item; else queueItems.push(item);
+    if (item.task_id) queueTaskToItem[item.task_id] = item.id;
+    renderQueue();
+    if (item.status === 'done' && !wasDone && item.filepath) {
+        showToast(`Tải xong: ${item.title || item.url}`, 'success');
+        loadHistory();
+    } else if (item.status === 'error') {
+        showToast(`Lỗi tải: ${item.title || item.url}`, 'error');
+    }
+}
+
+/** Vẽ tiến trình của một task thuộc danh sách chờ vào đúng dòng. */
+function handleQueueProgress(data) {
+    const id = queueTaskToItem[data.task_id];
+    if (!id) return false;
+    const box = document.getElementById(`qp-${id}`);
+    if (!box) return true;
+    box.style.display = '';
+    const bar = document.getElementById(`qp-bar-${id}`);
+    const pct = document.getElementById(`qp-pct-${id}`);
+    const spd = document.getElementById(`qp-spd-${id}`);
+    if (data.status === 'merging') {
+        bar.style.width = '100%'; pct.textContent = 'Đang ghép video + audio...'; spd.textContent = '';
+    } else {
+        bar.style.width = `${data.percent}%`;
+        pct.textContent = `${data.percent}%`;
+        spd.textContent = data.speed || '';
+    }
+    return true;
 }
