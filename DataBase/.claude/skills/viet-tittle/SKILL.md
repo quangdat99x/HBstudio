@@ -708,161 +708,181 @@ biểu cảm.
 
 ---
 
-## BƯỚC 4 — Dựng thumbnail trên Canva (thay cho bước viết image prompt cũ)
+## BƯỚC 4 — Dựng thumbnail: MOCK trước → người dùng DUYỆT → mới lưu Canva
 
-> Bước này **tạo thumbnail thật**, không xuất prompt. Công cụ: Canva connector
-> (`copy-design`, `read-design`, `edit-design`, `create-upload-url`,
-> `upload-asset-from-url`, `generate-image`, `export-design`) và script trích
-> khung `E:\Tool\jre-thumb\frames.py`.
+> Bước này **tạo thumbnail thật**, không xuất prompt. Chia **hai pha**:
+> - **4A. Dựng plan + mock trên máy, không đụng Canva:** chọn khung, ảnh giữa,
+>   tính crop, dựng `mock.jpg` 1920×1080, tự soát, rồi **đưa người dùng xem**.
+> - **4B. Áp lên Canva, chỉ sau khi người dùng duyệt** ("OK", "lưu đi", hoặc
+>   nút **Duyệt thumbnail** trên JRE Studio): copy template, upload, fill,
+>   crop đúng plan, commit, export, check back.
+>
+> Chưa có lời duyệt thì **không** gọi bất kỳ công cụ Canva nào có ghi. Người
+> dùng muốn sửa → sửa plan và dựng lại mock (vẫn ở 4A).
+> Công cụ: script `C:\Tool\jre-thumb\frames.py` (đọc docstring đầu file),
+> Canva connector chỉ dùng ở 4B.
 
-### 4.1 Lấy video của đoạn
+Mọi file của một đoạn nằm trong **một thư mục làm việc** (vd
+`<thư mục clip>\thumb_<rank>`): `sheet_*.jpg`, `frame_*.png`, ảnh giữa,
+`thumb_plan.json`, `mock.jpg`. File thumbnail cuối:
+`<thư mục clip>\thumb_<episode_id>_<rank>_<keyword-slug>.jpg`.
+Trên JRE Studio, các đường dẫn này được đưa sẵn trong prompt, dùng đúng y vậy.
+
+### 4A.1 Lấy video của đoạn
 
 Cần file video **của đoạn highlight** (clip đã cắt, hoặc tập gốc + `start`/`end`
-từ cutlist). Chưa có đường dẫn video → **hỏi người dùng đúng 1 lần.**
+từ cutlist). Chưa có đường dẫn video → **hỏi người dùng đúng 1 lần**
+(chế độ tự động: ghi ⚠️ rồi bỏ phần khung Joe/khách).
 Tập gốc → giới hạn `--start/--end` theo `segments[].start/end`, không quét cả tập.
 
-### 4.2 Chọn khung Joe & khách
+### 4A.2 Chọn khung Joe & khách
 
 ```bash
-py -3.14 -X utf8 E:\Tool\jre-thumb\frames.py sheet "<video>" --start <S> --end <E> --step 1.5 --out "<thư mục output>\thumbframes"
+py -3.14 -X utf8 C:\Tool\jre-thumb\frames.py sheet "<video>" --start <S> --end <E> --step 1.5 --out "<thư mục làm việc>"
 ```
 
 Script tạo `sheet_XX.jpg` (lưới 5×4, mỗi ô có nhãn **giây của video nguồn**).
 **Đọc (Read) TỪNG sheet**, chọn 1 mốc cho Joe và 1 mốc cho khách theo bảng
-biểu cảm ở Bước 3B. Đoạn dài > 10 phút thì tăng `--step` lên 3–4 cho đỡ sheet,
-rồi quét mịn lại (`--step 0.5`) quanh vài giây của khung ứng viên để lấy
-khoảnh khắc biểu cảm đỉnh nhất.
+biểu cảm ở Bước 3B. Đoạn dài > 10 phút thì tăng `--step` lên 3–8 cho đỡ sheet,
+rồi quét mịn lại (`--step 1`, hoặc 0.5) quanh vài giây của khung ứng viên để
+lấy khoảnh khắc biểu cảm đỉnh nhất.
 
-Cắt khung full-res (kèm bản `_grid.jpg` có lưới tọa độ, dùng cho bước crop mặt ở 4.4) rồi **Read lại ảnh** để chắc chắn đúng người, đúng biểu cảm:
+Cắt khung full-res (kèm bản `_grid.jpg` có lưới tọa độ 100px để đọc hộp đầu)
+rồi **Read lại ảnh** để chắc chắn đúng người, đúng biểu cảm:
 
 ```bash
-py -3.14 -X utf8 E:\Tool\jre-thumb\frames.py grab "<video>" --t <giây_joe> --t <giây_khách> --out "<thư mục output>\thumbframes"
+py -3.14 -X utf8 C:\Tool\jre-thumb\frames.py grab "<video>" --t <giây_joe> --t <giây_khách> --out "<thư mục làm việc>"
 ```
 
-### 4.3 Đưa ảnh lên Canva
+### 4A.3 Ảnh ô giữa
 
-- **Khung Joe / khách (file trên máy):** mỗi file gọi `create-upload-url` một
-  lần, rồi:
+- **Ảnh thật (mặc định):** tải về thư mục làm việc. **Wikimedia chặn Canva
+  fetch**, nên luôn tải về máy, bắt buộc kèm User-Agent:
   ```bash
-  curl -s -X POST "<upload_url>" -H "Content-Type: application/octet-stream" --data-binary "@<file.png>"
-  ```
-  Lấy media id từ response. Mỗi URL chỉ dùng một lần.
-- **Ô giữa, ảnh thật:** `upload-asset-from-url` với URL ảnh gốc.
-  Upload lỗi (`fetch_failed`, site chặn hotlink) → tải về thư mục output rồi đi
-  đường `create-upload-url` như trên. **Wikimedia luôn chặn Canva fetch**, nên
-  với ảnh `upload.wikimedia.org` đi thẳng đường này, bắt buộc kèm User-Agent:
-  ```bash
-  curl -s -L -A "jre-thumb/1.0 (personal thumbnail tool)" -o "<thư mục output>\center_<keyword>.jpg" "<URL ảnh gốc>"
+  curl -s -L -A "jre-thumb/1.0 (personal thumbnail tool)" -o "<thư mục làm việc>\center_<keyword>.jpg" "<URL ảnh gốc>"
   ```
   Tìm ảnh Commons nhanh qua API (trả tên file, kích thước, license, mô tả):
   `https://commons.wikimedia.org/w/api.php?action=query&list=search&srsearch=<keyword>&srnamespace=6&srlimit=30&format=json`,
   rồi `prop=imageinfo&iiprop=url|size|extmetadata&iiurlwidth=500` để lấy URL
   gốc + thumb. Ghép thumb các ứng viên thành 1 dải và Read để chọn bằng mắt.
-- **Ô giữa, AI:** `generate-image` (`PORTRAIT_2_3`) → lấy `media_id` từ kết quả job.
+- **AI (chỉ khi chủ đề không thể có ảnh thật):** chưa tạo ở 4A. Ghi prompt
+  vào plan dưới khóa `"center_ai_prompt"` (mock sẽ hiện ô giữa xám kèm prompt),
+  ảnh được tạo bằng Canva `generate-image` ở 4B.
 
-### 4.4 Dựng design
+### 4A.4 Plan: crop trọn đầu + fill ảnh giữa
+
+**CROP MẶT, BẮT BUỘC, KHÔNG ĐƯỢC BỎ.** Nếu để Canva tự đặt ảnh, mặt người
+trong frame JRE (thường nằm giữa frame) **luôn bị ô giữa che mất**. Lần test
+đầu (JRE #2567) mặt Joe bị che nửa vì chỉ căn tâm mặt mà không kiểm cả khối đầu.
+
+1. Mở `frame_<t>_grid.jpg`, đọc **hộp đầu** `X1,Y1,X2,Y2` theo px frame gốc:
+   **trọn khối đầu**, từ đỉnh đầu/tóc đến cằm, từ tai trái đến tai phải (gồm
+   cả tóc xõa).
+2. Ghi vào plan (vị trí các ô của template `DAHVNt9L56k` đã có sẵn trong script):
+   ```bash
+   py -3.14 -X utf8 C:\Tool\jre-thumb\frames.py crop --side left  --head X1,Y1,X2,Y2 --img "<frame_joe.png>"   --plan "<thư mục làm việc>\thumb_plan.json"
+   py -3.14 -X utf8 C:\Tool\jre-thumb\frames.py crop --side right --head X1,Y1,X2,Y2 --img "<frame_khach.png>" --plan "<thư mục làm việc>\thumb_plan.json"
+   py -3.14 -X utf8 C:\Tool\jre-thumb\frames.py fill --img "<center.jpg>" --plan "<thư mục làm việc>\thumb_plan.json" [--focus FX,FY] [--zoom 1.2]
+   ```
+   `crop` đặt **trọn khối đầu** vào giữa dải ô bên còn lộ ra, chừa 15px
+   (`--margin`), đỉnh đầu ở y≈40 (`--head-top`), đầu cao ~700px (`--head-h`;
+   tự thu nhỏ nếu dải lộ quá hẹp). Dòng `CHECK` in vị trí đầu + khoảng cách
+   tới ô giữa. **`OVERLAP` (exit code 2) → plan không được ghi**; giảm
+   `--head-h` hoặc chọn khung khác.
+   `fill` phủ kín ô giữa; `--focus` là điểm của ảnh (tỉ lệ 0–1) cần nằm giữa
+   ô, `--zoom` > 1 để cận hơn.
+
+   **Tỉ lệ chuẩn, lấy từ thumb mẫu người dùng đã duyệt (Joe + khách tóc xoăn
+   đeo bandana, ô giữa con sói):** đầu hai bên **to, gần lấp kín dải lộ**,
+   đỉnh đầu gần sát mép trên trang, mặt chiếm khoảng nửa trên khung hình, cân
+   với ô giữa. Đầu 600px / đỉnh y≈120 đã bị người dùng chê là "nhỏ, không cân
+   với ảnh giữa". **Không** thu nhỏ đầu cho "thoáng".
+3. **Hai bên phải cân nhau:** dùng cùng `--head-h` cho Joe và khách. Nếu một
+   bên bị thu nhỏ vì dải hẹp, chạy lại bên kia với `--head-h` bằng chiều cao
+   CHECK của bên nhỏ.
+4. Mặt nhìn ra ngoài → chọn khung khác (frame Joe luôn có biển neon JRE, lật
+   ảnh sẽ làm chữ ngược, nên **không lật Joe**).
+
+### 4A.5 Mock + tự soát. BẮT BUỘC TRƯỚC KHI ĐƯA NGƯỜI DÙNG XEM
+
+```bash
+py -3.14 -X utf8 C:\Tool\jre-thumb\frames.py mock --plan "<thư mục làm việc>\thumb_plan.json" --out "<thư mục làm việc>\mock.jpg"
+```
+
+**Read `mock.jpg`** (1920×1080, đã vẽ khung xanh + logo 4K) và soát từng mục,
+trượt mục nào là sửa plan rồi dựng lại. **Không** kết luận từ ảnh nhỏ (lần test
+đầu đã kết luận "ổn" sai từ preview 600px của Canva).
+- [ ] Mặt Joe **trọn vẹn**: mắt, mũi, cả hai tai, không mép nào chạm/khuất
+  sau ô giữa.
+- [ ] Mặt khách trọn vẹn, tương tự.
+- [ ] Hai đầu **cao xấp xỉ nhau** (chênh ≤ 10%) và **ngang hàng** (đỉnh đầu
+  lệch ≤ 60px).
+- [ ] Đầu **to ngang thumb mẫu** (≈700px, gần lấp kín dải lộ), không nhỏ lọt
+  thỏm giữa nền.
+- [ ] Không đầu nào bị cắt đỉnh ở mép trên trang; logo 4K được phép đè
+  tóc/nền, **không được đè mặt**.
+- [ ] Biểu cảm vẫn đọc được ở cỡ nhỏ: thu nhỏ mock còn 320px rồi nhìn lại.
+- [ ] Subject ô giữa nằm giữa khung, nhận ra ngay keyword.
+
+**Đưa người dùng xem mock** (gửi file / trên Studio thì hiện sẵn), ghi rõ đã
+kiểm những gì và còn hạn chế gì (vd micro che miệng do khung gốc). **Dừng ở
+đây chờ duyệt.**
+
+### 4B. Áp lên Canva. CHỈ SAU KHI NGƯỜI DÙNG DUYỆT
 
 1. `copy-design` từ template **`DAHVNt9L56k`**. **Không bao giờ sửa trực
    tiếp template gốc.** `update_title` cho bản copy:
    `THUMB | <keyword hạt nhân> | <Khách mời>`.
-2. `read-design` bản copy với `open_transaction: true`, fields
-   `design_content` + `thumbnails`.
-3. **Nhận diện 3 ô theo hình học, không hardcode locator id** (người dùng có
-   thể chỉnh template):
-   - ô có `stroke.weight` > 0 màu xanh `#00bf63` → **GIỮA**
-   - ô ảnh lớn có `left` ≈ 0 và rộng > 900, không phải nền full 1920×1080 → **TRÁI (Joe)**
-   - ô ảnh lớn có `left` ≈ 900–1000 → **PHẢI (khách)**
-   - nền 1920×1080, logo 4K, nét gạch đỏ → **giữ nguyên**
-4. `edit-design` (`keep_open`): 3 lệnh `update_fill` (alt_text tiếng Anh mô
-   tả ảnh).
-5. **CROP MẶT, BẮT BUỘC, KHÔNG ĐƯỢC BỎ.** `update_fill` tự đặt khung hình vào
-   giữa ô, mà mặt người trong frame JRE thường nằm giữa frame, nên **mặt luôn
-   bị ô giữa che mất**. Lần test đầu (JRE #2567) mặt Joe bị che nửa vì chỉ
-   căn tâm mặt mà không kiểm cả khối đầu. Quy trình đúng:
-   1. Mở `frame_<t>_grid.jpg` (lệnh `grab` tạo sẵn, lưới 100px có số), đọc
-      **hộp đầu** `X1,Y1,X2,Y2` theo px frame gốc: **trọn khối đầu**, từ đỉnh
-      đầu/tóc đến cằm, từ tai trái đến tai phải (gồm cả tóc xõa).
-   2. Tính imageBox bằng lệnh `crop` (lấy `L,T,W,H` của ô bên và
-      `CL,CT,CW,CH` của ô giữa từ `design_content`):
-      ```bash
-      py -3.14 -X utf8 E:\Tool\jre-thumb\frames.py crop --head X1,Y1,X2,Y2 --panel L,T,W,H --center CL,CT,CW,CH --side left
-      py -3.14 -X utf8 E:\Tool\jre-thumb\frames.py crop --head X1,Y1,X2,Y2 --panel L,T,W,H --center CL,CT,CW,CH --side right
-      ```
-      Script đặt **trọn khối đầu** vào giữa dải ô bên còn lộ ra, chừa 15px
-      (`--margin`), đỉnh đầu ở y≈40 (`--head-top`), đầu cao ~700px
-      (`--head-h`; tự thu nhỏ nếu dải lộ quá hẹp).
-
-      **Tỉ lệ chuẩn, lấy từ thumb mẫu người dùng đã duyệt (Joe + khách
-      tóc xoăn đeo bandana, ô giữa con sói):** đầu hai bên **to, gần lấp kín
-      dải lộ**, đỉnh đầu gần sát mép trên trang, mặt chiếm khoảng nửa trên
-      khung hình, cân với ô giữa. Đầu 600px / đỉnh y≈120 đã bị người dùng
-      chê là "nhỏ, không cân với ảnh giữa". **Không** thu nhỏ đầu cho "thoáng". Dòng `CHECK` in vị trí đầu
-      trên trang + khoảng cách tới ô giữa. **`OVERLAP` (exit code 2) → không
-      được dùng.** Giảm `--head-h` hoặc chọn khung khác.
-   3. **Hai bên phải cân nhau:** dùng cùng `--head-h` cho Joe và khách để
-      hai đầu cao bằng nhau. Nếu một bên bị thu nhỏ vì dải hẹp, chạy lại bên
-      kia với `--head-h` bằng chiều cao CHECK của bên nhỏ.
-   4. Dán JSON vào `crop_media` (`left`, `top`, `width`, `height`) cho từng ô.
-6. **TỰ KIỂM BỐ CỤC Ở ĐỘ PHÂN GIẢI THẬT. BẮT BUỘC TRƯỚC KHI ĐƯA NGƯỜI DÙNG
-   XEM.** Thumbnail preview của Canva chỉ rộng 600px, nhìn vào đó **không đủ**
-   để kết luận (lần test đầu đã kết luận "ổn" sai từ preview). Dựng bản
-   1920×1080 từ chính các imageBox trong `document` trả về:
+2. Upload từng ảnh trong plan: `create-upload-url` (mỗi URL dùng một lần) rồi
    ```bash
-   py -3.14 -X utf8 E:\Tool\jre-thumb\frames.py mock --layer "<frame_joe.png>,L,T,W,H,BL,BT,BW,BH" --layer "<frame_khach.png>,L,T,W,H,BL,BT,BW,BH" --layer "<center.jpg>,L,T,W,H,BL,BT,BW,BH" --frame CL,CT,CW,CH --out "<thư mục output>\mock.jpg"
+   curl -s -X POST "<upload_url>" -H "Content-Type: application/octet-stream" --data-binary "@<file>"
    ```
-   (`L,T,W,H` = element, `BL,BT,BW,BH` = `imageBox` của element đó; thứ tự
-   layer: trái, phải, giữa.) **Read `mock.jpg`** và soát từng mục, trượt mục
-   nào là sửa rồi dựng lại:
-   - [ ] Mặt Joe **trọn vẹn**: mắt, mũi, cả hai tai, không mép nào chạm/khuất
-     sau ô giữa.
-   - [ ] Mặt khách trọn vẹn, tương tự.
-   - [ ] Hai đầu **cao xấp xỉ nhau** (chênh ≤ 10%) và **ngang hàng** (đỉnh đầu
-     lệch ≤ 60px).
-   - [ ] Đầu **to ngang thumb mẫu** (≈700px, gần lấp kín dải lộ), không nhỏ
-     lọt thỏm giữa nền.
-   - [ ] Không đầu nào bị cắt đỉnh ở mép trên trang. `mock` vẽ sẵn logo 4K
-     (góc phải trên): logo được phép đè tóc/nền, **không được đè mặt**.
-   - [ ] Biểu cảm vẫn đọc được ở cỡ nhỏ: thu nhỏ mock còn 320px rồi nhìn lại.
-   - [ ] Subject ô giữa nằm giữa khung, nhận ra ngay keyword.
-   Khi báo người dùng, ghi rõ đã kiểm những gì và còn hạn chế gì (vd micro che
-   miệng do khung gốc).
-   - Mặt nhìn ra ngoài → `flip_media` (chỉ khi không có chữ trong khung,
-     mà frame Joe luôn có biển neon JRE, nên **không lật Joe**; chọn khung
-     khác).
-   - Subject ô giữa bị cắt → `crop_media` cho subject vào giữa ô (ô giữa dọc
-     ~624×913, ảnh ngang tự cắt hai bên).
-   Ô giữa phải đè lên mép trong của hai ô bên như template.
-7. **Cho người dùng xem thumbnail preview + `mock.jpg`, chờ OK rồi mới `commit`.**
-   Người dùng đòi đổi → sửa tiếp trong cùng transaction.
-8. `export-design`: `jpg`, `quality` 90, `width` 1920, `height` 1080. Tải về
-   thư mục output (cạnh cutlist/transcript):
+   lấy `mediaId`. Plan có `center_ai_prompt` → `generate-image`
+   (`PORTRAIT_2_3`) với đúng prompt đó, dùng `media_id` của kết quả.
+3. `read-design` bản copy với `open_transaction: true`, fields
+   `design_content` + `thumbnails`. **Nhận diện 3 ô theo hình học, không
+   hardcode locator id:** ô viền xanh `#00bf63` → **GIỮA**; ô ảnh lớn `left`
+   ≈ 0, rộng > 900, không phải nền 1920×1080 → **TRÁI (Joe)**; ô ảnh lớn
+   `left` ≈ 900–1000 → **PHẢI (khách)**; nền, logo 4K, nét gạch đỏ → giữ
+   nguyên. Đối chiếu element với `element` trong plan; lệch (template đã bị
+   sửa) → dừng, báo người dùng.
+4. `edit-design` (`keep_open`): 3 lệnh `update_fill` (alt_text tiếng Anh) rồi
+   `crop_media` mỗi ô đúng `image_box` trong plan (ô giữa AI: tải ảnh kết quả
+   về rồi chạy `fill` để tính, hoặc để Canva tự fill).
+   **Logo 4K của kênh** (`C:\Tool\jre-thumb\logo_4k.png`, ghi sẵn trong
+   `plan.logo`): upload như các ảnh khác, `update_fill` vào badge 4K của
+   template (ô nhỏ góc phải trên, `left` ≈ 1772), rồi `resize_element`
+   (`preserve_aspect_ratio: false`) + `position_element` đúng
+   `plan.logo.element` (140×109 tại 1746,29; logo ngang hơn badge cũ nên ô
+   phải rộng ra, không để Canva cắt hai bên logo). Mock đã vẽ sẵn logo này.
+5. So thumbnail trả về với mock đã duyệt. Khớp → `edit-design`
+   `finalize: commit`. Không khớp → sửa tiếp trong transaction, **không
+   commit bản khác mock**.
+6. `export-design`: `jpg`, `quality` 90, `width` 1920, `height` 1080, tải về:
    ```bash
-   curl -L -o "<thư mục output>\thumb_<episode_id>_<keyword-slug>.jpg" "<download_url>"
+   curl -s -L -o "<file thumbnail cuối>" "<download_url>"
    ```
    YouTube giới hạn **2 MB**: file > 2 MB → export lại với `quality` 80.
-9. **CHECK BACK SẢN PHẨM CUỐI. BẮT BUỘC MỖI LẦN EXPORT, KỂ CẢ LƯỢT SỬA LẠI.**
+7. **CHECK BACK SẢN PHẨM CUỐI. BẮT BUỘC MỖI LẦN EXPORT, KỂ CẢ LƯỢT SỬA LẠI.**
    Người dùng yêu cầu rõ: *mỗi lần chạy phải tự kiểm lại khuôn mặt Joe và
    khách có đúng vị trí và tỷ lệ không*. Không được báo "xong" khi chưa qua
    bước này.
    1. So file export với `mock.jpg` đã duyệt:
       ```bash
-      py -3.14 -X utf8 E:\Tool\jre-thumb\frames.py verify --export "<thumb.jpg>" --mock "<thư mục output>\mock.jpg" --center CL,CT,CW,CH
+      py -3.14 -X utf8 C:\Tool\jre-thumb\frames.py verify --export "<file thumbnail cuối>" --mock "<thư mục làm việc>\mock.jpg"
       ```
       Hai dải bên phải `OK` (lệch trung bình ≤ 10; bản đúng thường 1–2).
-      `MISMATCH` → Canva đặt ảnh khác với bản đã tính (thường do quên
-      `commit`, commit nhầm transaction, hoặc export trước khi lưu) → sửa
-      rồi export lại, không giao file.
-   2. **Read file export** (không phải mock) và soát lại đúng checklist ở
-      bước 6: mặt Joe và mặt khách trọn vẹn, không khuất sau ô giữa · hai
-      đầu cao xấp xỉ nhau và ngang hàng · đầu to ngang thumb mẫu (~700px,
-      gần lấp kín dải lộ) · logo 4K không đè mặt.
-   3. Báo kết quả kiểm cho người dùng thành một dòng cụ thể, vd:
+      `MISMATCH` → Canva đặt ảnh khác bản đã duyệt (thường do quên `commit`,
+      commit nhầm transaction, hoặc export trước khi lưu) → sửa rồi export
+      lại, không giao file.
+   2. **Read file export** (không phải mock) và soát lại checklist ở 4A.5.
+   3. Báo kết quả thành một dòng cụ thể, vd:
       `Check back: Joe OK (diff 1.8) · khách OK (diff 1.2) · 2 đầu ~700px,
       cách ô giữa 86px / 19px · logo không đè mặt`.
 
-**Output Bước 4:** ảnh thumbnail (đường dẫn file) + link edit Canva + bảng
-nguồn 3 ô (Joe @ giây X · khách @ giây Y · ô giữa: nguồn/AI) + dòng
-**Check back** ở bước 9.
+**Output Bước 4:** 4A → đường dẫn `mock.jpg` + bảng nguồn 3 ô (Joe @ giây X ·
+khách @ giây Y · ô giữa: nguồn/license hoặc AI) + kết quả tự soát, rồi chờ
+duyệt. 4B → file thumbnail + link edit Canva + dòng **Check back**.
 
 ---
 
@@ -873,7 +893,7 @@ nguồn 3 ô (Joe @ giây X · khách @ giây Y · ô giữa: nguồn/AI) + dòn
 | **🔑 Keyword hạt nhân** | Cụm khán giả GÕ VÀO Ô TÌM KIẾM. Không giới hạn loại từ — `workout smarter` hợp lệ y hệt `hitler`. Lấy từ `core_keyword` của cutlist V2.4+ nếu có; **không tự đổi**. Cấm dùng tên khách mời làm keyword, trừ khi chính khách là thứ người ta săn tìm |
 | **Keyword trong title** | **Nguyên văn**, nằm trong **5 từ đầu**. `Joe Rogan` KHÔNG được chiếm 2 từ đầu (dữ liệu kênh: mở đầu bằng "Joe Rogan" = Idx 1.00, trung tính) nhưng vẫn bắt buộc có trong title (bỏ hẳn = Idx 0.88). Độ dài 9–14 từ |
 | **Keyword trong thumbnail** | Ô giữa phải là **CHÍNH keyword**, không phải ẩn dụ của nó. Test: *"người vừa gõ cụm đó, nhìn có thấy đúng thứ họ gõ không?"* Gate cuối: **test che title** |
-| **Format thumbnail** | Copy template Canva `DAHVNt9L56k` (không sửa bản gốc). TRÁI = Joe, PHẢI = khách: khung cắt từ chính video, biểu cảm khớp vibe, nhìn về phía ô giữa. GIỮA = ảnh nội dung, viền xanh. Preview → người dùng OK → commit → export JPG ≤ 2 MB |
+| **Format thumbnail** | Copy template Canva `DAHVNt9L56k` (không sửa bản gốc). TRÁI = Joe, PHẢI = khách: khung cắt từ chính video, biểu cảm khớp vibe, nhìn về phía ô giữa. GIỮA = ảnh nội dung, viền xanh. Plan + mock 1920px trên máy (không Canva) → người dùng duyệt → mới copy/fill/crop/commit trên Canva → export JPG ≤ 2 MB |
 | **Nguồn ảnh ô giữa** | Ảnh THẬT là mặc định (ưu tiên Wikimedia/NASA/DoD/Archives, rồi đến báo chí, ghi nguồn). AI (`generate-image`) **chỉ** khi chủ đề không thể có ảnh thật (Jesus, thiên thần, alien, sinh vật thần thoại…) |
 | **Reach × KGC** | `R1` → title bắt buộc có cầu nối sang cụm R3. `KGC = medium` → credential phải nằm trong title (Format 1C) VÀ bằng chứng uy tín phải nhìn thấy được trong thumbnail. `KGC = low` → dừng, báo người dùng |
 | **Tín hiệu "Story"** | Khối là câu chuyện có thật (nhân vật + mốc thời gian + diễn biến + kết cục) → cân nhắc đưa `Story`/`Stories` vào title. Dữ liệu kênh: Idx 1.50, CI [1.10–1.90] |
