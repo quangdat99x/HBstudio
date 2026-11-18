@@ -6,6 +6,7 @@ Mỗi máy chọn một thư mục gốc (ổ nào cũng được), ghi trong C:
 Bên trong luôn theo cùng một format, nên chép data giữa hai máy chỉ cần chép đúng thư mục con:
 
     <data_root>\\YouTube\\Full\\              video tập đầy đủ + <tên video>.transcript.json      (Studio)
+    <data_root>\\YouTube\\Full\\<MÃ - Show>\\  như trên, chia theo show: video thả vào là tập của show đó (Studio)
     <data_root>\\YouTube\\Cutlists\\          cutlist_<TẬP>.json                                  (Studio)
     <data_root>\\YouTube\\Clips\\<tập>\\      clip, bản zoom, thumbnail, _studio.json của tập     (Studio)
     <data_root>\\YouTube\\Tong-hop\\          video tổng hợp                                      (Studio)

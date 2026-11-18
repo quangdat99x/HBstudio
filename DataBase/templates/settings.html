@@ -101,6 +101,9 @@
         </datalist></label>
       <label>Chất lượng ảnh AI
         <select class="input" name="thumb_image_quality">{% for q, t in [('high', 'high · đẹp nhất (đo thật ~$0,04/ảnh)'), ('medium', 'medium · rẻ hơn'), ('low', 'low · rẻ nhất, chỉ để nháp')] %}<option value="{{ q }}" {{ 'selected' if (s.thumb_image_quality or 'high') == q }}>{{ t }}</option>{% endfor %}</select></label>
+      <label>Model VIẾT TITLE TỔNG HỢP (skill viet-tittle-tong-hop, nút trên trang Video tổng hợp; chỉ Claude)<input class="input" list="model-options" name="claude_model_compile_title" value="{{ s.claude_model_compile_title }}" placeholder="opus"></label>
+      <label>Effort viết title tổng hợp
+        <select class="input" name="claude_effort_compile_title">{% for e in ['', 'low', 'medium', 'high', 'xhigh', 'max'] %}<option value="{{ e }}" {{ 'selected' if s.claude_effort_compile_title == e }}>{{ e or 'mặc định' }}</option>{% endfor %}</select></label>
       <label>Gemini API key <span class="small {{ 'ok' if gemini_configured else 'muted' }}">{{ '· đã có key' if gemini_configured else '· chưa có key' }}</span>
         <input class="input" type="password" name="gemini_api_key" value="" autocomplete="off"
                placeholder="{{ 'đã có key, để trống nếu không đổi' if gemini_configured else 'dán key Google AI Studio' }}"></label>

@@ -335,6 +335,10 @@ async function approveThumb(id, runId){
   const r=await api('/api/segments/'+id+'/title/approve-thumb',{run_id: runId});
   if(r.error){ toast(String(r.error).includes('404')? NEED_RESTART : r.error); return; }
   toast(r.message||'Đã gửi duyệt'); refreshTitle(id); }
+async function pushThumbCanva(id, runId){
+  const r=await api('/api/segments/'+id+'/thumb/canva',{run_id: runId});
+  if(r.error){ toast(String(r.error).includes('404')? NEED_RESTART : r.error); return; }
+  toast(r.message||'Đã gửi đẩy lên Canva'); refreshTitle(id); }
 async function runThumb(id){ const q=document.getElementById('thumbreq-'+id), request=q? q.value.trim() : '';
   const r=await api('/api/segments/'+id+'/thumb',{request});
   if(r.error){ toast(String(r.error).includes('404')? NEED_RESTART : r.error); return; }

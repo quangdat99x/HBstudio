@@ -144,6 +144,8 @@ DEFAULT_SETTINGS.update({
     "claude_effort_compile_scan": "medium",
     "claude_model_compile_arc": "opus",       # builds the arc and writes the narration
     "claude_effort_compile_arc": "high",
+    "claude_model_compile_title": "opus",     # "Viết title tổng hợp": skill viet-tittle-tong-hop on the built video
+    "claude_effort_compile_title": "high",
     "compile_pad_sec": "120",                 # ± seconds of transcript around every keyword hit
     "compile_max_scan_tokens": "600000",      # windows above this budget: the ones with the fewest hits are dropped
     "compile_voice_id": "",                   # empty = Creater's English narrator voice

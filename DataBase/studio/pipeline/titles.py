@@ -37,10 +37,14 @@ THUMB_TOOL = str(config.TOOLS_ROOT / "jre-thumb" / "frames.py")
 # Canva at all). Canva is touched only by an approval turn, which the user starts with the "Duyệt thumbnail"
 # button: that turn keeps the claude.ai connectors and pre-approves just the Canva tools needed to apply the plan.
 APPROVE_MSG = "✅ Duyệt thumbnail: áp bản mock lên Canva, lưu và export"
-CANVA_TOOLS = ("copy-design", "read-design", "edit-design", "create-upload-url", "upload-asset-from-url",
-               "generate-image", "get-generate-image-job", "export-design", "get-assets")
-APPROVE_TOOLS = ",".join(["Read", "Write", "Edit", "ToolSearch", "Bash(py *)", "Bash(python *)", "Bash(curl *)"]
-                         + [f"mcp__claude_ai_Canva__{n}" for n in CANVA_TOOLS])
+# Re-push a version that has a mock but no Canva copy (its draft turn failed): only the draft, no export.
+CANVA_PUSH_MSG = "🎨 Đẩy bản mock lên Canva để sửa tay"
+# The whole Canva connector is pre-approved (rule without a tool name = every tool of that server): Canva renames
+# its tools (edit-design -> edit-design-v2 on 18/11/2026), and a list of exact names then silently denies the edit
+# step, so the copy never gets a link. What may be done on Canva is set by the prompts, not by this list.
+CANVA_SERVER = "mcp__claude_ai_Canva"
+APPROVE_TOOLS = ",".join(["Read", "Write", "Edit", "ToolSearch", "Bash(py *)", "Bash(python *)", "Bash(curl *)",
+                          CANVA_SERVER])
 APPROVE_TOOLSET = "Read,Write,Edit,Bash,ToolSearch"
 ENTRY_FIELDS = ("rank", "kind", "content_rank", "start_hms", "end_hms", "title", "summary_vi", "summary_en", "hook_en",
                 "intensity", "cq", "gtf", "final_score", "value_axis", "core_keyword", "keyword_reach",
@@ -229,8 +233,12 @@ def _canva_build_steps(template: str) -> list[str]:
         "application/octet-stream\" --data-binary \"@<file>\"` (một lệnh đứng riêng) để lấy mediaId. Nếu plan có "
         "center_ai_prompt: generate-image (PORTRAIT_2_3) với prompt đó, chờ job, dùng media_id kết quả.",
         "3. read-design bản copy (open_transaction, design_content + thumbnails). Nhận 3 ô theo hình học: viền xanh #00bf63 "
-        "= center, left≈0 rộng >900 = left, left≈900–1000 = right. Đối chiếu element với plan; lệch thì dừng và báo.",
-        "4. edit-design keep_open: update_fill 3 ô, rồi crop_media mỗi ô đúng image_box trong plan (ô center AI: dùng "
+        "= center, left≈0 rộng >900 = left, left≈900–1000 = right. Đối chiếu element với plan.element. Ô lệch vài chục px "
+        "(vd ô right của template 971.6,0,948.4×1106.3 còn plan 950.6,-35.2,969.4×1141.5) là BÌNH THƯỜNG: mock dựng theo "
+        "plan, nên ở bước 4 resize_element (preserve_aspect_ratio=false) + position_element ô đó về đúng plan.element "
+        "TRƯỚC khi update_fill/crop_media, không dừng. Chỉ dừng và báo khi không nhận ra đủ 3 ô.",
+        "4. edit-design (tên công cụ có thể là edit-design-v2) keep_open: chỉnh khung ô lệch như bước 3, update_fill 3 ô, "
+        "rồi crop_media mỗi ô đúng image_box trong plan (ô center AI: dùng "
         "`py -3.14 -X utf8 " + THUMB_TOOL + " fill` trên ảnh đã tải về để tính, hoặc để Canva tự fill). "
         "Logo 4K: upload file plan.logo.img như các ảnh khác, update_fill vào badge 4K của template (ô nhỏ góc phải trên, "
         "left≈1772), rồi resize_element (preserve_aspect_ratio=false) + position_element đúng plan.logo.element.",
@@ -890,7 +898,7 @@ _PER_VERSION_KEYS = ("canva_design_id", "canva_edit_url", "thumbnail_path", "che
 
 
 def _canva_draft(run: dict, seg: dict, ep: dict, work: Path, out_json: Path, folder: Path, version: int | None,
-                 update, stop_flag) -> tuple[dict, float | None]:
+                 update, stop_flag) -> tuple[dict, float | None, dict]:
     """Second turn of a new version: put its mock on its own Canva copy (link in the JSON) so the user can edit it by
     hand. A failure only adds a warning: the version and its mock stay usable, approval then builds the copy itself."""
     if not thumb_template(ep):
@@ -899,21 +907,50 @@ def _canva_draft(run: dict, seg: dict, ep: dict, work: Path, out_json: Path, fol
         data["warnings"] = [*normalize(data)["warnings"],
                             "show này chưa có template Canva (Cài đặt → Show podcast): chỉ có bản mock, chưa lên Canva"]
         write_json(out_json, data)
-        return data, None
+        return data, None, {}
     update("đẩy bản mock lên Canva để sửa tay…")
+    log_path = work / f"canva_{run['id']}.jsonl"
     try:
         res = _claude_canva(build_canva_draft_prompt(seg, ep, out_json, folder, version), run, work,
-                            f"canva_{run['id']}.jsonl", update, stop_flag)
+                            log_path.name, update, stop_flag)
     except Exception as e:  # noqa: BLE001
         log.warning("canva draft failed for run %s: %s", run["id"], e)
         res = {"ok": False, "error": str(e)}
     data = _read_result(out_json, run["id"]) or {}
     data.update(folder=str(folder), version=version)
+    # an earlier failed push of this mock must not keep saying "not on Canva" once it is
+    warnings = [w for w in normalize(data)["warnings"] if not _is_canva_warning(w)]
     if not data.get("canva_edit_url"):
-        why = "đã hủy" if stop_flag and stop_flag() else (res.get("error") or "không có link")
-        data["warnings"] = [*normalize(data)["warnings"], f"chưa đẩy được lên Canva ({why}): bấm Duyệt sẽ tự dựng trên Canva"]
+        denied = [t for t in _denied_tools(log_path) if t.startswith(CANVA_SERVER)]
+        why = ("đã hủy" if stop_flag and stop_flag() else
+               f"Canva chặn quyền công cụ {', '.join(denied)}" if denied else (res.get("error") or "không có link"))
+        warnings.append(f"chưa đẩy được lên Canva ({why}): bấm \"Đẩy lên Canva\" để thử lại, hoặc Duyệt sẽ tự dựng trên Canva")
+    data["warnings"] = warnings
     write_json(out_json, data)
-    return data, res.get("cost_usd")
+    return data, res.get("cost_usd"), res
+
+
+def _is_canva_warning(w: str) -> bool:
+    return w.startswith("chưa đẩy được lên Canva") or w.startswith("show này chưa có template Canva")
+
+
+def _denied_tools(log_path: Path) -> list[str]:
+    """Tools the CLI refused for lack of permission in a run log (stream-json), so a failure names its cause."""
+    out: list[str] = []
+    try:
+        with open(log_path, encoding="utf-8") as f:
+            for line in f:
+                if '"permission_denied"' not in line:
+                    continue
+                try:
+                    name = json.loads(line).get("tool_name") or ""
+                except ValueError:
+                    continue
+                if name and name not in out:
+                    out.append(name)
+    except OSError:
+        pass
+    return out
 
 
 def run_thumb(run: dict, stop_flag=None) -> dict:
@@ -927,9 +964,27 @@ def run_thumb(run: dict, stop_flag=None) -> dict:
     parent = db.row("SELECT * FROM segment_titles WHERE id=?", (run["parent_id"],)) if run.get("parent_id") else None
     pdata = _json_of(parent)
     approve = run.get("user_message") == APPROVE_MSG
+    push = run.get("user_message") == CANVA_PUSH_MSG
     session, turn_cost = None, None
     if parent and not pdata.get("folder"):
         raise RuntimeError("bản thumbnail gốc không còn thư mục để làm tiếp")
+    if push:
+        # same folder and mock as the parent version: only its Canva copy is (re)built, nothing is exported
+        folder, version = Path(pdata["folder"]), pdata.get("version")
+        if not (folder / "thumb_plan.json").exists() or not (folder / "mock.jpg").exists():
+            raise RuntimeError("bản này không có plan/mock để đẩy lên Canva")
+        if not thumb_template(ep):
+            raise RuntimeError("show này chưa có template Canva (Cài đặt → Show podcast), chưa đẩy lên Canva được")
+        write_json(out_json, {k: v for k, v in pdata.items() if k not in _PER_VERSION_KEYS})
+        job_id, update = _start(run["id"], seg, ep, f"đẩy thumbnail đoạn #{seg['rank']} lên Canva (bản #{parent['id']})")
+        data, _, cres = _canva_draft(run, seg, ep, work, out_json, folder, version, update, stop_flag)
+        if stop_flag and stop_flag():
+            raise RuntimeError("đã hủy")
+        ok = bool(data.get("canva_edit_url"))
+        text = (f"Đã đẩy bản #{parent['id']} lên Canva: {data['canva_edit_url']}" if ok
+                else "Chưa đẩy được lên Canva: " + "; ".join(w for w in data.get("warnings") or [] if _is_canva_warning(w)))
+        return _finish(run["id"], job_id, seg, dict(cres, ok=ok, error=None if ok else "không có link"),
+                       data, text, thumb=True)
     if approve:
         folder, version = Path(pdata["folder"]), pdata.get("version")
         design_id = str(pdata.get("canva_design_id") or "").strip()
@@ -942,6 +997,9 @@ def run_thumb(run: dict, stop_flag=None) -> dict:
         prompt = (build_export_prompt(seg, ep, out_json, folder, version, design_id) if design_id
                   else build_approve_prompt(seg, ep, out_json, folder, version))
         res = _claude_canva(prompt, run, work, f"approve_{run['id']}.jsonl", update, stop_flag)
+        denied = [t for t in _denied_tools(work / f"approve_{run['id']}.jsonl") if t.startswith(CANVA_SERVER)]
+        if denied and not res.get("error"):
+            res = dict(res, error=f"Canva chặn quyền công cụ {', '.join(denied)}")
     elif parent:
         folder, version = thumb_paths(seg, ep, version=run["id"])["work"], run["id"]
         if folder.exists():
@@ -987,7 +1045,7 @@ def run_thumb(run: dict, stop_flag=None) -> dict:
         data["thumb_mock"] = str(folder / "mock.jpg")
     write_json(out_json, data)
     if not approve and (folder / "thumb_plan.json").exists() and (folder / "mock.jpg").exists():
-        data, cost = _canva_draft(run, seg, ep, work, out_json, folder, version, update, stop_flag)
+        data, cost, _ = _canva_draft(run, seg, ep, work, out_json, folder, version, update, stop_flag)
         base = turn_cost if turn_cost is not None else res.get("cost_usd")
         if cost and base is not None:
             turn_cost = base + cost                    # shown cost only; the session's own cost stays as it was
@@ -1072,12 +1130,16 @@ class TitleWorker:
         ahead = self._push(run_id)
         return {"run_id": run_id, "message": "đã xếp tạo thumbnail" + (f", còn {ahead} lượt trước" if ahead else "")}
 
-    def enqueue_thumb_chat(self, segment_id: int, message: str, approve: bool = False, run_id: int | None = None) -> dict:
-        """Edit (a new version) or approve one thumbnail version: `run_id` picks it, else the latest finished one."""
+    def enqueue_thumb_chat(self, segment_id: int, message: str, approve: bool = False, run_id: int | None = None,
+                           push: bool = False) -> dict:
+        """Edit (a new version), approve, or push to Canva (`push`: build the Canva copy of a version whose draft turn
+        left no link) one thumbnail version: `run_id` picks it, else the latest finished one."""
         if approve:
             message = APPROVE_MSG
-        elif message.strip() == APPROVE_MSG:
-            return {"error": "dùng nút Duyệt để lưu lên Canva"}
+        elif push:
+            message = CANVA_PUSH_MSG
+        elif message.strip() in (APPROVE_MSG, CANVA_PUSH_MSG):
+            return {"error": "dùng nút Duyệt / Đẩy lên Canva"}
         if (busy := self._busy(segment_id)):
             return {"error": "đoạn này đang có lượt " + ("thumbnail" if busy["kind"] == "thumb" else "viết title") +
                              (" chạy" if busy["status"] == "running" else " chờ") + ", đợi xong rồi nhắn tiếp"}
@@ -1093,7 +1155,8 @@ class TitleWorker:
                        "đang chờ tới lượt", now_iso(), parent["id"], message.strip()))
             new_id = c.execute("SELECT last_insert_rowid()").fetchone()[0]
         ahead = self._push(new_id)
-        return {"run_id": new_id, "message": ("đã gửi duyệt bản #%d" % parent["id"] if approve else "đã gửi chỉnh thumbnail")
+        return {"run_id": new_id, "message": ("đã gửi duyệt bản #%d" % parent["id"] if approve else
+                                              "đã gửi đẩy bản #%d lên Canva" % parent["id"] if push else "đã gửi chỉnh thumbnail")
                 + (f", còn {ahead} lượt trước" if ahead else "")}
 
     def enqueue(self, segment_id: int, focus: str | None = None, model: str | None = None) -> dict:
@@ -1176,7 +1239,8 @@ class TitleWorker:
                        "JOIN segments s ON s.id=t.segment_id WHERE t.id=?", (run_id,))
             if not r:
                 return
-            what = ("Duyệt thumbnail" if r["user_message"] == APPROVE_MSG else "Thumbnail") if r["kind"] == "thumb" \
+            what = ("Duyệt thumbnail" if r["user_message"] == APPROVE_MSG else "Đẩy thumbnail lên Canva"
+                    if r["user_message"] == CANVA_PUSH_MSG else "Thumbnail") if r["kind"] == "thumb" \
                 else "Viết title"
             notify.notify("error", f"{what} lỗi: {_seg_where(r)}", f"{ep_label(r['episode_id'])} · {msg}",
                           ep_link(r["episode_id"], r["id"]))
@@ -1298,6 +1362,7 @@ def thumbs_for_episode(episode_id: str) -> dict[int, dict]:
         d["latest"] = r
         r["data"] = normalize(_json_of(r))
         r["approve"] = r.get("user_message") == APPROVE_MSG
+        r["push"] = r.get("user_message") == CANVA_PUSH_MSG
         if r["status"] == "done":
             d["versions"].insert(0, r)
         if r.get("parent_id") or (r.get("user_message") and r["status"] != "done"):

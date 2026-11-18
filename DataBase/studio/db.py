@@ -65,6 +65,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
             "session_id": "TEXT", "parent_id": "INTEGER", "user_message": "TEXT", "session_cost_usd": "REAL",
             "focus": "TEXT", "kind": "TEXT",
         },
+        "compile_jobs": {
+            "title_json": "TEXT",      # youtube_title_<slug>.json of the viet-tittle-tong-hop skill (compile_titles.py)
+        },
     }
     for table, cols in wanted.items():
         existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}

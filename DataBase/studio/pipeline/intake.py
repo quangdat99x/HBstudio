@@ -31,11 +31,10 @@ class FolderWatcher(threading.Thread):
 
     def prime(self) -> None:
         """Mark everything already present as seen so only new files trigger the pipeline."""
-        root = paths.full_dir()
-        if root.exists():
-            for p in root.iterdir():
-                if p.is_file() and p.suffix.lower() in config.VIDEO_EXTS:
-                    self._seen.add(str(p))
+        if paths.full_dir().exists():
+            paths.ensure()                          # Full\<show>\ folders exist before the user looks for them
+            for p in paths.full_videos():
+                self._seen.add(str(p))
 
     def stop(self) -> None:
         self._stop.set()
@@ -50,20 +49,17 @@ class FolderWatcher(threading.Thread):
             self._stop.wait(self.interval)
 
     def scan_once(self) -> None:
-        root = paths.full_dir()
-        if not root.exists():
+        if not paths.full_dir().exists():
             return
         stable_for = db.setting_int("file_stable_seconds") or 30
         now = time.time()
-        for p in root.iterdir():
-            if not p.is_file() or p.suffix.lower() not in config.VIDEO_EXTS or p.name.endswith(".part"):
-                continue
+        for p in paths.full_videos():                   # Full\ and every Full\<show>\ folder
             if _RE_YTDLP_PART.search(p.stem):          # yt-dlp stream file before merge (video-only / audio-only)
                 continue
             key = str(p)
             if key in self._seen:
                 continue
-            if not parse_episode_name(p.name):
+            if not paths.show_of_path(p) and not parse_episode_name(p.name):
                 continue
             if (p.with_suffix(p.suffix + ".part")).exists():
                 continue
@@ -88,10 +84,10 @@ class FolderWatcher(threading.Thread):
                     log.exception("intake failed for %s: %s", p, e)
 
 
-def download_url(url: str, progress_cb=None, timeout: int = 6 * 3600) -> Path:
-    """Download through the Downloader tool and return the final file path."""
+def download_url(url: str, progress_cb=None, timeout: int = 6 * 3600, podcast_id: str | None = None) -> Path:
+    """Download through the Downloader tool (into Full\\<show>\\ when the show is known) and return the file path."""
     base = tools.ensure_tool("downloader")
-    root = paths.full_dir()
+    root = next((d for d, pid in paths.full_show_dirs() if pid == (podcast_id or "").upper()), paths.full_dir())
     root.mkdir(parents=True, exist_ok=True)
     res = tools.post_json(f"{base}/api/download", {"urls": [{"url": url, "title": ""}], "download_dir": str(root),
                                                   "max_resolution": "1080p"}, timeout=60)

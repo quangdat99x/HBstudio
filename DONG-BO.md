@@ -11,6 +11,7 @@ Bên trong luôn cùng một format trên mọi máy:
 
 ```
 <thư mục data>\YouTube\Full\              video tập đầy đủ + <tên video>.transcript.json
+<thư mục data>\YouTube\Full\<MÃ - Show>\  như trên, chia theo show (vd `WHYFILES - The Why Files`, `JRE - Joe Rogan Experience`)
 <thư mục data>\YouTube\Cutlists\          cutlist_<TẬP>.json
 <thư mục data>\YouTube\Clips\<tập>\       clip, bản zoom, thumbnail, _studio.json
 <thư mục data>\YouTube\Tong-hop\          video tổng hợp
@@ -23,6 +24,11 @@ Chuyển data sang máy kia: chép đúng thư mục con sang thư mục data c�
   trong thư mục clip mang theo những thứ chỉ database biết: Title / metadata đã viết, các bản thumbnail, trạng thái
   từng đoạn, phần phân tích, cả show podcast nếu máy kia chưa có. Gộp kiểu cộng dồn: máy nhận giữ nguyên cái nó đã có,
   thêm cái còn thiếu. Chép ngược lại cũng được.
+- **Video tải bằng phần mềm khác**: thả vào đúng thư mục show trong `Full\` (vd `Full\WHYFILES - The Why Files\`).
+  Studio tự nhận là tập mới của show đó (tên file kiểu gì cũng được, tự đánh số tập tiếp theo nếu tên không có số) và
+  chạy pipeline sau khi file chép xong khoảng 30 giây. Thư mục show tự được tạo khi Studio chạy; thêm show mới ở
+  Cài đặt thì thư mục của nó có ở lần khởi động Studio tiếp theo. Video thả thẳng vào `Full\` vẫn chạy như cũ nếu tên
+  file khớp mẫu tên của một show.
 - Video thả vào `Full\` mà có sẵn transcript bên cạnh thì **chỉ được index**, không chạy Whisper / Claude (không tốn
   tiền). Muốn chọn đoạn thì bấm Chạy ở trang tập.
 - **Creater Vid**: thư mục dự án chép vào `creater-projects\` tự thành dự án (tiêu đề, cài đặt, trạng thái các bước

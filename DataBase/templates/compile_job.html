@@ -58,6 +58,65 @@
     {% else %}<div class="small muted">Chưa có mốc: bấm Tạo lại mốc.</div>{% endif %}
   </div>
 </section>
+
+<section class="card" id="ctitle">
+  <div class="card-header"><h2>📝 Title &amp; metadata YouTube</h2>
+    <div class="row gap">
+      <span class="small muted">skill viet-tittle-tong-hop · {{ ctitle_model or 'opus' }}</span>
+      {% if ctitle_block %}<span class="small error">{{ ctitle_block }}</span>{% endif %}
+      <button class="btn btn-small {{ 'btn-ghost' if ctitle else 'btn-primary' }}" {{ 'disabled' if running or ctitle_block }} onclick="writeTitle()"
+        title="Claude chạy skill viet-tittle-tong-hop ở chế độ tự động: đọc compilation_<slug>.json + chapters.txt, viết title/description/chapters/tags, ghi youtube_title_<slug>.json và youtube_metadata_<slug>.md vào thư mục của tập, rồi cập nhật Title YouTube của video này">
+        {{ 'Viết lại title tổng hợp' if ctitle else '✍️ Viết title tổng hợp' }}</button>
+    </div></div>
+  <div class="card-body">
+    {% if busy %}<div class="small muted" id="ctitle-progress">⏳ {{ job.progress_msg or 'đang chạy…' }}</div>{% endif %}
+    {% if ctitle %}
+      {% set j = ctitle.data %}
+      <div class="small">🔑 keyword <b>{{ j.core_keyword or '?' }}</b>{% if j.keyword_reach %} · {{ j.keyword_reach }}{% endif %}
+        {% if j.frame %} · khung <b>{{ j.frame }}</b>{% if j.frame_secondary %} + {{ j.frame_secondary }}{% endif %}{% endif %}
+        {% if j.vibe %} · vibe {{ j.vibe }}{% endif %}
+        {% if j.counts %} · {{ j.counts.clips or '?' }} clip · {{ j.counts.episodes or '?' }} tập · {{ j.counts.guests or '?' }} khách{% if j.counts.minutes %} · {{ j.counts.minutes }} phút{% endif %}{% endif %}
+        {% if j.satellite_keywords %} · vệ tinh: {{ j.satellite_keywords|join(', ') }}{% endif %}</div>
+      {% if j.big_question %}<div class="small muted">❓ {{ j.big_question }}</div>{% endif %}
+      {% if j.recommended_title %}
+        <div class="yt-title" style="margin-top:8px"><span id="ct-rt">{{ j.recommended_title }}</span>
+          <span class="muted small">{{ j.recommended_title|length }} ký tự · {{ j.recommended_title.split()|length }} từ</span>
+          <button class="btn btn-tiny" onclick="copyEl('ct-rt')">Copy</button></div>
+      {% endif %}
+      {% if j.titles_format1 or j.titles_format2 %}
+      <div class="title-options" style="margin-top:6px">
+        {% for label, key in [('Format 1 · trực diện (CATALOG / COUNTED / BINGE)', 'titles_format1'), ('Format 2 · gợi mở (CONVERSION / TRUTH / DEEP-DIVE)', 'titles_format2')] %}
+          {% if j[key] %}
+          <div><div class="small muted">{{ label }}</div>
+            <ol>{% for tt in j[key] %}<li><span id="ct-{{ key }}-{{ loop.index }}">{{ tt }}</span>
+              <span class="muted small">{{ tt|length }}</span>
+              <button class="btn btn-tiny" onclick="copyEl('ct-{{ key }}-{{ loop.index }}')">Copy</button></li>{% endfor %}</ol>
+          </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if j.series_slot %}<div class="small muted">🔁 Series tái dùng: {{ j.series_slot }}</div>{% endif %}
+      {% for label, key in [('Description (đã gồm khối chapters ở cuối)', 'description'), ('Chapters · mốc nguyên văn từ chapters.txt, tên đã viết lại', 'timestamps'), ('Tags', 'tags'), ('Kế hoạch thumbnail (3 ô)', 'thumbnail')] %}
+        {% if j[key] %}
+        <div class="meta-block" style="margin-top:10px">
+          <div class="meta-head"><span class="small muted">{{ label }}{% if key == 'tags' %} · {{ j.tags_chars or j.tags|length }}/500 ký tự{% elif key == 'description' %} · {{ j.description.split()|length }} từ{% endif %}</span>
+            <button class="btn btn-tiny" onclick="copyEl('ct-m-{{ key }}')">Copy</button></div>
+          <pre class="meta-pre" id="ct-m-{{ key }}">{{ j[key] }}</pre>
+        </div>
+        {% endif %}
+      {% endfor %}
+      {% if j.featured_episodes %}<details class="small" style="margin-top:8px"><summary class="muted">Featured episodes ({{ j.featured_episodes|length }})</summary>
+        <ul>{% for f in j.featured_episodes %}<li>{{ f }}</li>{% endfor %}</ul></details>{% endif %}
+      {% if j.warnings %}<div class="small warn" style="margin-top:8px">⚠️ {{ j.warnings|join(' · ') }}</div>{% endif %}
+      {% if ctitle.full_md %}<details class="raw" style="margin-top:8px"><summary>Toàn bộ kết quả của skill (phân tích, bảng title, lý do)</summary><div class="md">{{ ctitle.full_md|md|safe }}</div></details>{% endif %}
+      <div class="small muted" style="margin-top:8px">{% if ctitle.written %}viết lúc {{ ctitle.written }} · {% endif %}{{ ctitle.json_path }}{% if ctitle.md_path %} · {{ ctitle.md_path|replace(job.out_dir ~ '\\', '') }}{% endif %}
+        {% if job.out_dir %}<button class="btn btn-tiny" data-path="{{ job.out_dir }}" onclick="openFolder(this.dataset.path)">Mở thư mục</button>{% endif %}</div>
+    {% elif not busy %}
+      <div class="small muted">Chưa có title tổng hợp. Bấm nút để Claude viết theo skill <b>viet-tittle-tong-hop</b> (một keyword hạt nhân cho cả tập, số đếm = số clip thật, chapters giữ mốc đã đo). Kết quả lưu vào thư mục của tập và cập nhật Title YouTube ở trên.</div>
+    {% endif %}
+  </div>
+</section>
 {% endif %}
 
 {% if items %}
@@ -159,11 +218,13 @@ async function rescan(){ if(!confirm('Quét lại toàn bộ transcript và dự
   const r=await act('rescan',{keywords:document.getElementById('cv-kw').value}); if(!r.error) location.reload(); }
 async function build(){ const r=await act('build'); if(!r.error) location.reload(); }
 async function refreshChapters(){ const r=await act('chapters'); if(!r.error) location.reload(); }
+async function writeTitle(){ const r=await act('title'); if(!r.error) location.reload(); }
 {% if running %}
 let lastUpdate='{{ job.updated_at }}';
 (async function poll(){
   try{ const s=await (await fetch('/api/compile/'+JOB+'/state')).json();
     document.getElementById('cv-progress').textContent=s.progress||''; document.getElementById('cv-status').textContent=s.status;
+    const cp=document.getElementById('ctitle-progress'); if(cp) cp.textContent='⏳ '+(s.progress||'đang chạy…');
     if(!s.busy && !['queued','topic','scanning','arranging','building'].includes(s.status)) return location.reload();
   }catch(e){}
   setTimeout(poll, 3000); })();

@@ -30,6 +30,7 @@
         <img src="/media?path={{ tj.thumb_mock|urlencode }}&v={{ tc.finished_at|urlencode }}" style="width:100%;border-radius:6px" alt="thumbnail mock"></a>
       {% if not thumb_busy and not busy %}
       <button class="btn btn-small btn-primary" onclick="approveThumb({{ s.id }}, {{ tc.id }})">{{ '✅ Duyệt: export bản trên Canva' if tj.canva_design_id else '✅ Duyệt bản này &amp; lưu Canva'|safe }}</button>
+      {% if not tj.canva_edit_url and not tj.thumbnail_path %}<button class="btn btn-small btn-ghost" onclick="pushThumbCanva({{ s.id }}, {{ tc.id }})" title="Dựng bản mock này thành design Canva riêng để sửa tay, chưa export">🎨 Đẩy lên Canva</button>{% endif %}
       {% if tj.canva_design_id %}<div class="small muted">Sửa tay trên Canva xong thì bấm Duyệt: tool export đúng design trên Canva (gồm cả phần bạn đã sửa), không dựng lại theo mock.</div>{% endif %}
       {% endif %}
     </div>
@@ -55,7 +56,7 @@
   {% if s.thumb_chat %}
   <div class="title-chat">
     {% for m in s.thumb_chat %}
-      <div class="chat-msg user">{{ '✅ Duyệt bản #' ~ m.parent_id ~ ' lên Canva' if m.approve else m.user_message }}{% if m.parent_id and not m.approve %} <span class="muted small">(sửa bản #{{ m.parent_id }} → bản #{{ m.id }})</span>{% endif %}</div>
+      <div class="chat-msg user">{{ '✅ Duyệt bản #' ~ m.parent_id ~ ' lên Canva' if m.approve else ('🎨 Đẩy bản #' ~ m.parent_id ~ ' lên Canva để sửa tay' if m.push else m.user_message) }}{% if m.parent_id and not m.approve and not m.push %} <span class="muted small">(sửa bản #{{ m.parent_id }} → bản #{{ m.id }})</span>{% endif %}</div>
       {% if m.status == 'done' %}
         <div class="chat-msg bot"><div class="md">{{ (m.output_md or 'Đã xong.')|md|safe }}</div><div class="small muted">{{ m.progress_msg or '' }}</div></div>
       {% elif m.status in ('queued', 'running') %}
@@ -86,10 +87,11 @@
         <div class="small muted">Bản #{{ v.id }} · {{ (v.finished_at or '')[:16]|replace('T', ' ') }}{{ ' · đã duyệt' if vj.thumbnail_path }}{{ ' · từ Viết Title' if vj.from_title_run }}</div>
         {% if img %}<a href="/media?path={{ img|urlencode }}" target="_blank"><img src="/media?path={{ img|urlencode }}&v={{ v.finished_at|urlencode }}" style="width:100%;border-radius:6px" alt="bản #{{ v.id }}"></a>{% endif %}
         {% if vj.canva_edit_url %}<div class="small"><a href="{{ vj.canva_edit_url }}" target="_blank">🎨 Mở trên Canva</a></div>{% endif %}
-        {% if v.user_message and not v.approve %}<div class="small">💬 {{ v.user_message[:120] }}</div>{% endif %}
+        {% if v.user_message and not v.approve and not v.push %}<div class="small">💬 {{ v.user_message[:120] }}</div>{% endif %}
         {% if not thumb_busy and not busy and vj.thumb_mock %}
         <button class="btn btn-tiny" onclick="approveThumb({{ s.id }}, {{ v.id }})">✅ Duyệt bản này</button>
         <button class="btn btn-tiny" onclick="editThumb({{ s.id }}, {{ v.id }})">✏️ Sửa tiếp từ bản này</button>
+        {% if not vj.canva_edit_url and not vj.thumbnail_path %}<button class="btn btn-tiny" onclick="pushThumbCanva({{ s.id }}, {{ v.id }})">🎨 Đẩy lên Canva</button>{% endif %}
         {% endif %}
       </div>
       {% endfor %}

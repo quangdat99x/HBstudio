@@ -60,7 +60,7 @@ with db.tx() as _c:     # a topic scan cut short by a restart cannot resume (its
     _c.execute("UPDATE topic_scans SET status='failed', error='studio khởi động lại giữa chừng' "
                "WHERE status IN ('queued','running')")
     _c.execute("UPDATE topic_scans SET status='done', error='studio khởi động lại khi đang cắt' WHERE status='cutting'")
-from studio.pipeline import compile_video, doc_extend, hook_join  # noqa: E402
+from studio.pipeline import compile_titles, compile_video, doc_extend, hook_join  # noqa: E402
 compile_video.recover_after_restart()
 doc_extend.recover_after_restart()
 
@@ -302,7 +302,9 @@ def compile_job_page(job_id):
     return render_template("compile_job.html", page="compile", job=job, seed=seed, items=its,
                            seed_show=podcasts.for_episode(seed["episode_id"])["name"] if seed else "",
                            cands=compile_video.candidates(job_id, unused_only=True), totals=compile_video.totals(job),
-                           busy=compile_video.busy(job_id), chapters=compile_video.chapters_text(job))
+                           busy=compile_video.busy(job_id), chapters=compile_video.chapters_text(job),
+                           ctitle=compile_titles.load(job), ctitle_block=compile_titles.ready(job),
+                           ctitle_model=db.get_setting("claude_model_compile_title"))
 
 
 @app.route("/api/compile", methods=["POST"])
@@ -339,6 +341,8 @@ def api_compile_action(job_id, action):
         res = compile_video.build(job_id)
     elif action == "chapters":
         res = compile_video.refresh_chapters(job_id)
+    elif action == "title":
+        res = compile_titles.start(job_id)
     elif action == "text":
         compile_video.update_job_text(job_id, **{k: data[k] for k in ("intro_text", "outro_text", "title_en") if k in data})
         res = {"ok": True}
@@ -755,6 +759,16 @@ def api_title_approve_thumb(seg_id):
         return jsonify({"error": "bộ viết title chưa sẵn sàng"}), 503
     run_id = (request.json or {}).get("run_id")
     return jsonify(tw.enqueue_thumb_chat(seg_id, "", approve=True, run_id=int(run_id) if run_id else None))
+
+
+@app.route("/api/segments/<int:seg_id>/thumb/canva", methods=["POST"])
+def api_thumb_canva(seg_id):
+    """Put a thumbnail version that has a mock but no Canva link on its own Canva copy (no export)."""
+    tw = title_worker()
+    if not tw:
+        return jsonify({"error": "bộ viết title chưa sẵn sàng"}), 503
+    run_id = (request.json or {}).get("run_id")
+    return jsonify(tw.enqueue_thumb_chat(seg_id, "", push=True, run_id=int(run_id) if run_id else None))
 
 
 @app.route("/api/segments/<int:seg_id>/thumb", methods=["POST"])

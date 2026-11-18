@@ -259,6 +259,7 @@ class Orchestrator:
         """Register a video and run it. podcast_id (picked on the Queue page) puts it into that show even when no file
         name pattern matches: needed for the support library, whose videos come from many different podcasts."""
         path = Path(path)
+        podcast_id = podcast_id or paths.show_of_path(path)      # a video in Full\<show>\ belongs to that show
         if podcast_id:
             from ..util import clean_stem
             info = podcasts.assign(clean_stem(path.name), podcast_id)

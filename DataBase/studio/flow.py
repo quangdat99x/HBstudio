@@ -56,6 +56,7 @@ NODES = [
      "table": "compile_jobs", "desc": "Gộp nhiều tập theo một chủ đề, có lời dẫn.",
      "fields": [("claude_model_compile_scan", "Model quét", MODELS), ("claude_effort_compile_scan", "Effort quét", EFFORTS),
                 ("claude_model_compile_arc", "Model dựng mạch", MODELS), ("claude_effort_compile_arc", "Effort dựng mạch", EFFORTS),
+                ("claude_model_compile_title", "Model viết title", MODELS), ("claude_effort_compile_title", "Effort viết title", EFFORTS),
                 ("compile_max_scan_tokens", "Ngân sách token quét", "number"),
                 ("compile_require_zoom", "Bắt buộc clip đã zoom", "bool")]},
     {"id": "docext", "label": "Phim tài liệu", "icon": "📽️", "x": 1580, "y": 220, "job": None, "states": [], "branch": True,

@@ -21,7 +21,7 @@ import threading
 from pathlib import Path
 
 from . import config, db, paths
-from .util import find_transcript, now_iso, parse_episode_name, read_json, write_json
+from .util import find_transcript, now_iso, parse_episode_name, read_json, video_episode_info, write_json
 
 log = logging.getLogger("studio.portable")
 
@@ -446,8 +446,9 @@ def snapshot() -> dict:
             if p.is_dir() and (parse_episode_name(p.name) or (p / SIDECAR).exists()):
                 snap["clips"][p.name] = _sig_folder(p)
     if paths.full_dir().is_dir():
-        for p in paths.full_dir().glob("*.transcript.*"):
-            snap["transcripts"][p.name] = _sig_file(p)
+        for d in paths.full_dirs():         # key = path relative to Full\ ("WHYFILES - The Why Files/x.transcript.json")
+            for p in d.glob("*.transcript.*"):
+                snap["transcripts"][p.relative_to(paths.full_dir()).as_posix()] = _sig_file(p)
     return snap
 
 
@@ -476,7 +477,7 @@ def index_changes(changed: dict) -> dict:
         try:
             if _index_transcript(paths.full_dir() / name):
                 out["transcripts"] += 1
-            elif not parse_episode_name(name.split(".transcript.")[0]):
+            elif not video_episode_info(paths.full_dir() / name):
                 out["failed"].append(["transcripts", name])          # no show knows it yet
         except Exception as e:  # noqa: BLE001
             out["errors"].append(f"{name}: {e}")
@@ -507,7 +508,7 @@ def _index_transcript(tpath: Path) -> bool:
     """A transcript copied next to (or without) its video: attach it to the episode and load its lines."""
     from . import ingest
     stem = tpath.name.split(".transcript.")[0]
-    info = parse_episode_name(stem)
+    info = video_episode_info(tpath)
     if not info:
         return False
     video = next((p for p in (tpath.with_name(stem + ext) for ext in config.VIDEO_EXTS) if p.exists()), None)
@@ -530,7 +531,7 @@ def index_copied_video(video: Path) -> dict:
     whatever came along (transcript, cutlist, clip folder), without running the pipeline."""
     from . import ingest
     from .search import rebuild_index
-    info = parse_episode_name(video.name)
+    info = video_episode_info(video)
     if not info:
         return {"error": "no show recognises the file name"}
     transcript = find_transcript(video)
@@ -557,7 +558,7 @@ def _episode_of(kind: str, name: str) -> str | None:
     if kind == "cutlists":
         m = re.match(r"cutlist_(.+)\.json$", name, re.I)
         return m.group(1) if m else None
-    info = parse_episode_name(name.split(".transcript.")[0] if kind == "transcripts" else name)
+    info = video_episode_info(paths.full_dir() / name) if kind == "transcripts" else parse_episode_name(name)
     return info["episode_id"] if info else None
 
 
@@ -581,7 +582,7 @@ def baseline(now: dict) -> dict:
         if name.lower() in cuts:
             done["cutlists"][name] = sig
     for name, sig in now.get("transcripts", {}).items():
-        if name.lower() in trans:
+        if Path(name).name.lower() in trans:
             done["transcripts"][name] = sig
     for name, sig in now.get("clips", {}).items():
         if name.lower() in folders and not _foreign_sidecar_pending(paths.clips_dir() / name):

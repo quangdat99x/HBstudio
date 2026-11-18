@@ -65,6 +65,18 @@ def parse_episode_name(name: str) -> Optional[dict]:
     return podcasts.parse_name(clean_stem(name))
 
 
+def video_episode_info(path) -> Optional[dict]:
+    """Episode of a video file (or its transcript): a file inside Full\\<show>\\ belongs to that show (its pattern,
+    the episode it already is, else the show's next free number); elsewhere the file name patterns decide."""
+    from . import paths, podcasts
+    p = Path(path)
+    name = p.name.split(".transcript.")[0] if ".transcript." in p.name else p.name
+    pid = paths.show_of_path(p)
+    if pid:
+        return podcasts.assign(clean_stem(name), pid)
+    return parse_episode_name(name)
+
+
 def parse_episode_id(episode_id: str) -> Optional[dict]:
     """'JRE-2530' → {episode_id, podcast_id, number}; None for a malformed id or a podcast that has no profile."""
     from . import podcasts

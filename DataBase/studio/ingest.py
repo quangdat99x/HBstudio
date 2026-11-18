@@ -16,7 +16,7 @@ from typing import Optional
 from . import config, db, paths
 from .util import (clean_stem, clip_filename, cutter_safe_title, ffprobe_duration, find_transcript, hms_to_sec,
                    load_transcript, norm_key, now_iso, parse_episode_id, parse_episode_name, read_json, sec_to_hms,
-                   sha1_file, slice_transcript)
+                   sha1_file, slice_transcript, video_episode_info)
 
 log = logging.getLogger("studio.ingest")
 
@@ -72,7 +72,7 @@ def _stage_rank(stage: Optional[str]) -> int:
 def find_video_for_episode(root: Path, episode_id: str, source_video: Optional[str] = None) -> Optional[Path]:
     """Locate the episode video: exact source_video first, then by parsed episode id.
     Looks in the Full folder first, then in `root` (older layout kept everything in the media root)."""
-    dirs = [d for d in dict.fromkeys((paths.full_dir(), Path(root))) if d.is_dir()]
+    dirs = [d for d in dict.fromkeys((*paths.full_dirs(), Path(root))) if d.is_dir()]
     if source_video and not source_video.startswith("<"):
         for d in dirs:
             p = d / source_video
@@ -82,7 +82,7 @@ def find_video_for_episode(root: Path, episode_id: str, source_video: Optional[s
     for d in dirs:
         for p in d.iterdir():
             if p.is_file() and p.suffix.lower() in config.VIDEO_EXTS and not p.name.endswith(".part"):
-                info = parse_episode_name(p.name)
+                info = video_episode_info(p)
                 if info and info["episode_id"] == episode_id:
                     if best is None or p.stat().st_size > best.stat().st_size:
                         best = p
@@ -490,20 +490,19 @@ def scan_media_root(root: Optional[Path] = None, force: bool = False) -> dict:
             out["errors"].append(f"{p.name}: {e}")
             log.exception("cutlist %s", p)
     conn = db.get_conn()
-    for p in sorted(paths.full_dir().iterdir()):
-        if p.is_file() and p.suffix.lower() in config.VIDEO_EXTS and not p.name.endswith(".part"):
-            info = parse_episode_name(p.name)
-            if not info:
-                continue
-            transcript = find_transcript(p)
-            with db.tx(conn) as c:
-                upsert_episode(c, {"id": info["episode_id"], "podcast_id": info["podcast_id"], "number": info["number"],
-                                   "guest": info["guest"], "source_video": p.name, "video_path": str(p),
-                                   "transcript_path": str(transcript) if transcript else None,
-                                   "stage": "transcribed" if transcript else "new"})
-            out["videos"] += 1
-            if transcript:
-                load_episode_transcript(info["episode_id"])
+    for p in paths.full_videos():                      # Full\ and every Full\<show>\ folder
+        info = video_episode_info(p)
+        if not info:
+            continue
+        transcript = find_transcript(p)
+        with db.tx(conn) as c:
+            upsert_episode(c, {"id": info["episode_id"], "podcast_id": info["podcast_id"], "number": info["number"],
+                               "guest": info["guest"], "source_video": p.name, "video_path": str(p),
+                               "transcript_path": str(transcript) if transcript else None,
+                               "stage": "transcribed" if transcript else "new"})
+        out["videos"] += 1
+        if transcript:
+            load_episode_transcript(info["episode_id"])
     for p in sorted(paths.clips_dir().iterdir()):
         if p.is_dir() and parse_episode_name(p.name):
             try:
