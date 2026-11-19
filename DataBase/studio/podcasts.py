@@ -16,16 +16,31 @@ the supplementary library a main show's compilation pulls extra clips from (othe
 A support show may have no file pattern at all (the default BOTRO library holds episodes of many different podcasts):
 its videos come in through the Queue page with the show picked by hand, get the next free number, and are recognised
 again later by their file name stored in the database.
+
+The list of shows travels between machines through `shows.json` next to this module (it is in Git, the database is
+not). The main machine (see `_sync_main.json`) rewrites the file whenever a show is saved or deleted on the Settings
+page; every other machine applies the file to its `podcasts` table when it changes (at start-up and whenever the
+profile cache is refreshed, so a `git pull` is enough: no restart). The file wins over local edits on those machines,
+shows that only exist locally are kept, and a show removed from the file is not deleted (it may still have episodes).
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import logging
+import os
 import re
+import socket
 import threading
 import time
+from pathlib import Path
 from typing import Optional
 
 from . import db
+
+log = logging.getLogger(__name__)
+SHOWS_FILE = Path(__file__).with_name("shows.json")
+_ROLE_FILE = Path(__file__).resolve().parents[2] / "_sync_main.json"     # C:\Tool\_sync_main.json
 
 ID_RE = re.compile(r"^[A-Z][A-Z0-9]{1,15}$")
 _RE_EPISODE_ID = re.compile(r"^([A-Za-z][A-Za-z0-9]*)-(\d+)$")
@@ -78,18 +93,7 @@ def ensure_schema(conn) -> None:
     if "podcast_ids" not in existing:
         with conn:
             conn.execute("ALTER TABLE compile_jobs ADD COLUMN podcast_ids TEXT")    # shows the scan reads, comma list
-    with conn:
-        for pid, vals in DEFAULTS.items():
-            if vals.get("role") == "support":
-                # the library is created once; deleting it on the Settings page is final
-                if conn.execute("SELECT 1 FROM settings WHERE key='seeded_support_library'").fetchone():
-                    continue
-                conn.execute("INSERT OR REPLACE INTO settings(key, value) VALUES('seeded_support_library', '1')")
-            conn.execute("INSERT OR IGNORE INTO podcasts(id, name, host) VALUES(?, ?, ?)",
-                         (pid, vals["name"], vals.get("host") or ""))
-            for k, v in vals.items():
-                conn.execute(f"UPDATE podcasts SET {k}=? WHERE id=? AND ({k} IS NULL OR {k}='' OR ?='sort' AND {k}=100)",
-                             (v, pid, k))
+    _apply_shows_file(conn, force=False)
     invalidate()
 
 
@@ -99,10 +103,108 @@ def invalidate() -> None:
         _cache["rows"] = None
 
 
+# ---------------------------------------------------------------- shows.json (list of shows shared through Git)
+def is_main_machine() -> bool:
+    """The machine named in _sync_main.json owns the list; without that file every machine is its own main."""
+    try:
+        main = str(json.loads(_ROLE_FILE.read_text(encoding="utf-8")).get("main_machine") or "").strip()
+    except (OSError, ValueError):
+        return True
+    me = os.environ.get("COMPUTERNAME") or socket.gethostname()
+    return not main or main.upper() == me.upper()
+
+
+def _read_shows_file() -> tuple[list[dict], str]:
+    """(shows, stamp): the profiles in shows.json and a hash of the file; the built-in DEFAULTS when there is none."""
+    try:
+        raw = SHOWS_FILE.read_bytes()
+        shows = json.loads(raw.decode("utf-8"))
+        if not isinstance(shows, list):
+            raise ValueError("shows.json must be a list")
+        return shows, hashlib.sha1(raw).hexdigest()
+    except FileNotFoundError:
+        return [{"id": pid, **vals} for pid, vals in DEFAULTS.items()], "defaults"
+    except (OSError, ValueError) as e:
+        log.warning("shows.json unreadable, keeping the shows in the database: %s", e)
+        return [], ""
+
+
+def _apply_shows_file(conn, force: bool) -> bool:
+    """Put the shows of shows.json into `podcasts` when the file changed since the last time (or `force`).
+    Missing shows are added, known ones take the file's values. On the main machine the file is written from the
+    database, so it only fills gaps there (a machine that edited its shows before the file existed keeps them)."""
+    shows, stamp = _read_shows_file()
+    if not stamp:
+        return False
+    seen = conn.execute("SELECT value FROM settings WHERE key='shows_file_stamp'").fetchone()
+    if not force and seen and seen[0] == stamp:
+        return False
+    main = is_main_machine()
+    have_cols = {r[1] for r in conn.execute("PRAGMA table_info(podcasts)")}
+    with conn:
+        for prof in shows:
+            pid = str(prof.get("id") or "").strip().upper()
+            if not ID_RE.match(pid) or not prof.get("name"):
+                continue
+            exists = conn.execute("SELECT 1 FROM podcasts WHERE id=?", (pid,)).fetchone()
+            if not exists and prof.get("role") == "support":
+                # the support library is created once; deleting it on the Settings page is final
+                if conn.execute("SELECT 1 FROM settings WHERE key='seeded_support_library'").fetchone():
+                    continue
+                conn.execute("INSERT OR REPLACE INTO settings(key, value) VALUES('seeded_support_library', '1')")
+            conn.execute("INSERT OR IGNORE INTO podcasts(id, name, host) VALUES(?, ?, ?)",
+                         (pid, prof["name"], prof.get("host") or ""))
+            for k in FIELDS:
+                if k not in have_cols or k not in prof:
+                    continue
+                v = prof[k]
+                if main and exists:
+                    conn.execute(f"UPDATE podcasts SET {k}=? WHERE id=? AND ({k} IS NULL OR {k}='' "
+                                 f"OR ?='sort' AND {k}=100)", (v, pid, k))
+                else:
+                    conn.execute(f"UPDATE podcasts SET {k}=? WHERE id=?", (v, pid))
+        conn.execute("INSERT OR REPLACE INTO settings(key, value) VALUES('shows_file_stamp', ?)", (stamp,))
+    if not main:
+        log.info("shows.json applied: %d show(s) from the main machine", len(shows))
+    invalidate()
+    return True
+
+
+def write_shows_file() -> Optional[Path]:
+    """Main machine only: the `podcasts` table as shows.json, so a commit carries the list to the other machines."""
+    if not is_main_machine():
+        return None
+    rows = db.rows("SELECT * FROM podcasts ORDER BY COALESCE(sort, 100), id")
+    out = [{"id": r["id"], **{k: r.get(k) for k in FIELDS}} for r in rows]
+    raw = (json.dumps(out, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    try:
+        if SHOWS_FILE.exists() and SHOWS_FILE.read_bytes() == raw:
+            return SHOWS_FILE
+        tmp = SHOWS_FILE.with_suffix(".json.tmp")
+        tmp.write_bytes(raw)
+        os.replace(tmp, SHOWS_FILE)
+        db.set_setting("shows_file_stamp", hashlib.sha1(raw).hexdigest())
+    except OSError as e:
+        log.warning("cannot write %s: %s", SHOWS_FILE, e)
+        return None
+    return SHOWS_FILE
+
+
+def sync_from_file() -> bool:
+    """Apply shows.json when its content changed (cheap: a read + hash of a small file). Runs with the cache refresh,
+    so a machine that just pulled the main machine's code picks the new list up within _TTL seconds."""
+    try:
+        return _apply_shows_file(db.get_conn(), force=False)
+    except Exception as e:                                  # never let the show list break a page
+        log.warning("shows.json sync: %s", e)
+        return False
+
+
 def all_profiles() -> list[dict]:
     with _lock:
         if _cache["rows"] is not None and time.time() - _cache["at"] < _TTL:
             return _cache["rows"]
+    sync_from_file()
     rows = db.rows("SELECT * FROM podcasts ORDER BY COALESCE(sort, 100), id")
     for r in rows:
         r["host_short"] = r.get("host_short") or (r.get("host") or "").split(" ")[0] or "host"
@@ -327,6 +429,7 @@ def save(data: dict) -> dict:
         c.execute("INSERT OR IGNORE INTO podcasts(id, name) VALUES(?, ?)", (pid, vals["name"]))
         c.execute(f"UPDATE podcasts SET {', '.join(f'{k}=?' for k in FIELDS)} WHERE id=?", (*vals.values(), pid))
     invalidate()
+    write_shows_file()
     return {"ok": True, "id": pid}
 
 
@@ -338,6 +441,7 @@ def delete(podcast_id: str) -> dict:
     with db.tx() as c:
         c.execute("DELETE FROM podcasts WHERE id=?", (pid,))
     invalidate()
+    write_shows_file()
     return {"ok": True}
 
 

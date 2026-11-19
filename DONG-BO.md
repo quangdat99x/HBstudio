@@ -37,6 +37,14 @@ Chuyển data sang máy kia: chép đúng thư mục con sang thư mục data c�
   sang chỗ mới lúc tool khởi động.
 - Muốn nạp ngay không chờ: Studio, gửi `POST /api/portable` (hoặc nhờ Claude "index data chép vào Studio").
 
+## Danh sách show đi theo code
+Danh sách show podcast (trang Cài đặt của Studio) nằm trong file `DataBase\studio\shows.json` và đi qua Git:
+- **Máy chính**: thêm / sửa / xoá show ở Cài đặt → Studio tự ghi lại `shows.json` → bấm Đồng bộ là lên GitHub.
+- **Máy phụ**: bấm **⬇ Lấy code máy chính** là xong. Studio đang chạy tự nhận file mới trong vòng 15 giây (không cần
+  khởi động lại): show thiếu được thêm, show đã có lấy đúng cài đặt của máy chính; show chỉ máy phụ có thì giữ nguyên,
+  show máy chính đã xoá thì không tự xoá (có thể còn tập). Trang Hàng đợi chỉ cần dán link và chọn show.
+- Sửa show trên máy phụ không có tác dụng lâu: lần `shows.json` thay đổi tiếp theo sẽ ghi đè lại. Sửa trên máy chính.
+
 ## Cài đặt riêng từng máy
 - Có thư mục data thì `media_root` (Studio) và `projects_root` (Creater Vid) đi theo nó, trang Cài đặt chỉ hiện để xem.
   Máy chưa chọn thư mục data thì vẫn dùng đường dẫn trong Cài đặt như cũ.
